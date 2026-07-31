@@ -1,0 +1,282 @@
+import backend.bots.abc_bot as abc_bot
+from backend.bots.abc_bot import choose_abc_action, has_top_pair_or_better, should_call_with_draw
+from backend.engine.hand import Hand
+from backend.engine.models import Player
+
+
+def make_players(n, stack=200.0):
+    return [Player(seat=i + 1, name=f"P{i+1}", stack=stack) for i in range(n)]
+
+
+def test_utg_opens_a_premium_hand():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    actor = hand.current_actor()  # seat 4, UTG
+    hand.players[actor].hole_cards = ["As", "Ah"]
+    action, amount = choose_abc_action(hand, actor)
+    assert action == "raise"
+    assert amount == 5.0  # 2.5 x big blind
+
+
+def test_utg_folds_a_trash_hand():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["7c", "2d"]
+    action, amount = choose_abc_action(hand, actor)
+    assert action == "fold"
+
+
+def test_bb_checks_when_everyone_folds_to_it():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    for seat in (4, 5, 6, 1, 2):
+        hand.apply_action(seat, "fold")
+    bb_seat = hand.current_actor()
+    hand.players[bb_seat].hole_cards = ["7c", "2d"]
+    action, amount = choose_abc_action(hand, bb_seat)
+    assert action == "check"
+
+
+def test_folds_to_a_raise_with_a_weak_hand_outside_position_range():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG opens
+    actor = hand.current_actor()  # seat 5, MP
+    hand.players[actor].hole_cards = ["9c", "4d"]
+    action, amount = choose_abc_action(hand, actor)
+    assert action == "fold"
+
+
+def test_calls_a_raise_with_a_hand_in_the_narrow_call_range_but_not_premium():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- in the call range, not in VALUE_3BET -- calls
+    action, amount = choose_abc_action(hand, actor)
+    assert action == "call"
+
+
+def test_value_3bets_a_premium_hand_facing_a_single_raise_instead_of_flatting():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["As", "Ah"]  # AA -- in VALUE_3BET, must raise not call
+    action, amount = choose_abc_action(hand, actor)
+    assert action == "raise"
+    assert amount == 15.0  # 3x the 5bb open
+
+
+def test_only_premium_continues_vs_a_3bet():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "raise", amount=15.0)  # a 3-bet
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    hand.players[4].hole_cards = ["Jd", "Js"]  # JJ -- not in the premium-vs-3bet set
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "fold"
+    hand.players[4].hole_cards = ["Qd", "Qs"]  # QQ -- is in the premium set
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "call"
+
+
+def test_top_pair_or_better_detection():
+    assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair aces
+    assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "Kd", "2s"])  # two pair (dup card ignored in this synthetic test)
+    assert not has_top_pair_or_better(["Ah", "Kd"], ["9c", "7d", "2s"])  # ace-king high, no pair
+    assert not has_top_pair_or_better(["9h", "9d"], ["Ac", "7d", "2s"])  # underpair -- NOT top pair or overpair
+    assert has_top_pair_or_better(["9h", "9d"], ["8c", "7d", "2s"])  # overpair to this board
+
+
+def _reach_turn_with_initiative(hero_hole):
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens and will have initiative
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")  # BB calls
+    assert hand.street == "flop"
+
+    hand.board = ["9c", "5d", "2h"]  # controlled flop -- irrelevant to hero's pocket-pair overpair scenario below
+    hand.apply_action(3, "check")  # BB acts first postflop
+    hand.players[4].hole_cards = hero_hole
+    action, amount = choose_abc_action(hand, 4)
+    assert action == "bet"
+
+    hand.apply_action(4, "bet", amount=amount)
+    hand.apply_action(3, "call")
+    assert hand.street == "turn"
+    hand.board = ["9c", "5d", "2h", "8s"]  # controlled turn card, keeps hero's hand category unambiguous
+    hand.apply_action(3, "check")  # BB acts first postflop again
+    return hand
+
+
+def test_cbets_flop_then_keeps_betting_the_turn_for_value_with_a_strong_hand():
+    hand = _reach_turn_with_initiative(["Kc", "Kd"])  # overpair to this board -- still top-pair-or-better
+    action, amount = choose_abc_action(hand, 4)
+    assert action == "bet"
+    assert amount > 0
+
+
+def test_cbets_flop_then_checks_turn_without_barreling_a_missed_hand():
+    hand = _reach_turn_with_initiative(["Ac", "Qd"]) # ace/queen high on this board -- no pair anywhere
+    action, amount = choose_abc_action(hand, 4)
+    assert action == "check"  # no auto-barrel with nothing
+
+
+def _bb_free_flop():
+    # UTG limps (calls the BB, doesn't raise), everyone else folds, BB checks
+    # its option -- a genuine free flop with no preflop raise, BB has no
+    # initiative but does have a live opponent (UTG) to bet into.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")  # UTG limps
+    for s in (5, 6, 1, 2):
+        hand.apply_action(s, "fold")
+    bb_seat = hand.current_actor()  # seat 3, BB
+    hand.apply_action(bb_seat, "check")
+    assert hand.street == "flop"
+    return hand, bb_seat
+
+
+def test_bets_for_value_without_initiative_a_free_flop_in_the_blinds():
+    hand, bb_seat = _bb_free_flop()
+    hand.board = ["9c", "9d", "2h"]
+    hand.players[bb_seat].hole_cards = ["9s", "4d"]  # flopped trip nines
+    action, amount = choose_abc_action(hand, bb_seat)
+    assert action == "bet"
+    assert amount > 0
+
+
+def test_checks_without_initiative_on_a_free_flop_with_no_hand():
+    hand, bb_seat = _bb_free_flop()
+    hand.board = ["9c", "6d", "2h"]
+    hand.players[bb_seat].hole_cards = ["Ks", "4d"]  # complete miss
+    action, amount = choose_abc_action(hand, bb_seat)
+    assert action == "check"
+
+
+def test_made_straight_and_flush_count_as_top_pair_or_better():
+    assert has_top_pair_or_better(["Jd", "Td"], ["9d", "8d", "2d"])  # made flush
+    assert has_top_pair_or_better(["9c", "8c"], ["7d", "6h", "5s", "2c"])  # made straight (9-8-7-6-5), no pair
+    assert not has_top_pair_or_better(["Kc", "Qh"], ["9d", "6h", "2s"])  # no made hand at all
+
+
+def test_calls_a_flop_bet_with_a_flush_draw_at_the_right_price():
+    # 4 to a flush, cheap price relative to the flop's ~35% rough draw equity
+    assert should_call_with_draw(["Ad", "Kd"], ["9d", "6d", "2h"], "flop", to_call=5.0, pot_before=50.0)
+
+
+def test_folds_a_flop_flush_draw_facing_too_steep_a_price():
+    # same draw, but the bet is too big relative to the pot for the draw's equity
+    assert not should_call_with_draw(["Ad", "Kd"], ["9d", "6d", "2h"], "flop", to_call=40.0, pot_before=10.0)
+
+
+def test_draws_never_justify_a_call_on_the_river():
+    assert not should_call_with_draw(["Ad", "Kd"], ["9d", "6d", "2h", "3s", "7c"], "river", to_call=1.0, pot_before=100.0)
+
+
+def test_no_draw_no_call():
+    assert not should_call_with_draw(["Ks", "Qh"], ["9d", "6h", "2s"], "flop", to_call=1.0, pot_before=100.0)
+
+
+def _hero_facing_a_flop_bet_from_bb():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens, has initiative
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")  # BB calls
+    assert hand.street == "flop"
+    hand.board = ["9c", "6d", "2h"]
+    hand.apply_action(3, "bet", amount=3.0)  # BB (seat 3) leads into hero
+    return hand
+
+
+def test_folds_bottom_pair_to_a_bet_with_no_opponent_info():
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair (6s) -- not top-pair-or-better
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "fold"
+
+
+def test_folds_bottom_pair_to_a_known_nit_bettor():
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["6s", "3d"]
+    action, _ = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
+    assert action == "fold"
+
+
+def test_calls_bottom_pair_against_a_known_loose_archetype_bettor():
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["6s", "3d"]
+    action, _ = choose_abc_action(hand, 4, opponent_archetypes={3: "Station"})
+    assert action == "call"
+
+
+def _three_way_flop():
+    # UTG (4) opens, MP (5) calls, BB (3) calls -- a genuine 3-way pot (4, 5, 3 live).
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "call")
+    for s in (6, 1, 2):
+        hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")
+    assert hand.street == "flop"
+    hand.board = ["9c", "6d", "2h"]
+    return hand
+
+
+def test_does_not_cbet_with_air_in_a_multiway_pot(monkeypatch):
+    # MULTIWAY_AWARE ships OFF by default (empirically it cost real bb/100
+    # against this population's real bot mix -- see the v11 module docstring
+    # note), but the feature itself is still correct and tested here.
+    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    hand = _three_way_flop()
+    hand.apply_action(hand.current_actor(), "check")  # BB checks
+    actor = hand.current_actor()
+    assert actor == 4  # hero, had initiative
+    hand.players[4].hole_cards = ["Ac", "Qd"]  # total air on this board
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "check"  # no free-roll cbet with 2+ opponents live
+
+
+def test_does_not_loosen_vs_loose_archetype_in_a_multiway_pot(monkeypatch):
+    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    hand = _three_way_flop()
+    hand.apply_action(hand.current_actor(), "check")  # BB (3) checks
+    hand.players[4].hole_cards = ["Ac", "Qd"]
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "check"  # hero also checks (air, multiway suppresses the cbet)
+    hand.apply_action(4, "check")
+    aggressor = hand.current_actor()
+    assert aggressor == 5
+    hand.apply_action(5, "bet", amount=6.0)  # MP (5), a known loose archetype, bets
+    assert hand.current_actor() == 3
+    hand.apply_action(3, "call")  # BB stays live too -- still a genuine 3-way pot
+    assert hand.current_actor() == 4
+    hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair
+    action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Station"})
+    assert action == "fold"  # would call heads-up, but multiway suppresses the loosened bar
+
+
+def test_does_not_cold_call_a_raise_already_called_by_someone_else(monkeypatch):
+    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG opens
+    hand.apply_action(5, "call")  # MP already calls -- forming multiway pot
+    for s in (6, 1, 2):
+        hand.apply_action(s, "fold")
+    bb_seat = hand.current_actor()
+    assert bb_seat == 3
+    hand.players[bb_seat].hole_cards = ["Jd", "Td"]  # JTs -- in the call range, not premium
+    action, _ = choose_abc_action(hand, bb_seat)
+    assert action == "fold"  # would call heads-up (see the non-multiway test above), but not here

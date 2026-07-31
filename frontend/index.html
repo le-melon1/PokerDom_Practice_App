@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>PokerDom Practice</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; background: #07140d; color: #eee; margin: 0; padding: 20px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h2 { text-align: center; margin: 0 0 12px; }
+
+  .turn-banner {
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: bold;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    background: #2a2a2a;
+    color: #aaa;
+    transition: background 0.2s, color 0.2s;
+  }
+  .turn-banner.hero-turn { background: #7a5c00; color: #ffe28a; }
+  .turn-banner.bot-turn { background: #123; color: #9cf; }
+  .turn-banner .dots::after { content: '...'; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0%,20%{content:'';} 40%{content:'.';} 60%{content:'..';} 80%,100%{content:'...';} }
+
+  .table-wrap { position: relative; width: 100%; max-width: 820px; height: 520px; margin: 0 auto; }
+  .oval {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 55% at 50% 38%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0) 60%),
+      repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px),
+      radial-gradient(ellipse at center, #1c7049 0%, #0f4a30 65%, #082a1c 100%);
+    border-radius: 50%;
+    border: 10px solid #5a3a1a;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.55), inset 0 0 12px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .center {
+    position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+    text-align: center; z-index: 2;
+  }
+  .pot {
+    font-size: 1.15em; margin-bottom: 8px; color: #f2fff8; font-weight: 700;
+    letter-spacing: 0.03em; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .pot .street-name { color: #7fe0ac; text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.12em; }
+  .board-row .card { margin: 0 2px; }
+  .board-row .placeholder { color: #6a8; font-size: 0.85em; }
+
+  .dealer-button {
+    position: absolute; z-index: 4; width: 26px; height: 26px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff6d0, #e8c65a 55%, #a9821f 100%);
+    border: 1px solid #7a5c10; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.72em; color: #5a4210; transform: translate(-50%, -50%);
+  }
+
+  .flying-chip {
+    position: absolute; z-index: 6; width: 14px; height: 14px; border-radius: 50%;
+    background: repeating-conic-gradient(#e8c65a 0deg 30deg, #b8860b 30deg 60deg);
+    border: 1px solid #6b4e00; box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    transform: translate(-50%, -50%);
+    transition: left 0.75s cubic-bezier(.3,.6,.4,1), top 0.75s cubic-bezier(.3,.6,.4,1), opacity 0.75s ease-in;
+  }
+  .win-float {
+    position: absolute; z-index: 7; left: 50%; top: 0; transform: translate(-50%, 0);
+    color: #ffe58a; font-weight: 800; font-size: 0.95em; text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+    animation: floatUp 1.6s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes floatUp { 0% { opacity: 0; transform: translate(-50%, 6px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -32px); } }
+  .seat.winner { border-color: #ffd76b; box-shadow: 0 0 0 3px rgba(255,215,107,0.5), 0 0 24px rgba(255,215,107,0.55); }
+
+  .seat {
+    position: absolute;
+    width: 168px;
+    background: rgba(10, 30, 20, 0.92);
+    border: 2px solid #2a6b46;
+    border-radius: 10px;
+    padding: 8px 10px;
+    z-index: 3;
+    transform: translate(-50%, -50%);
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .seat.hero { border-color: #d4a017; }
+  .seat.acting { border-color: #ffd54a; box-shadow: 0 0 0 3px rgba(255, 213, 74, 0.55), 0 0 18px rgba(255, 213, 74, 0.5); animation: pulse 1s ease-in-out infinite alternate; }
+  @keyframes pulse { from { box-shadow: 0 0 0 3px rgba(255,213,74,0.35), 0 0 10px rgba(255,213,74,0.3); } to { box-shadow: 0 0 0 3px rgba(255,213,74,0.75), 0 0 22px rgba(255,213,74,0.6); } }
+  .seat .name { font-weight: bold; font-size: 0.92em; display: flex; align-items: center; gap: 5px; }
+  .seat .stack { color: #9d9; font-size: 0.85em; }
+  .seat .cards { margin-top: 4px; }
+  .card {
+    display: inline-flex; align-items: center; gap: 1px; background: #fff; color: #111;
+    border-radius: 4px; padding: 4px 6px; margin: 1px; font-weight: bold; min-width: 16px;
+    text-align: center; font-size: 0.9em; box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    animation: dealIn 0.22s ease-out;
+  }
+  @keyframes dealIn { from { opacity: 0; transform: translateY(-6px) scale(0.85); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .card.red { color: #c0392b; }
+  .card.black { color: #1a1a2e; }
+  .card.hidden {
+    background: repeating-linear-gradient(135deg, #1e3a5f, #1e3a5f 4px, #24466e 4px, #24466e 8px);
+    color: transparent; border: 1px solid #3a5a82;
+  }
+
+  .avatar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; font-size: 0.68em; font-weight: 800;
+    color: rgba(0,0,0,0.65); flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+  }
+  .style-badge { display:inline-block; font-size: 0.72em; padding: 1px 6px; border-radius: 8px; background: #333; margin-top: 4px; }
+  .dossier-pop {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    background: #111; border: 1px solid #555; padding: 10px; border-radius: 6px;
+    z-index: 10; width: 200px; font-size: 0.82em; display: none; margin-bottom: 6px;
+  }
+  .seat:hover .dossier-pop { display: block; }
+
+  .action-log {
+    max-width: 820px; margin: 10px auto 0; background: rgba(10,30,20,0.7);
+    border: 1px solid #2a6b46; border-radius: 8px; padding: 8px 14px;
+    font-size: 0.85em; color: #cde; max-height: 90px; overflow-y: auto;
+  }
+  .action-log .street-tag { color: #7c9; text-transform: uppercase; font-size: 0.8em; margin-right: 6px; }
+  .action-log .entry { margin-bottom: 2px; }
+  .action-log .fold { color: #d88; }
+  .action-log .raise, .action-log .bet { color: #fd6; font-weight: 600; }
+  .action-log .call { color: #8cf; }
+  .action-log .check { color: #9a9; }
+  .action-log .empty { color: #678; font-style: italic; }
+
+  .last-action {
+    display: inline-block; margin-top: 2px; padding: 1px 8px; border-radius: 10px;
+    font-size: 0.78em; font-weight: 600; background: rgba(0,0,0,0.35); color: #cde;
+  }
+  .last-action.fold, .last-action.folds { background: rgba(150,50,50,0.55); color: #fbb; }
+  .last-action.raise, .last-action.bet, .last-action.raises, .last-action.bets { background: rgba(160,120,20,0.6); color: #fe8; }
+  .last-action.call, .last-action.calls { background: rgba(30,80,130,0.6); color: #adf; }
+  .last-action.check, .last-action.checks { background: rgba(30,90,60,0.55); color: #9d9; }
+  .last-action.small_blind, .last-action.big_blind { background: rgba(60,60,60,0.55); color: #ccc; }
+
+  .controls { text-align: center; margin: 16px 0; min-height: 90px; position: relative; }
+  .actions button { font-size: 1em; padding: 10px 18px; margin: 4px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  .actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #btn-fold { background: #a33; color: #fff; }
+  #btn-check, #btn-call { background: #368; color: #fff; }
+  #btn-raise { background: #a83; color: #fff; }
+
+  .raise-panel { background: #0a1f16; border: 1px solid #2a6; border-radius: 10px; padding: 14px; margin-top: 10px; max-width: 460px; margin-left: auto; margin-right: auto; }
+  .raise-presets { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .raise-presets button { background: #1b3b2a; color: #dfe; border: 1px solid #2a6b46; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 0.88em; }
+  .raise-presets button:hover { background: #2a5b3a; }
+  .raise-slider-row { display: flex; align-items: center; gap: 10px; }
+  .raise-slider-row input[type=range] { flex: 1; }
+  .raise-amount { font-weight: bold; min-width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
+  .raise-confirm-row { text-align: center; margin-top: 10px; }
+  .raise-confirm-row button { padding: 8px 16px; margin: 0 5px; border-radius: 6px; border: none; cursor: pointer; }
+  #raise-confirm { background: #2a8a4a; color: #fff; }
+  #raise-cancel { background: #555; color: #fff; }
+
+  .waiting-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.35); border-radius: 8px; font-size: 0.95em; color: #ffd;
+    display: none;
+  }
+  .waiting-overlay.show { display: flex; }
+
+  .ev-panel { background: #0a1f16; border: 1px solid #2a6; border-radius: 8px; padding: 12px; margin-top: 8px; max-width: 760px; margin-left: auto; margin-right: auto; }
+  .ev-panel select { margin-left: 8px; }
+  .ev-row { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .ev-confidence { margin-top: 6px; font-size: 0.82em; color: #9ac; }
+  .gto-recommendation { margin-top: 10px; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid #2a6b46; }
+  .gto-recommendation .title { font-weight: 700; color: #7fe0ac; margin-bottom: 6px; }
+  .gto-action-list { margin-top: 6px; display: grid; gap: 4px; }
+  .gto-action-item { display: flex; justify-content: space-between; gap: 8px; font-size: 0.88em; color: #dfe; }
+  .gto-action-item .best { color: #ffe28a; font-weight: 700; }
+  .solver-summary { margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.25); border: 1px solid rgba(127,224,172,0.22); }
+  .solver-summary .row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.86em; margin: 3px 0; }
+  .solver-summary .label { color: #9bd; }
+  .solver-summary .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(127,224,172,0.16); color: #7fe0ac; font-size: 0.8em; }
+  .solver-tree { margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(127,224,172,0.18); }
+  .solver-tree .node-title { font-size: 0.84em; color: #7fe0ac; margin-bottom: 4px; }
+  .solver-tree .branch { font-size: 0.82em; color: #dfe; margin: 3px 0; }
+  .solver-tree .principal-line { margin-top: 6px; color: #ffe28a; font-size: 0.82em; line-height: 1.45; }
+  .range-cfr { margin-top: 8px; padding: 8px; border: 1px solid rgba(127,224,172,0.3); background: rgba(0,0,0,0.2); }
+  .range-cfr .range-title { color: #7fe0ac; font-size: 0.84em; margin-bottom: 4px; }
+  .range-cfr .range-row { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82em; margin: 3px 0; }
+  .line-analysis { margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(127,224,172,0.18); }
+  .line-analysis .line-title { font-size: 0.84em; color: #7fe0ac; margin-bottom: 4px; }
+  .line-analysis .line-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; font-size: 0.82em; color: #dfe; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .line-analysis .line-row:last-child { border-bottom: 0; }
+  .line-analysis .line-row.best { color: #ffe28a; }
+  .line-analysis .line-explanation { grid-column: 1 / -1; color: #9ac; font-size: 0.9em; }
+  .result-banner { text-align: center; font-size: 1em; margin-top: 8px; color: #dfe; }
+  .trainer-banner { text-align: center; min-height: 20px; margin-top: 6px; color: #ffe28a; font-size: 0.9em; }
+
+  .history-toggle {
+    display: block; margin: 14px auto 0; background: #14301f; color: #bfe; border: 1px solid #2a6b46;
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 0.85em;
+  }
+  .history-toggle:hover { background: #1c4229; }
+  .history-panel {
+    max-width: 820px; margin: 10px auto 0; background: #0c1a13; border: 1px solid #2a6b46;
+    border-radius: 8px; padding: 10px 14px; display: none; max-height: 560px; overflow-y: auto;
+  }
+  .history-panel.show { display: block; }
+  .history-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 6px 4px; border-bottom: 1px solid #1a3324; cursor: pointer; font-size: 0.88em;
+  }
+  .history-row:hover { background: rgba(255,255,255,0.04); }
+  .history-row .net.pos { color: #7fe0ac; font-weight: 700; }
+  .history-row .net.neg { color: #e88; font-weight: 700; }
+  .history-row .mistakes { color: #f0a; font-size: 0.85em; }
+  .history-detail {
+    background: #081209; border: 1px solid #1a3324; border-radius: 6px; margin: 4px 0 10px; padding: 10px;
+    font-size: 0.85em;
+  }
+  .history-detail .street-block { margin-bottom: 6px; }
+  .history-detail .street-block .street-tag { color: #7c9; text-transform: uppercase; font-size: 0.78em; margin-right: 6px; }
+  .decision-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .decision-row .verdict.mistake { color: #ff8a8a; }
+  .decision-row .verdict.ok { color: #8adf9e; }
+  .decision-row .verdict.neutral { color: #99a; }
+  .rake-total { text-align: center; font-size: 0.8em; color: #789; margin: -6px 0 10px; }
+  .chip-stack {
+    position: absolute; z-index: 3; transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: 5px;
+    background: rgba(10,10,10,0.55); border-radius: 12px;
+    padding: 2px 8px 2px 3px; font-size: 0.78em; color: #f2f2f2; font-weight: 600;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .chip-icon {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    border: 2px dashed rgba(255,255,255,0.65); box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 8px; overflow-x: hidden; }
+    .wrap { width: 100%; overflow: hidden; }
+    .table-wrap { height: 430px; transform: scale(0.78); transform-origin: top center; margin-bottom: -94px; }
+    .center { top: 32%; }
+    .chip-stack { display: none; }
+    .seat { width: 132px; padding: 6px; }
+    .action-log, .ev-panel { width: 100%; }
+    .solver-summary .row, .ev-row { align-items: flex-start; gap: 10px; }
+    .solver-summary .row span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+    .line-analysis .line-row { grid-template-columns: 1fr; }
+    .line-analysis .line-explanation { grid-column: 1; }
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>PokerDom Practice</h2>
+  <div class="rake-total" id="rake-total"></div>
+  <div class="turn-banner" id="turn-banner">—</div>
+
+  <div class="table-wrap">
+    <div class="oval">
+      <div class="center">
+        <div class="pot" id="pot"></div>
+        <div class="board-row" id="board"></div>
+      </div>
+    </div>
+    <div id="seats"></div>
+  </div>
+
+  <div class="action-log" id="action-log"></div>
+
+  <div class="controls">
+    <div class="waiting-overlay" id="waiting-overlay"><span>Боты думают<span class="dots"></span></span></div>
+    <div class="actions" id="actions"></div>
+    <div id="raise-panel-holder"></div>
+    <div class="result-banner" id="result-banner"></div>
+    <div class="trainer-banner" id="trainer-banner"></div>
+  </div>
+
+  <div class="ev-panel" id="ev-panel" style="display:none">
+    <div><b>Live EV</b>
+      <select id="archetype-select" onchange="refreshEV()">
+        <option value="">Авто (по статам этой сессии)</option>
+        <option value="__force_hypothesis__" disabled>── или проверить гипотезу: ──</option>
+        <option value="Nit">Nit</option>
+        <option value="TAG">TAG</option>
+        <option value="LAG">LAG</option>
+        <option value="Loose-passive">Loose-passive</option>
+        <option value="Station">Station</option>
+        <option value="Maniac">Maniac</option>
+      </select>
+    </div>
+    <div id="ev-content"></div>
+  </div>
+
+  <button class="history-toggle" id="history-toggle" onclick="toggleHistory()">История раздач ▾</button>
+  <div class="history-panel" id="history-panel"></div>
+</div>
+
+<script>
+const API = "";
+let busy = false;
+let lastState = null;
+let evRequestSequence = 0;
+
+async function api(path, opts) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) { const t = await res.text(); throw new Error(t); }
+  return res.json();
+}
+
+function setBusy(isBusy) {
+  busy = isBusy;
+  document.getElementById("waiting-overlay").classList.toggle("show", isBusy);
+  document.querySelectorAll(".actions button, .raise-presets button, #raise-confirm").forEach(b => b.disabled = isBusy);
+}
+
+async function startTable() {
+  await api("/api/table/start", { method: "POST" });
+  await newHand();
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// After it's a bot's turn, reveal their actions one at a time (think, then
+// act, then re-render) instead of resolving the whole round silently and
+// dumping every action on the client at once.
+async function driveBotsIfNeeded() {
+  while (lastState && !lastState.finished && lastState.current_actor !== lastState.hero_seat && lastState.current_actor != null) {
+    const actor = lastState.players.find(p => p.seat === lastState.current_actor);
+    const banner = document.getElementById("turn-banner");
+    banner.innerHTML = `Ходит: ${actor ? actor.name : "бот"}<span class="dots"></span>`;
+    banner.className = "turn-banner bot-turn";
+
+    const result = await api("/api/bots/step", { method: "POST" });
+    await sleep((result.think_time || 0) * 1000);
+    render(result);
+  }
+}
+
+async function newHand() {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const s = await api("/api/hand/new", { method: "POST" });
+    render(s);
+    await driveBotsIfNeeded();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function act(action, amount) {
+  if (busy) return;
+  setBusy(true);
+  closeRaisePanel();
+  try {
+    const s = await api("/api/hand/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, amount }),
+    });
+    render(s);
+    if (s.trainer_feedback) {
+      const feedback = document.getElementById("trainer-banner");
+      const recommendedSize = s.trainer_feedback.solver_amount != null ? ` ${s.trainer_feedback.solver_amount.toFixed(2)}bb` : "";
+      feedback.textContent = `${s.trainer_feedback.verdict}${s.trainer_feedback.solver_action ? ` · ${s.trainer_feedback.solver_action}${recommendedSize}` : ""}`;
+      setTimeout(() => { feedback.textContent = ""; }, 5000);
+    }
+    await driveBotsIfNeeded();
+  } catch (e) {
+    console.error("action failed", e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ---- seat layout: hero always at the bottom, others arranged clockwise around the oval ----
+function seatPosition(relIndex, n) {
+  const angleDeg = 90 + relIndex * (360 / n);
+  const rad = angleDeg * Math.PI / 180;
+  const rx = 40, ry = 40; // percent of table-wrap
+  const x = 50 + rx * Math.cos(rad);
+  const y = 50 + ry * Math.sin(rad);
+  return { left: `${x}%`, top: `${y}%` };
+}
+
+// Chips sit between each seat and the pot -- same angle as the seat, smaller radius.
+function chipPosition(relIndex, n) {
+  const angleDeg = 90 + relIndex * (360 / n);
+  const rad = angleDeg * Math.PI / 180;
+  const rx = 24, ry = 24;
+  const x = 50 + rx * Math.cos(rad);
+  const y = 50 + ry * Math.sin(rad);
+  return { left: `${x}%`, top: `${y}%` };
+}
+
+// Dealer button sits a bit further out than the chips, same angle, so the two never overlap.
+function dealerButtonPosition(relIndex, n) {
+  const angleDeg = 90 + relIndex * (360 / n);
+  const rad = angleDeg * Math.PI / 180;
+  const rx = 31, ry = 31;
+  const x = 50 + rx * Math.cos(rad);
+  const y = 50 + ry * Math.sin(rad);
+  return { left: `${x}%`, top: `${y}%` };
+}
+
+const SUIT_SYMBOL = { h: "♥", d: "♦", c: "♣", s: "♠" };
+const STREET_LABEL = { preflop: "префлоп", flop: "флоп", turn: "тёрн", river: "ривер" };
+const ACTION_LABEL = {
+  fold: "фолд", check: "чек", call: "колл", bet: "бет", raise: "рейз",
+  "all-in": "олл-ин", allin: "олл-ин", small_blind: "SB", big_blind: "BB",
+};
+
+// Colors the avatar by the session DOSSIER's estimated style (never the
+// ground-truth archetype -- that would leak hidden information the real UI
+// is careful to avoid, see _visible_hole_cards on the backend).
+const ARCHETYPE_COLOR = {
+  Nit: "#7f8c9a", TAG: "#4a90d9", LAG: "#e08a4a",
+  "Loose-passive": "#4fbf8f", Station: "#e0c14a", Maniac: "#e0567a",
+};
+
+function chipColor(amount) {
+  if (amount < 5) return "#e9e9e9";
+  if (amount < 20) return "#d1453b";
+  if (amount < 50) return "#3a9b5c";
+  if (amount < 100) return "#3c6fd6";
+  return "#2a2a33";
+}
+
+function renderCard(c) {
+  if (!c || c === "??") return `<span class="card hidden">🂠</span>`;
+  const rank = c.slice(0, -1).toUpperCase();
+  const suitChar = c.slice(-1).toLowerCase();
+  const suit = SUIT_SYMBOL[suitChar] || suitChar;
+  const colorClass = (suitChar === "h" || suitChar === "d") ? "red" : "black";
+  return `<span class="card ${colorClass}">${rank}${suit}</span>`;
+}
+
+function render(s) {
+  evRequestSequence += 1;
+  lastState = s;
+  document.getElementById("pot").innerHTML = `Банк: ${s.pot.toFixed(2)}bb  ·  <span class="street-name">${STREET_LABEL[s.street] || s.street || "-"}</span>`;
+  document.getElementById("rake-total").textContent = `Рейк за столом: ${(s.total_rake_collected || 0).toFixed(2)}bb (5%, кап 5bb, no flop no drop)`;
+  document.getElementById("board").innerHTML = (s.board || []).map(renderCard).join("")
+    || `<span class="placeholder">(борд ещё не открыт)</span>`;
+
+  const logEl = document.getElementById("action-log");
+  const log = s.action_log || [];
+  if (log.length === 0) {
+    logEl.innerHTML = `<span class="empty">Раздача только началась — ходов ещё не было.</span>`;
+  } else {
+    let lastStreet = null;
+    const parts = [];
+    log.forEach(a => {
+      if (a.street !== lastStreet) {
+        parts.push(`<div class="entry"><span class="street-tag">${STREET_LABEL[a.street] || a.street}</span></div>`);
+        lastStreet = a.street;
+      }
+      const label = ACTION_LABEL[a.action] || a.action;
+      const amountTxt = a.amount != null ? ` ${a.amount.toFixed(2)}bb` : "";
+      parts.push(`<div class="entry"><b>${a.name}</b>: <span class="${a.action}">${label}${amountTxt}</span></div>`);
+    });
+    logEl.innerHTML = parts.join("");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const lastActionBySeat = {};
+  log.forEach(a => {
+    if (a.street === s.street) lastActionBySeat[a.seat] = a;
+  });
+
+  const n = s.players.length;
+  const seatsEl = document.getElementById("seats");
+  seatsEl.innerHTML = "";
+  s.players.forEach(p => {
+    const relIndex = ((p.seat - s.hero_seat) % n + n) % n;
+    const pos = seatPosition(relIndex, n);
+    const div = document.createElement("div");
+    div.className = "seat" + (p.seat === s.hero_seat ? " hero" : "") + (p.seat === s.current_actor ? " acting" : "");
+    div.style.left = pos.left;
+    div.style.top = pos.top;
+    const cards = (p.hole_cards || []).map(renderCard).join("");
+    const d = p.dossier;
+    const la = lastActionBySeat[p.seat];
+    const actionBadge = (!p.folded && la)
+      ? `<div class="last-action ${la.action}">${ACTION_LABEL[la.action] || la.action}${la.amount != null ? " " + la.amount.toFixed(2) + "bb" : ""}</div>`
+      : "";
+    const avatarColor = d ? ARCHETYPE_COLOR[d.style] || "#556" : "#445";
+    const avatarLetter = d ? d.style[0] : p.name[0];
+    div.innerHTML = `
+      <div class="name"><span class="avatar" style="background:${avatarColor}">${avatarLetter}</span>${p.name}</div>
+      <div class="stack">${p.stack.toFixed(2)}bb ${p.folded ? "· фолд" : ""} ${p.sitting_out ? "· вне игры" : ""}</div>
+      ${actionBadge}
+      <div class="cards">${cards}</div>
+      ${d ? `<span class="style-badge">${d.style} (${d.hands})</span>` : ""}
+      ${d ? `<div class="dossier-pop">
+        VPIP: ${(d.vpip * 100).toFixed(0)}%<br>
+        PFR: ${(d.pfr * 100).toFixed(0)}%<br>
+        3-bet: ${(d.threebet * 100).toFixed(0)}%<br>
+        AFq: ${(d.afq * 100).toFixed(0)}%<br>
+        Рук: ${d.hands}<br>
+        Выигрыш: ${d.net_won.toFixed(2)}bb
+      </div>` : ""}
+    `;
+    if (s.result && s.result.payouts && s.result.payouts[p.seat] > 0) {
+      div.classList.add("winner");
+      const win = document.createElement("div");
+      win.className = "win-float";
+      win.textContent = `+${s.result.payouts[p.seat].toFixed(2)}bb`;
+      div.appendChild(win);
+    }
+    seatsEl.appendChild(div);
+
+    if (p.seat === s.button_seat) {
+      const btnPos = dealerButtonPosition(relIndex, n);
+      const dealerBtn = document.createElement("div");
+      dealerBtn.className = "dealer-button";
+      dealerBtn.style.left = btnPos.left;
+      dealerBtn.style.top = btnPos.top;
+      dealerBtn.textContent = "D";
+      seatsEl.appendChild(dealerBtn);
+    }
+
+    if (p.bet > 0) {
+      const chipPos = chipPosition(relIndex, n);
+      const chip = document.createElement("div");
+      chip.className = "chip-stack";
+      chip.style.left = chipPos.left;
+      chip.style.top = chipPos.top;
+      chip.innerHTML = `<span class="chip-icon" style="background:${chipColor(p.bet)}"></span>${p.bet.toFixed(2)}bb`;
+      seatsEl.appendChild(chip);
+    }
+  });
+
+  if (s.finished && s.result && s.result.payouts) {
+    const winnerSeats = Object.keys(s.result.payouts).map(Number).filter(seat => s.result.payouts[seat] > 0);
+    winnerSeats.forEach(seat => {
+      const relIndex = ((seat - s.hero_seat) % n + n) % n;
+      const target = seatPosition(relIndex, n);
+      for (let i = 0; i < 4; i++) {
+        setTimeout(() => {
+          const chip = document.createElement("div");
+          chip.className = "flying-chip";
+          chip.style.left = "50%";
+          chip.style.top = "42%";
+          seatsEl.appendChild(chip);
+          requestAnimationFrame(() => {
+            chip.style.left = target.left;
+            chip.style.top = target.top;
+            chip.style.opacity = "0";
+          });
+        }, i * 90);
+      }
+    });
+  }
+
+  const banner = document.getElementById("turn-banner");
+  const actionsEl = document.getElementById("actions");
+  const evPanel = document.getElementById("ev-panel");
+  const resultBanner = document.getElementById("result-banner");
+  closeRaisePanel();
+
+  if (s.finished) {
+    banner.textContent = "Раздача завершена";
+    banner.className = "turn-banner";
+    actionsEl.innerHTML = "";
+    evPanel.style.display = "none";
+    if (s.result) {
+      const names = Object.entries(s.result.payouts).map(([seat, amt]) => {
+        const p = s.players.find(pl => pl.seat === Number(seat));
+        return `${p ? p.name : "seat " + seat}: +${amt.toFixed(2)}bb`;
+      });
+      resultBanner.textContent = names.join(", ") + (s.result.rake ? `  ·  рейк: ${s.result.rake.toFixed(2)}bb` : "");
+    } else {
+      resultBanner.textContent = "";
+    }
+    setTimeout(() => { resultBanner.textContent = ""; newHand(); }, 2500);
+    refreshHistoryIfOpen();
+  } else if (s.legal_actions) {
+    banner.textContent = "Ваш ход";
+    banner.className = "turn-banner hero-turn";
+    const la = s.legal_actions;
+    let html = `<button id="btn-fold" onclick="act('fold')">Фолд</button>`;
+    html += la.can_check
+      ? `<button id="btn-check" onclick="act('check')">Чек</button>`
+      : `<button id="btn-call" onclick="act('call')">Колл ${la.call_amount.toFixed(2)}</button>`;
+    html += `<button id="btn-raise" onclick="openRaisePanel(${la.min_raise_to}, ${la.max_raise_to})">Рейз/Бет</button>`;
+    actionsEl.innerHTML = html;
+    evPanel.style.display = "block";
+    refreshEV();
+  } else {
+    const actorName = (s.players.find(p => p.seat === s.current_actor) || {}).name || "бот";
+    banner.innerHTML = `Ходит: ${actorName}<span class="dots"></span>`;
+    banner.className = "turn-banner bot-turn";
+    actionsEl.innerHTML = "";
+    evPanel.style.display = "none";
+  }
+}
+
+// ---- raise panel: presets + slider, like a real client ----
+function openRaisePanel(minTo, maxTo) {
+  const s = lastState;
+  const pot = s.pot;
+  const presets = [
+    { label: "Мин", amount: minTo },
+    { label: "1/2 банка", amount: s.legal_actions.call_amount + 0.5 * pot },
+    { label: "Банк", amount: s.legal_actions.call_amount + pot },
+    { label: "Олл-ин", amount: maxTo },
+  ].map(p => ({ ...p, amount: Math.max(minTo, Math.min(maxTo, p.amount)) }));
+
+  const holder = document.getElementById("raise-panel-holder");
+  holder.innerHTML = `
+    <div class="raise-panel" id="raise-panel">
+      <div class="raise-presets">
+        ${presets.map(p => `<button onclick="setRaiseAmount(${p.amount})">${p.label} (${p.amount.toFixed(2)})</button>`).join("")}
+      </div>
+      <div class="raise-slider-row">
+        <input type="range" id="raise-slider" min="${minTo}" max="${maxTo}" step="0.01" value="${minTo}"
+          oninput="document.getElementById('raise-amount-display').textContent = parseFloat(this.value).toFixed(2) + 'bb'">
+        <span class="raise-amount" id="raise-amount-display">${minTo.toFixed(2)}bb</span>
+      </div>
+      <div class="raise-confirm-row">
+        <button id="raise-confirm" onclick="confirmRaise()">Подтвердить рейз</button>
+        <button id="raise-cancel" onclick="closeRaisePanel()">Отмена</button>
+      </div>
+    </div>
+  `;
+}
+
+function setRaiseAmount(amount) {
+  const slider = document.getElementById("raise-slider");
+  if (!slider) return;
+  slider.value = amount;
+  document.getElementById("raise-amount-display").textContent = amount.toFixed(2) + "bb";
+}
+
+function confirmRaise() {
+  const slider = document.getElementById("raise-slider");
+  if (!slider) return;
+  act("raise", parseFloat(slider.value));
+}
+
+function closeRaisePanel() {
+  const holder = document.getElementById("raise-panel-holder");
+  if (holder) holder.innerHTML = "";
+}
+
+async function refreshEV() {
+  const requestId = ++evRequestSequence;
+  const stateSignature = lastState
+    ? `${lastState.street}|${lastState.current_actor}|${(lastState.board || []).join(",")}|${lastState.pot}`
+    : "";
+  const archetype = document.getElementById("archetype-select").value;
+  const ev = await api(`/api/live_ev${archetype ? "?opponent_archetype=" + archetype : ""}`);
+  const currentSignature = lastState
+    ? `${lastState.street}|${lastState.current_actor}|${(lastState.board || []).join(",")}|${lastState.pot}`
+    : "";
+  if (requestId !== evRequestSequence || stateSignature !== currentSignature) return;
+  const el = document.getElementById("ev-content");
+  const rec = ev.recommendation || {};
+  const solverSummary = rec.solver_summary || {};
+  const actionList = (rec.action_evs || []).map(item => {
+    const label = item.action === "raise" ? "рейз" : item.action === "call" ? "колл" : item.action === "check" ? "чек" : item.action === "fold" ? "фолд" : item.action;
+    const amount = item.amount != null ? ` ${item.amount.toFixed(2)}bb` : "";
+    const evTxt = item.ev != null ? `${item.ev.toFixed(3)}bb` : "-";
+    const sameAmount = (item.amount == null && rec.recommended_amount == null)
+      || (item.amount != null && rec.recommended_amount != null && Math.abs(item.amount - rec.recommended_amount) < 0.01);
+    const isBest = item.action === rec.recommended_action && sameAmount;
+    return `<div class="gto-action-item ${isBest ? "best" : ""}"><span>${isBest ? "★ " : ""}${label}${amount}</span><span>${evTxt}</span></div>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="ev-row"><span>Эквити vs диапазон</span><span>${ev.equity_vs_range !== null ? (ev.equity_vs_range * 100).toFixed(1) + "%" : "-"}</span></div>
+    <div class="ev-row"><span>Нужно для безубытка</span><span>${ev.breakeven_equity !== null ? (ev.breakeven_equity * 100).toFixed(1) + "%" : "-"}</span></div>
+    <div class="ev-row"><span>EV колла</span><span>${ev.ev_call !== null ? ev.ev_call.toFixed(3) + "bb" : "-"}</span></div>
+    <div class="gto-recommendation">
+      <div class="title">GTO recommendation</div>
+      <div><b>${rec.recommended_action ? (rec.recommended_action === "raise" ? "Рейз" : rec.recommended_action === "call" ? "Колл" : rec.recommended_action === "check" ? "Чек" : rec.recommended_action === "fold" ? "Фолд" : rec.recommended_action) : "-"}</b>${rec.recommended_amount != null ? ` → ${rec.recommended_amount.toFixed(2)}bb` : ""}</div>
+      <div style="margin-top:4px"><i>${ev.verdict}</i></div>
+      ${rec.gto_equilibrium && !solverSummary.range_cfr ? `<div style="margin-top:6px;font-size:0.84em;color:#9ce">GTO mix: hero ${rec.gto_equilibrium.hero_probs?.map((p,i)=>`${i===0?"A":"B"} ${(p*100).toFixed(0)}%`).join(" / ")}, villain ${rec.gto_equilibrium.villain_probs?.map((p,i)=>`${i===0?"A":"B"} ${(p*100).toFixed(0)}%`).join(" / ")}</div>` : ""}
+      <div class="solver-summary">
+        <div class="row"><span class="label">Solver panel</span><span class="pill">${solverSummary.recommended_action || rec.recommended_action || "-"}</span></div>
+        <div class="row"><span class="label">Best EV</span><span>${solverSummary.best_ev != null ? solverSummary.best_ev.toFixed(3) + "bb" : "-"}</span></div>
+        <div class="row"><span class="label">Action weights</span><span>${solverSummary.action_weights ? Object.entries(solverSummary.action_weights).map(([k,v]) => `${k}: ${(v*100).toFixed(0)}%`).join(" · ") : "-"}</span></div>
+        <div class="row"><span class="label">Tree</span><span>${solverSummary.range_cfr ? `${solverSummary.range_cfr.start_street} range CFR${solverSummary.range_cfr.start_street === "river" ? " · exact showdown" : ""}` : ((solverSummary.tree || []).length ? "projected through river" : "current street")}</span></div>
+      </div>
+      ${!solverSummary.range_cfr && rec.gto_equilibrium && rec.gto_equilibrium.tree ? `<div class="solver-tree">${rec.gto_equilibrium.tree.map(node => `<div><div class="node-title">${node.street || "street"} · ${node.summary || ""}</div>${(node.branches || []).map(branch => `<div class="branch">• ${branch.action}${branch.amount != null ? ` @ ${branch.amount.toFixed(2)}bb` : ""} — EV ${branch.ev.toFixed(3)}bb · ${branch.description}</div>`).join("")}<div class="principal-line">Projected line: ${(node.principal_variation || []).map(step => `${step.street} ${step.action}${step.amount != null ? ` ${step.amount.toFixed(2)}bb` : ""}`).join(" → ")}</div></div>`).join("")}</div>` : ""}
+      ${solverSummary.range_cfr ? `<div class="range-cfr"><div class="range-title">Range CFR · ${solverSummary.range_cfr.start_street} · ${solverSummary.range_cfr.root_mode === "facing_bet" ? "facing bet" : "checked to"} · ${solverSummary.range_cfr.focus_bucket || "range"} bucket</div><div class="range-row"><span>Actual-hand mix</span><span>${Object.entries(solverSummary.range_cfr.focus_strategy || solverSummary.range_cfr.root_strategy).map(([action, probability]) => `${action} ${(probability * 100).toFixed(0)}%`).join(" · ")}</span></div>${solverSummary.range_cfr.root_mode === "facing_bet" ? `<div class="range-row"><span>Price / raises</span><span>${solverSummary.range_cfr.to_call.toFixed(2)}bb / ${["raise_min", "raise_75", "raise_all_in"].map(action => solverSummary.range_cfr.action_amounts[action].toFixed(2)).join(" · ")}bb</span></div><div class="range-row"><span>Villain vs raise</span><span>${solverSummary.range_cfr.villain_response_actions.join(" · ")}</span></div>` : ""}<div class="range-row"><span>Ranges</span><span>${solverSummary.range_cfr.range_summary.hero_combos} vs ${solverSummary.range_cfr.range_summary.villain_combos} combos</span></div><div class="range-row"><span>Chance samples</span><span>${solverSummary.range_cfr.chance_nodes.sampled_turn_cards} turns · ${solverSummary.range_cfr.chance_nodes.sampled_river_cards} rivers</span></div><div class="range-row"><span>Cache</span><span>${ev.response_cache_hit ? "response hit" : (solverSummary.range_cfr.cache_hit ? "solver hit" : "fresh solve")}</span></div><div class="principal-line">CFR line: ${solverSummary.range_cfr.principal_variation.map(step => `${step.street} ${step.action}`).join(" → ")}</div></div>` : ""}
+      ${solverSummary.line_analysis && solverSummary.line_analysis.length ? `<div class="line-analysis"><div class="line-title">Line analysis</div>${solverSummary.line_analysis.map(line => `<div class="line-row ${line.is_best ? "best" : ""}"><span>#${line.rank} ${line.label || line.action}</span><span>EV ${line.ev.toFixed(3)}bb · ${(line.weight * 100).toFixed(0)}%</span><span class="line-explanation">${line.is_best ? "Best line" : `EV loss ${line.ev_loss.toFixed(3)}bb`}${line.explanation ? ` · ${line.explanation}` : ""}</span></div>`).join("")}</div>` : ""}
+      <div class="action-list gto-action-list">${actionList || "<div class='gto-action-item'>нет доступных действий</div>"}</div>
+    </div>
+    ${ev.confidence_note ? `<div class="ev-confidence">уверенность: ${(ev.confidence * 100).toFixed(0)}% — ${ev.confidence_note}</div>` : ""}
+  `;
+}
+
+// ---- hand history: list of past hands + per-decision EV grading ----
+let historyOpen = false;
+let expandedHandNumber = null;
+
+async function toggleHistory() {
+  historyOpen = !historyOpen;
+  const panel = document.getElementById("history-panel");
+  const toggleBtn = document.getElementById("history-toggle");
+  panel.classList.toggle("show", historyOpen);
+  toggleBtn.textContent = historyOpen ? "История раздач ▴" : "История раздач ▾";
+  if (historyOpen) await loadHistoryList();
+}
+
+async function refreshHistoryIfOpen() {
+  if (historyOpen) await loadHistoryList();
+}
+
+async function loadHistoryList() {
+  const data = await api("/api/hand_history?limit=50");
+  const panel = document.getElementById("history-panel");
+  if (data.hands.length === 0) {
+    panel.innerHTML = `<div class="empty">Сыгранных раздач пока нет.</div>`;
+    return;
+  }
+  panel.innerHTML = data.hands.map(h => {
+    const netClass = h.hero_net > 0 ? "pos" : (h.hero_net < 0 ? "neg" : "");
+    const netSign = h.hero_net > 0 ? "+" : "";
+    const boardTxt = (h.final_board || []).map(renderCard).join("") || "<span class=\"placeholder\">preflop</span>";
+    return `
+      <div class="history-row" onclick="viewHandDetail(${h.hand_number})">
+        <span>#${h.hand_number}</span>
+        <span>${boardTxt}</span>
+        <span class="net ${netClass}">${netSign}${h.hero_net.toFixed(2)}bb</span>
+        <span class="mistakes">${h.mistake_count > 0 ? "⚠ " + h.mistake_count : ""}</span>
+      </div>
+      <div class="history-detail" id="history-detail-${h.hand_number}" style="display:none"></div>
+    `;
+  }).join("");
+
+  if (expandedHandNumber !== null) await viewHandDetail(expandedHandNumber, true);
+}
+
+async function viewHandDetail(handNumber, forceOpen) {
+  const detailEl = document.getElementById(`history-detail-${handNumber}`);
+  if (!detailEl) return;
+  const isOpen = detailEl.style.display !== "none";
+  if (isOpen && !forceOpen) {
+    detailEl.style.display = "none";
+    expandedHandNumber = null;
+    return;
+  }
+  const d = await api(`/api/hand_history/${handNumber}`);
+  const heroCards = (d.hero_cards || []).map(renderCard).join("");
+  const boardCards = (d.final_board || []).map(renderCard).join("") || `<span class="placeholder">(без флопа)</span>`;
+
+  let lastStreet = null;
+  const logHtml = d.action_log.map(a => {
+    let streetTag = "";
+    if (a.street !== lastStreet) {
+      streetTag = `<div class="street-block"><span class="street-tag">${STREET_LABEL[a.street] || a.street}</span></div>`;
+      lastStreet = a.street;
+    }
+    const label = ACTION_LABEL[a.action] || a.action;
+    return `${streetTag}<div>${a.name}: ${label}${a.amount != null ? " " + a.amount.toFixed(2) + "bb" : ""}</div>`;
+  }).join("");
+
+  const decisionsHtml = d.decisions.map(dec => {
+    const cls = dec.is_mistake ? "mistake" : (dec.action === "check" ? "neutral" : "ok");
+    return `<div class="decision-row">
+      <span>${STREET_LABEL[dec.street] || dec.street}: ${ACTION_LABEL[dec.action] || dec.action}${dec.amount != null ? " " + dec.amount.toFixed(2) + "bb" : ""}</span>
+      <span class="verdict ${cls}">${dec.verdict}${dec.trainer_grade && dec.trainer_grade !== "ungraded" ? ` · ${dec.trainer_grade}` : ""}</span>
+    </div>`;
+  }).join("") || `<div class="empty">Решений героя не было (сфолдили другие / раздача прошла без вас).</div>`;
+
+  detailEl.innerHTML = `
+    <div>Ваши карты: ${heroCards || "-"} &nbsp; Борд: ${boardCards}</div>
+    <div style="margin-top:6px">${logHtml}</div>
+    <div style="margin-top:8px; border-top:1px solid #1a3324; padding-top:6px"><b>Разбор ваших решений (vs EV):</b>${decisionsHtml}</div>
+  `;
+  detailEl.style.display = "block";
+  expandedHandNumber = handNumber;
+}
+
+async function bootTable() {
+  try {
+    const state = await api("/api/state");
+    render(state);
+    await driveBotsIfNeeded();
+  } catch (error) {
+    await startTable();
+  }
+}
+
+bootTable();
+</script>
+</body>
+</html>
