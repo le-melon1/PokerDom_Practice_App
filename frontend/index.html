@@ -235,6 +235,68 @@
     border: 2px dashed rgba(255,255,255,0.65); box-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
+  .playbook-wrap {
+    max-width: 820px;
+    margin: 14px auto 0;
+    background: linear-gradient(160deg, rgba(12,30,22,0.95), rgba(10,20,16,0.9));
+    border: 1px solid #2a6b46;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .playbook-head {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(127,224,172,0.25);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .playbook-head .title {
+    font-weight: 700;
+    color: #7fe0ac;
+    letter-spacing: 0.02em;
+  }
+  .playbook-head .subtitle {
+    font-size: 0.82em;
+    color: #9ac;
+  }
+  .playbook-grid {
+    padding: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .playbook-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(127,224,172,0.2);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .playbook-card h4 {
+    margin: 0 0 6px;
+    font-size: 0.9em;
+    color: #ffe28a;
+  }
+  .playbook-card ul {
+    margin: 0;
+    padding-left: 16px;
+    color: #dfe;
+    font-size: 0.83em;
+    line-height: 1.45;
+  }
+  .playbook-card li { margin-bottom: 4px; }
+  .playbook-card .tag {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 0.75em;
+    color: #9ac;
+    background: rgba(127,224,172,0.12);
+    border: 1px solid rgba(127,224,172,0.25);
+    border-radius: 999px;
+    padding: 1px 8px;
+  }
+
   @media (max-width: 600px) {
     body { padding: 8px; overflow-x: hidden; }
     .wrap { width: 100%; overflow: hidden; }
@@ -247,6 +309,7 @@
     .solver-summary .row span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
     .line-analysis .line-row { grid-template-columns: 1fr; }
     .line-analysis .line-explanation { grid-column: 1; }
+    .playbook-grid { grid-template-columns: 1fr; }
   }
 
 </style>
@@ -275,6 +338,11 @@
     <div id="raise-panel-holder"></div>
     <div class="result-banner" id="result-banner"></div>
     <div class="trainer-banner" id="trainer-banner"></div>
+    <div class="ev-panel" id="session-summary" style="margin-top:10px; display:none"></div>
+    <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
+      <button class="history-toggle" id="new-hand-btn" onclick="startFreshHand()">Новая раздача</button>
+      <button class="history-toggle" id="reset-table-btn" onclick="resetTable()">Сбросить стол</button>
+    </div>
   </div>
 
   <div class="ev-panel" id="ev-panel" style="display:none">
@@ -295,6 +363,58 @@
 
   <button class="history-toggle" id="history-toggle" onclick="toggleHistory()">История раздач ▾</button>
   <div class="history-panel" id="history-panel"></div>
+
+  <div class="playbook-wrap">
+    <div class="playbook-head">
+      <div class="title">Playbook: как играть в этой версии</div>
+      <div class="subtitle">Под реальную логику EV/solver/dossier, не общий покерный учебник</div>
+    </div>
+    <div class="playbook-grid">
+      <div class="playbook-card">
+        <h4>Простая стратегия (старт)</h4>
+        <ul>
+          <li>Если EV колла отрицательный, чаще фолд.</li>
+          <li>При низкой уверенности играй осторожнее: чек/колл лучше тонких рейзов.</li>
+          <li>В мультивее не раздувай банк без сильного value.</li>
+          <li>Проверяй 2 режима: авто и archetype-гипотезу.</li>
+        </ul>
+        <span class="tag">Лучше всего для стабильной игры</span>
+      </div>
+
+      <div class="playbook-card">
+        <h4>Сложная стратегия (продвинуто)</h4>
+        <ul>
+          <li>Heads-up постфлоп: доверяй solver-линии сильнее.</li>
+          <li>Сравнивай top-2 действия: если EV близки, снижай дисперсию.</li>
+          <li>Эксплойт по стилю: Nit/TAG дави чаще, Maniac/LAG чаще bluff-catch.</li>
+          <li>Смотри повторяющиеся ошибки в истории и убирай их первыми.</li>
+        </ul>
+        <span class="tag">Максимум EV на дистанции</span>
+      </div>
+
+      <div class="playbook-card">
+        <h4>Что работает лучше всего</h4>
+        <ul>
+          <li>Дисциплина против -EV коллов.</li>
+          <li>Value-ставки против пассивных профилей.</li>
+          <li>Контроль банка в спорных спотах.</li>
+          <li>Адаптация к confidence-note и текущему стилю оппа.</li>
+        </ul>
+        <span class="tag">Основные источники выигрыша</span>
+      </div>
+
+      <div class="playbook-card">
+        <h4>Ограничения модели (важно)</h4>
+        <ul>
+          <li>Мультивей оценивается упрощённо, не как полный solve.</li>
+          <li>Префлоп менее точный, чем HU постфлоп.</li>
+          <li>Dossier усиливается с числом рук; в начале больше популяционный read.</li>
+          <li>Тренер оценивает против внутренней модели, а не абсолютной истины.</li>
+        </ul>
+        <span class="tag">Условия применения советов</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -318,6 +438,28 @@ function setBusy(isBusy) {
 async function startTable() {
   await api("/api/table/start", { method: "POST" });
   await newHand();
+}
+
+async function resetTable() {
+  if (busy) return;
+  setBusy(true);
+  try {
+    await api("/api/table/reset", { method: "POST" });
+    await newHand();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function startFreshHand() {
+  if (busy) return;
+  setBusy(true);
+  try {
+    await api("/api/hand/new", { method: "POST" });
+    await newHand();
+  } finally {
+    setBusy(false);
+  }
 }
 
 function sleep(ms) {
@@ -561,7 +703,19 @@ function render(s) {
   const actionsEl = document.getElementById("actions");
   const evPanel = document.getElementById("ev-panel");
   const resultBanner = document.getElementById("result-banner");
+  const sessionSummaryEl = document.getElementById("session-summary");
   closeRaisePanel();
+
+  if (sessionSummaryEl) {
+    const summary = s.session_summary || {};
+    sessionSummaryEl.style.display = "block";
+    sessionSummaryEl.innerHTML = `
+      <div class="ev-row"><span>Раздач за сессию</span><span>${summary.hands_played ?? 0}</span></div>
+      <div class="ev-row"><span>Чистый результат</span><span>${summary.hero_net != null ? `${summary.hero_net.toFixed(2)}bb` : "0.00bb"}</span></div>
+      <div class="ev-row"><span>Ошибок</span><span>${summary.mistake_count ?? 0}</span></div>
+      <div class="ev-row"><span>Текущий стиль</span><span>${summary.recent_style || "—"}</span></div>
+    `;
+  }
 
   if (s.finished) {
     banner.textContent = "Раздача завершена";

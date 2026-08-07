@@ -256,6 +256,15 @@ def _serialize_state(reveal_hero_cards: bool = True) -> dict:
                 }
             )
 
+    session_summary = {
+        "hands_played": state["hand_number"],
+        "hero_net": round(sum(entry.hero_net for entry in state["hand_history"].entries) if state["hand_history"] else 0.0, 2),
+        "mistake_count": sum(entry.mistake_count for entry in state["hand_history"].entries) if state["hand_history"] else 0,
+        "recent_style": None,
+    }
+    if state["dossier"] and state["dossier"].by_seat.get(HERO_SEAT):
+        session_summary["recent_style"] = state["dossier"].by_seat[HERO_SEAT].style
+
     return {
         "button_seat": table.button_seat,
         "street": hand.street if hand else None,
@@ -269,11 +278,19 @@ def _serialize_state(reveal_hero_cards: bool = True) -> dict:
         "players": players,
         "action_log": action_log,
         "total_rake_collected": round(table.total_rake_collected, 2),
+        "session_summary": session_summary,
     }
 
 
 @app.post("/api/table/start")
 def start_table(max_seats: int = 6, starting_stack: float = 200.0):
+    _new_table(max_seats=max_seats, starting_stack=starting_stack)
+    _save_state()
+    return {"ok": True}
+
+
+@app.post("/api/table/reset")
+def reset_table(max_seats: int = 6, starting_stack: float = 200.0):
     _new_table(max_seats=max_seats, starting_stack=starting_stack)
     _save_state()
     return {"ok": True}
