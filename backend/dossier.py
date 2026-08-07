@@ -14,6 +14,7 @@ this project.
 
 from dataclasses import dataclass, field
 
+from backend.bots.behavior_clone import _POSITION_LABELS
 from backend.engine.hand import Hand
 
 
@@ -41,6 +42,10 @@ class SeatDossier:
     aggressive_postflop: int = 0
     passive_postflop: int = 0
     net_won: float = 0.0
+    position_vpip: dict[str, int] = field(default_factory=dict)
+    position_pfr: dict[str, int] = field(default_factory=dict)
+    postflop_aggression: dict[str, int] = field(default_factory=dict)
+    postflop_passivity: dict[str, int] = field(default_factory=dict)
 
     @property
     def vpip(self) -> float:
@@ -78,6 +83,18 @@ class TableDossier:
     def reset_seat(self, seat: int) -> None:
         self.by_seat[seat] = SeatDossier()
 
+    def _position_label(self, hand: Hand, seat: int) -> str:
+        # 2026-08: this used to keep its own copy of the position-label table,
+        # truncated at 5 seats -- crashed with IndexError on any 6-8max hand
+        # (the practice app's actual default table size). Reuse
+        # behavior_clone.py's full table instead of re-duplicating it.
+        order = hand._active_seats_from_button()
+        labels = _POSITION_LABELS.get(len(order), _POSITION_LABELS[8][: len(order)])
+        try:
+            return labels[order.index(seat)]
+        except ValueError:
+            return "MP"
+
     def record_hand(self, hand: Hand) -> None:
         vpip_seats: set[int] = set()
         pfr_seats: set[int] = set()
@@ -99,18 +116,23 @@ class TableDossier:
             dossier = self.by_seat.setdefault(a.seat, SeatDossier())
             if a.action in ("bets", "raises"):
                 dossier.aggressive_postflop += 1
+                dossier.postflop_aggression[a.street] = dossier.postflop_aggression.get(a.street, 0) + 1
             elif a.action == "calls":
                 dossier.passive_postflop += 1
+                dossier.postflop_passivity[a.street] = dossier.postflop_passivity.get(a.street, 0) + 1
 
         for seat, player in hand.players.items():
             if player.sitting_out:
                 continue  # wasn't actually dealt into this hand
             dossier = self.by_seat.setdefault(seat, SeatDossier())
             dossier.hands_seen += 1
+            position = self._position_label(hand, seat)
             if seat in vpip_seats:
                 dossier.vpip_hands += 1
+                dossier.position_vpip[position] = dossier.position_vpip.get(position, 0) + 1
             if seat in pfr_seats:
                 dossier.pfr_hands += 1
+                dossier.position_pfr[position] = dossier.position_pfr.get(position, 0) + 1
             if seat in threebet_seats:
                 dossier.threebet_hands += 1
 
