@@ -127,6 +127,11 @@ want to retrain on different/updated data.
   built.
 - **No persistence**: all app state (table, dossier, rake collected) lives
   in the running process's memory; restarting the server resets everything.
-- **No mobile/phone access** — not started.
+- **Phone access on the same Wi-Fi**: `run_app.py` binds `0.0.0.0` and prints
+  the LAN URL to use from a phone (single-user app, no auth -- this is
+  intentionally LAN-only exposure, not reachable from the public internet).
+  The frontend has real `@media (max-width: 600px)` mobile styling, verified
+  with Playwright's iPhone viewport emulation (table, action buttons, and
+  the raise-sizing panel all render without overlap).
 - A temporary debug archetype label is shown under each bot seat (hero-only)
   for testing; meant to come off once the app is out of active debugging.

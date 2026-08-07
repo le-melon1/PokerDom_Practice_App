@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>PokerDom Practice</title>
 <style>
   * { box-sizing: border-box; }
@@ -300,10 +301,12 @@
   @media (max-width: 600px) {
     body { padding: 8px; overflow-x: hidden; }
     .wrap { width: 100%; overflow: hidden; }
-    .table-wrap { height: 430px; transform: scale(0.78); transform-origin: top center; margin-bottom: -94px; }
-    .center { top: 32%; }
+    .table-wrap { height: 480px; margin-bottom: 0; }
+    .center { top: 30%; }
     .chip-stack { display: none; }
-    .seat { width: 132px; padding: 6px; }
+    .seat { width: 98px; padding: 4px 6px; font-size: 0.82em; }
+    .seat .dossier-pop { display: none !important; }
+    .dealer-button { width: 18px; height: 18px; font-size: 0.6em; }
     .action-log, .ev-panel { width: 100%; }
     .solver-summary .row, .ev-row { align-items: flex-start; gap: 10px; }
     .solver-summary .row span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
