@@ -50,6 +50,14 @@ NUMERIC_FEATURES = [
     "board_board_max_suit_count",
     "board_board_connectedness",
     "board_board_high_card",
+    # 2026-08: was this player the last preflop raiser -- see behavior_
+    # clone.py's HAD_INITIATIVE_FEATURE comment. Measured on a clean 90/10
+    # held-out split (scripts/compare_had_initiative_feature.py, 1M rows,
+    # same random_state=42 as this file): action-model MultiClass loss
+    # 0.67520 -> 0.50469 (-25% relative), sizing-model 0.59720 -> 0.59108.
+    # Must match behavior_clone.py's FEATURES exactly -- both load the same
+    # saved .cbm models.
+    "had_initiative",
 ]
 FEATURES = CAT_FEATURES + NUMERIC_FEATURES
 
@@ -115,6 +123,7 @@ def main():
         df = df.sample(n=SAMPLE_SIZE, random_state=42).reset_index(drop=True)
     for c in CAT_FEATURES:
         df[c] = df[c].astype(str)
+    df["had_initiative"] = df["had_initiative"].astype(int)
     log(f"loaded {len(df)} rows (sampled), action distribution:\n{df['action'].value_counts()}")
 
     log("training action-type model...")

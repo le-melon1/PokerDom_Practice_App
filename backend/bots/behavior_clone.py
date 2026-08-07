@@ -96,6 +96,65 @@ kept. Mechanism mix confirms "moderate multi-street escalation" is now
 solidly the dominant remaining category and the productive next lever if
 this is revisited again, not raise-war suppression (already tightened twice)
 or multiway-calling (never was the real driver, see above).
+
+## had_initiative feature, and a real training/serving skew bug (2026-08-08,
+overnight, unattended per user's request to keep testing hypotheses and
+improving the player models). Motivation: the ML bots have never known
+whether THEY had preflop initiative when deciding how to act, despite
+abc_bot.py's own v17 DONK_BLUFF_VS_TIGHT exploit existing precisely because
+real tight archetypes fold more to a donk lead than an equally-sized
+continuation bet -- a model that can't represent "I'm continuation betting"
+vs. "I'm donk-leading" can't learn that distinction from either side either.
+
+First attempt computed the feature (was this player the last preflop
+raiser) ONCE per hand from the FULL preflop action sequence, hindsight-style,
+and applied it to every row uniformly. That trains on information not
+available at decision time: a player who opens and later gets 3-bet would
+have their own OPENING-raise row retroactively labeled had_initiative=False,
+since by hand's end someone else is the final raiser -- info they couldn't
+have had yet. Live inference (_had_preflop_initiative, added alongside this
+feature) is correctly causal (only sees hand.actions accumulated SO FAR), so
+training and serving disagreed. This wasn't caught by the held-out-loss
+check (which measured a suspiciously large 25% relative improvement, 0.67520
+-> 0.50469) -- it was caught by the DOWNSTREAM bot-vs-bot simulation:
+hero's own PFR jumped 14.8% -> 17.1% and win-rate-by-hand 15.7% -> 20.0%
+despite zero changes to hero's own decision logic, which is the kind of
+"too good to be true" number this file's own history (2026-07-30's stack_bb/
+spr episode, the 4th monster-pot refinement, v19's premium sizing) says to
+distrust rather than ship. Root-caused to the hindsight leak, fixed by
+tracking the running preflop last-raiser incrementally during the same
+sequential replay build_training_data.py already does (updated only AFTER
+each row is recorded, exactly matching live inference's causal ordering).
+Sanity-confirmed the fix: had_initiative is now identically 0.0 for every
+PREFLOP row (provably always true -- you can't be mid-decision while still
+being your own hand's most recent raiser, since action only returns to a
+raiser if someone else acted first, which would make THEM the most recent
+raiser) and varies 18.9-19.4% True on each postflop street, exactly the
+shape intended.
+
+Re-measured on the corrected data (same 1M-row held-out split as before):
+held-out loss improvement is real but far more modest than the leaky
+version suggested -- action model 0.67520 -> 0.66922 (was 0.50469 pre-fix),
+sizing model 0.59720 -> 0.59090 (barely changed by the fix, this model was
+less affected by the leak). Retrained the shipped .cbm models on the
+corrected data. Downstream, 80k hands same seed: hero VPIP/PFR 17.6%/15.3%
+(back in the normal ~17-18%/~15% range, not the leaky version's inflated
+17%), bb/100 excl. monster pots flat within noise both ways (+64.09 vs
++63.57 with rake, +75.58 vs +77.03 without -- CIs overlap). One real,
+disclosed side effect: monster-pot rate rose 11.14%/11.09% -> 12.68%/12.72%
+(a genuine ~1.5-1.6pp move, several times the ~0.11pp SE at this n, not
+noise) -- plausible mechanism: a model that can now correctly represent how
+much MORE aggressive real players are with initiative (72.5% aggressive
+action rate vs. 8.1% without, see the raw split in this feature's
+NUMERIC_FEATURES comment) predicts raises more confidently in continuation-
+bet spots specifically, and more raises happening at all gives the
+"moderate multi-street escalation" mechanism (still 82.8% of monster pots)
+more chances to compound, even though each individual raise is still
+correctly damped/sized. Shipped anyway: this is a genuine, measured realism
+improvement (the explicit ask), the monster-pot rate is still far below the
+original 20-24% baseline, and bb/100 wasn't measurably hurt -- but it's a
+real tradeoff, not a free win, and worth knowing about if the monster-pot
+rate is revisited again.
 """
 
 import random
@@ -119,6 +178,17 @@ CAT_FEATURES = ["street", "position", "archetype"]
 # train_behavior_clone.py's NUMERIC_FEATURES comment for the full story
 # (measured regression, not just "no improvement"). Must match that file's
 # feature list exactly, since both load the same saved .cbm models.
+# 2026-08 (v2 retrain, tested against the FEATURES-without-had_initiative
+# baseline below): the ML bots have never known whether THEY had preflop
+# initiative when deciding how to act -- despite abc_bot.py's own v17
+# DONK_BLUFF_VS_TIGHT exploit existing because real tight archetypes fold
+# more to a donk lead than an equally-sized cbet. A model that can't tell
+# "I'm continuation betting" from "I'm donk-leading" can't learn that
+# distinction either way. Same definition as decision_points.py's
+# bettor_had_initiative / abc_bot.py's _had_preflop_initiative: was this
+# player the last preflop raiser in the hand.
+HAD_INITIATIVE_FEATURE = True  # corrected causal retrain, 2026-08-08
+# were trained without this feature; predict_proba requires an exact feature-schema match.
 NUMERIC_FEATURES = [
     "to_call_frac",
     "n_raises_this_street",
@@ -129,6 +199,8 @@ NUMERIC_FEATURES = [
     "board_board_connectedness",
     "board_board_high_card",
 ]
+if HAD_INITIATIVE_FEATURE:
+    NUMERIC_FEATURES = NUMERIC_FEATURES + ["had_initiative"]
 FEATURES = CAT_FEATURES + NUMERIC_FEATURES
 
 STREET_BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
@@ -221,6 +293,14 @@ def _n_raises_this_street(hand: Hand) -> int:
     return sum(1 for a in hand.actions if a.street == hand.street and a.action == "raises")
 
 
+def _had_preflop_initiative(hand: Hand, seat: int) -> bool:
+    """Same definition as abc_bot.py's own helper of the same name and
+    decision_points.py's bettor_had_initiative -- was this seat the last
+    preflop raiser in the hand."""
+    preflop_raises = [a for a in hand.actions if a.street == "preflop" and a.action == "raises"]
+    return bool(preflop_raises) and preflop_raises[-1].seat == seat
+
+
 def _n_prior_aggressive_actions_this_hand(hand: Hand, seat: int) -> int:
     """Bets/raises by THIS seat across the whole hand so far (any street) --
     see BUCKET_DOWNGRADE below for why this matters and n_raises_this_street
@@ -244,7 +324,7 @@ def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
     board_len = STREET_BOARD_LEN[hand.street]
     texture = texture_features(hand.board[:board_len])
 
-    return {
+    features = {
         "street": hand.street,
         "position": _seat_position(hand, seat),
         "archetype": archetype,
@@ -252,6 +332,9 @@ def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
         "n_raises_this_street": _n_raises_this_street(hand),
         **{f"board_{k}": v for k, v in texture.items()},
     }
+    if HAD_INITIATIVE_FEATURE:
+        features["had_initiative"] = int(_had_preflop_initiative(hand, seat))
+    return features
 
 
 def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int | None = None) -> tuple[str, float | None]:

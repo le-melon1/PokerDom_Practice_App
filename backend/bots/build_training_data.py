@@ -50,6 +50,34 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
     board_str = board_by_hand.get(hand_id, "")
     board = board_str.split() if board_str else []
 
+    # 2026-08 addition: was this player the last preflop raiser SO FAR, at
+    # the moment of this decision? Same definition as the analysis project's
+    # decision_points.py bettor_had_initiative and abc_bot.py's
+    # _had_preflop_initiative -- both causal (only actions that have already
+    # happened). Motivation: the ABC bot's own v17 DONK_BLUFF_VS_TIGHT
+    # exploit exists BECAUSE real tight archetypes fold more to a donk lead
+    # than an equally-sized continuation bet -- but the ML bots being
+    # exploited have never had this feature, so they can't distinguish "I'm
+    # continuation betting" from "I'm donk-leading."
+    #
+    # IMPORTANT (2026-08-08 fix): a first version of this computed
+    # last_preflop_raiser ONCE from the whole hand's preflop raises (full
+    # hindsight) and applied it to every row uniformly. That's a real
+    # training/serving skew: live inference (_had_preflop_initiative) only
+    # ever sees actions that have ALREADY happened, so for a preflop row
+    # where this player opens and later gets 3-bet by someone else, the
+    # leaky version would retroactively label their own opening-raise row as
+    # had_initiative=False (since by hand's end, someone ELSE is the final
+    # preflop raiser) -- info the player couldn't possibly have had yet. For
+    # POSTFLOP rows the two computations coincide (preflop is fully resolved
+    # by then), so this only distorted preflop rows -- but preflop is where
+    # most rows live, and the first retrain showed suspiciously large
+    # swings in hero's own preflop stats (PFR 14.8%->17%, hand-win-rate
+    # 15.7%->20%) despite zero changes to hero's own logic, which is what
+    # caught this. Fixed by tracking the running last-raiser incrementally
+    # in the loop below, exactly like the live code does.
+    preflop_last_raiser: str | None = None
+
     # Blinds aren't recorded as actions in this dataset -- seed the pot with
     # them (small_blind = big_blind / 2, the convention used throughout this
     # project) so pot_before is never ~0 right at the start of a hand, which
@@ -98,6 +126,7 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
                 "pot_before": pot_before,
                 "to_call_frac": to_call / pot_before,
                 "n_raises_this_street": n_raises_this_street,
+                "had_initiative": row.player == preflop_last_raiser,
                 "big_blind": row.big_blind,
                 "stack_bb": remaining_stack / row.big_blind,
                 "spr": remaining_stack / pot_before,
@@ -119,6 +148,8 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
             current_street_bet = max(current_street_bet, street_contributed[row.player])
             n_raises_this_street += 1
             pot += increment
+            if current_street == "preflop" and row.action == "raises":
+                preflop_last_raiser = row.player
 
     return rows
 

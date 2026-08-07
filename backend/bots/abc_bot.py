@@ -1,4 +1,4 @@
-"""ABC v20: a simple but COMPLETE decision tree, built on top of the published
+"""ABC v21: a simple but COMPLETE decision tree, built on top of the published
 Tier-1 ABC guide (PokerDom_Microlimits_Analysis, "ABC-стратегия NL25 — три
 уровня"). Tier 1 as written only covers opening ranges + one flop cbet rule;
 everything else here was added and then EMPIRICALLY TESTED via
@@ -411,6 +411,29 @@ script's docstring). Revision history, each one a real measured finding:
   without). See behavior_clone.py's "third pass" docstring section for the
   full numbers -- kept since it's a real rate improvement at no cost.
 
+  v21 (2026-08-08, overnight): tested a squeeze-specific preflop hypothesis
+  (widen the 3-bet range and/or size up when facing a raise that's already
+  been called by someone else, on the theory that dead money justifies it) --
+  SQUEEZE_WIDER_RANGE and SQUEEZE_SIZE_UP_PER_CALLER flags, see their
+  comments above. Initial 80k-hand tests leaned consistently positive but
+  never cleared the combined CI (+4.64/+5.31 wider-alone, +0.55/+1.86
+  size-alone, +2.93/+5.74 combined). Re-tested at 300k hands per side for
+  real statistical power: delta shrank to +0.87/+1.61, cleanly inside the
+  ~2.9-3.05 combined CI -- confirms the 80k signal was sampling noise, not a
+  suppressed real effect. Shipped both False. (Unrelated: this 300k run also
+  hit a real ~4.6-hour stall on one 80k-equivalent pass, later traced to the
+  machine sleeping/throttling mid-run with no `caffeinate` guard -- see
+  behavior_clone.py's had_initiative changelog entry for the fix applied to
+  all subsequent long runs that night.)
+
+  Separately (no hero-side code change, ML-bot-only): behavior_clone.py
+  gained a had_initiative feature this same night, after a training/serving
+  skew bug was found and fixed (full story in that file's docstring -- worth
+  reading, it's the kind of "the number looked too good" catch this file's
+  own history keeps coming back to). Net effect on hero: monster-pot rate
+  rose 11.14%/11.09% -> 12.68%/12.72% (real, disclosed tradeoff for a real
+  realism improvement), bb/100 excl. monster pots unchanged within noise.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -623,6 +646,27 @@ PREMIUM_VS_3BET = VALUE_3BET_TIGHT  # facing a 3-bet+, stay tight regardless -- 
 LOOSE_ARCHETYPES_FOR_3BET = {"Maniac", "Station"}
 VALUE_3BET_VS_LOOSE = VALUE_3BET | {"99", "88", "AJs", "AJo", "KQs", "KQo"}
 WIDER_3BET_VS_LOOSE = True  # flip False to A/B-test against the baseline (VALUE_3BET regardless of raiser)
+
+# v21: a squeeze spot (facing one raise that's ALREADY been called by at
+# least one other player before hero acts) has never been treated any
+# differently from a heads-up 3-bet spot -- same range, same 3x sizing,
+# despite there being extra dead money in the pot and MULTIPLE opponents who
+# each have to fold for hero to win it uncontested. Two independent
+# hypotheses, each its own flag per this file's own established lesson (v15
+# B1/B2 were bundled and had to be re-tested separately) -- untested
+# theories, not read off a real-data table (the decision_points.py dataset
+# isn't broken out by "raise already called by someone" the way it is by
+# archetype/initiative):
+#   SQUEEZE_WIDER_RANGE: widen to VALUE_3BET_VS_LOOSE-tier regardless of the
+#   raiser's archetype, on the theory that extra dead money justifies a
+#   thinner squeeze the same way a loose raiser does in the existing rule.
+#   SQUEEZE_SIZE_UP_PER_CALLER: size the squeeze bigger than a flat 3x, one
+#   more big blind per caller already in -- mirrors C1's ISO_SIZING_PER_
+#   LIMPER_BB pattern (isolating callers, not limpers, but same idea: more
+#   dead money in the pot needs a bigger bet to actually fold it all out).
+SQUEEZE_WIDER_RANGE = True
+SQUEEZE_SIZE_UP_PER_CALLER = False
+SQUEEZE_SIZING_PER_CALLER_BB = 1.5
 
 # A/B-test switch for scripts/simulate_abc_bot.py: Tier 1 says "one flop cbet
 # on most flops," unconditionally. If this population doesn't fold enough to
@@ -946,6 +990,7 @@ def choose_abc_action(
             return ("fold", None)
 
         # Facing exactly one raise.
+        n_callers_in = _n_callers_since_last_raise_preflop(hand)
         # v15, B1: widen the value-3-bet range when the raiser hero is facing
         # is a known Maniac/Station (see LOOSE_ARCHETYPES_FOR_3BET above).
         value_3bet_range = VALUE_3BET
@@ -953,8 +998,18 @@ def choose_abc_action(
             raiser_seat = _last_preflop_raiser_seat(hand)
             if raiser_seat is not None and opponent_archetypes.get(raiser_seat) in LOOSE_ARCHETYPES_FOR_3BET:
                 value_3bet_range = VALUE_3BET_VS_LOOSE
+        # v21 (SQUEEZE_WIDER_RANGE): see the constant's comment above -- dead
+        # money from the caller(s) already in justifies the same widening a
+        # loose raiser does, so just take the wider of the two ranges.
+        if SQUEEZE_WIDER_RANGE and n_callers_in > 0:
+            value_3bet_range = VALUE_3BET_VS_LOOSE
         if notation in value_3bet_range:
             amount = hand.current_bet * THREEBET_MULTIPLIER
+            # v21 (SQUEEZE_SIZE_UP_PER_CALLER): size the squeeze bigger than a
+            # flat 3x to actually price out the extra caller(s) -- see the
+            # constant's comment above.
+            if SQUEEZE_SIZE_UP_PER_CALLER:
+                amount += hand.big_blind * SQUEEZE_SIZING_PER_CALLER_BB * n_callers_in
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("raise", amount)
         # ALLOW_CALLING_RAISES: earlier versions found calling a raise (with
