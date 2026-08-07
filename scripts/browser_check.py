@@ -14,7 +14,7 @@ with sync_playwright() as p:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     page.on("pageerror", lambda exc: errors.append(str(exc)))
 
-    page.goto("http://127.0.0.1:8000/", wait_until="networkidle")
+    page.goto("http://127.0.0.1:8001/", wait_until="networkidle")
     page.wait_for_selector("#seats .seat", timeout=10000)
     page.screenshot(path=str(OUT_DIR / "01_initial.png"))
     print("screenshot 1 taken")
