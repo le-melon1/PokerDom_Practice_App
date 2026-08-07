@@ -15,7 +15,9 @@ def test_utg_opens_a_premium_hand():
     hand.players[actor].hole_cards = ["As", "Ah"]
     action, amount = choose_abc_action(hand, actor)
     assert action == "raise"
-    assert amount == 5.0  # 2.5 x big blind
+    # v19: SIZE_UP_PREMIUM_OPENS tested and measured as noise (see abc_bot.py
+    # changelog), shipped off -- standard 2.5bb open regardless of hand strength.
+    assert amount == 5.0
 
 
 def test_utg_folds_a_trash_hand():
@@ -235,10 +237,11 @@ def _three_way_flop():
 
 
 def test_does_not_cbet_with_air_in_a_multiway_pot(monkeypatch):
-    # MULTIWAY_AWARE ships OFF by default (empirically it cost real bb/100
-    # against this population's real bot mix -- see the v11 module docstring
-    # note), but the feature itself is still correct and tested here.
-    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    # These sub-rules ship OFF by default (empirically the original bundle
+    # cost real bb/100 against this population's real bot mix -- see the
+    # v11/v18 module docstring notes), but the feature itself is still
+    # correct and tested here.
+    monkeypatch.setattr(abc_bot, "MULTIWAY_DISABLE_AIR_CBET", True)
     hand = _three_way_flop()
     hand.apply_action(hand.current_actor(), "check")  # BB checks
     actor = hand.current_actor()
@@ -249,7 +252,10 @@ def test_does_not_cbet_with_air_in_a_multiway_pot(monkeypatch):
 
 
 def test_does_not_loosen_vs_loose_archetype_in_a_multiway_pot(monkeypatch):
-    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    # needs both: the cbet-suppression is scaffolding to reach a check-around
+    # flop below, the loose-call suppression is the actual thing under test.
+    monkeypatch.setattr(abc_bot, "MULTIWAY_DISABLE_AIR_CBET", True)
+    monkeypatch.setattr(abc_bot, "MULTIWAY_DISABLE_LOOSE_CALL", True)
     hand = _three_way_flop()
     hand.apply_action(hand.current_actor(), "check")  # BB (3) checks
     hand.players[4].hole_cards = ["Ac", "Qd"]
@@ -268,7 +274,7 @@ def test_does_not_loosen_vs_loose_archetype_in_a_multiway_pot(monkeypatch):
 
 
 def test_does_not_cold_call_a_raise_already_called_by_someone_else(monkeypatch):
-    monkeypatch.setattr(abc_bot, "MULTIWAY_AWARE", True)
+    monkeypatch.setattr(abc_bot, "MULTIWAY_NARROW_CALL_RANGE", True)
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
     hand.apply_action(4, "raise", amount=5.0)  # UTG opens

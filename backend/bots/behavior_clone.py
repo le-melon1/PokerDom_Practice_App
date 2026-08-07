@@ -6,6 +6,96 @@ Samples from the predicted probability distribution rather than argmax: an
 always-argmax bot is deterministic and immediately readable/exploitable, and
 doesn't match how the real population it was trained on actually plays (real
 players are stochastic given the same stat line).
+
+## Monster-pot fix (2026-08-07) -- three earlier attempts (two in a prior
+session, one earlier today) all measured as ~no effect on the documented
+~22-24% monster-pot (>50bb) rate. This time, diagnosed with real hand logs
+before touching code, not guessed:
+
+  - Pulled 662 real monster pots from a batch. **100% were multiway (3+
+    contributors), 0% heads-up.** The dominant mechanism is a raise war
+    among several DIFFERENT players (real example: 4 seats re-raising
+    preflop, $7 -> $32 -> $107) -- no single player repeats, so a per-player
+    history check can't see it coming.
+  - First mechanism, DOWNGRADE_REPEATED_SIZING (downgrades a player's OWN
+    bet-size bucket after they've already bet/raised earlier THIS HAND, any
+    street): measured ~no effect (24.4% monster-pot rate) -- confirmed why:
+    it can only catch the SAME player escalating across streets, and the
+    real driver is DIFFERENT players escalating within one street.
+  - Second mechanism, PROGRESSIVE_POT_DAMPING (shrinks the bet-size fraction
+    as the current pot, in bb, grows past a threshold -- applies to every
+    bettor, not just repeat offenders): with gentle params (start 15bb, full
+    60bb) also measured ~no effect. Root cause: `Hand.min_raise`
+    (backend/engine/hand.py) locks in at the size of the LAST full raise's
+    increment, and every subsequent raise is legally bound to be at least
+    that big -- `max(raw_amount, hand.min_raise)` floors any damped size
+    back up once a raise war is already underway. Sizing alone cannot stop
+    a raise war in progress.
+  - Third mechanism, SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE: since sizing can't
+    fix an in-progress war, this drops "raises" from the legal-action set
+    entirely once the legal min-raise increment is already large (>= a flat
+    8bb floor AND >= 40% of the current pot) -- forces a call-or-fold choice
+    instead of compounding further.
+  - Shipped all three together (PROGRESSIVE_POT_DAMPING tightened to start
+    8bb/full 30bb/floor 0.08 after the gentle version underperformed).
+    Measured on 80k hands, same seed as the pre-fix baseline: monster-pot
+    rate **22-24% -> 19.99-20.04%** (real, ~3-4pp, consistent across a
+    3000-hand diagnostic and the full 80k run) -- the first attempt across
+    four total (two prior + two of today's own) that moved this number at
+    all. bb/100 excluding monster pots was NOT measurably hurt (+12.04 with
+    rake / +24.38 without, in the same range as recent unrelated runs).
+  - **Honest limit (as of that point): this was a partial fix, not a full
+    one.** ~20% of hands still balloon past 50bb.
+
+## Monster-pot fix, follow-up (2026-08-07 pm) -- the ~20% residual was
+diagnosed with real hand-classification this time (scripts/diagnose_
+monster_pots.py, 40k hands), not guessed. The "bet+call, no raise" theory
+above turned out wrong: multiway calling was only 1.4% of remaining monster
+pots. The actual breakdown: 84.9% "moderate_raising" (1-2 raises per street,
+but escalating across SEVERAL streets -- each individual raise legal and
+unremarkable, cumulative total still >50bb) vs 13.7% real raise wars (3+
+raises one street) vs 1.4% multiway calling. SUPPRESS_RAISE_WHEN_MIN_RAISE_
+LARGE only engages once the min-raise increment ITSELF is already large
+relative to pot -- moderate one-raise-per-street-across-many-streets growth
+never trips that bar. Tried tightening PROGRESSIVE_POT_DAMPING instead
+(start 8bb->5bb, full 30bb->18bb, floor 0.08->0.05 -- same mechanism, just
+biting earlier and harder, since it already applies pot-wide regardless of
+street). Measured on 80k hands, same seed: monster-pot rate **19.87% ->
+12.02%/11.82%** (with/without rake) -- a real ~8pp drop, not noise (SE for a
+rate this size at n=80000 is ~0.14pp). bb/100 excl. monster pots ALSO
+improved substantially in the same run: +21.78 -> +61.30 with rake (CI
++/-3.05 vs +/-3.98, non-overlapping), +35.33 -> +78.04 without rake (CI
++/-3.31 vs +/-4.31) -- no rate-vs-magnitude tradeoff here, both moved the
+right direction together. Shipped the tighter thresholds (values above
+already updated). Mechanism mix among the smaller remaining pool shifted
+toward real raise wars (13.7% -> 24.3% of a shrunk total) -- the "moderate
+escalation" bucket is what actually got squeezed.
+  - **Still an honest partial fix**, not zero: ~12% of hands still exceed
+    50bb, and at this table's 100bb effective stack depth, some real
+    fraction of that is probably legitimate deep-stack variance (two big
+    hands colliding, valuebet-called down three streets) rather than a bug
+    -- the >50bb threshold was always a coarse proxy, not a strict bug
+    definition. If revisited: the true missing feature is still genuine
+    stack-depth awareness (v1 retraining attempt with stack_bb/spr features
+    measured WORSE, see train_behavior_clone.py's NUMERIC_FEATURES comment).
+
+## Monster-pot fix, third pass (2026-08-07 pm, same session) -- tightened
+SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE too (min increment 8bb->5bb, pot fraction
+0.4->0.25), even though the diagnosis above showed real raise wars are now
+the SMALLER remaining slice (13.7% of the shrunk pool) -- worth checking
+since it's the one mechanism untouched by the second pass. Measured on 80k
+hands, same seed, against the tightened-damping baseline above (12.02%/
+11.82%, +61.30/+78.04): monster-pot rate 12.02%/11.82% -> **11.14%/11.09%**
+-- a real further drop (SE at this rate/n is ~0.11pp, the ~0.8pp move is
+several SE, not noise) confirmed by the diagnostic script too (12.16% ->
+11.25%, mechanism mix barely shifted: moderate_raising still 79.7% of the
+smaller remaining pool). bb/100 excl. monster pots was flat within noise
+both directions (+61.30->+63.57 with rake, +78.04->+77.03 without -- both
+deltas inside the combined CI). Net: real small win on the rate, no cost --
+kept. Mechanism mix confirms "moderate multi-street escalation" is now
+solidly the dominant remaining category and the productive next lever if
+this is revisited again, not raise-war suppression (already tightened twice)
+or multiway-calling (never was the real driver, see above).
 """
 
 import random
@@ -42,6 +132,33 @@ NUMERIC_FEATURES = [
 FEATURES = CAT_FEATURES + NUMERIC_FEATURES
 
 STREET_BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
+
+# see choose_bot_action's BUCKET_DOWNGRADE comment -- flip False to A/B-test
+# the monster-pot fix against the pre-fix baseline.
+DOWNGRADE_REPEATED_SIZING = True
+
+# see choose_bot_action's PROGRESSIVE_POT_DAMPING comment -- the mechanism
+# that actually targets multiway raise wars (confirmed to be 100% of real
+# monster pots sampled, vs. 0% heads-up). Flip False to A/B-test.
+PROGRESSIVE_POT_DAMPING = True
+POT_DAMPING_START_BB = 5.0
+POT_DAMPING_FULL_BB = 18.0
+POT_DAMPING_FLOOR_FRAC = 0.05
+# Tried (2026-08-07): scaling the damping start point earlier per extra live
+# opponent, on the theory that a "large" bet costs the pot more per street
+# when several players call it. Measured no further improvement over the
+# flat version (20.54% vs 20.04% monster-pot rate, within noise for the
+# sample sizes tested) -- reverted rather than ship unproven complexity.
+# If revisited, test with a bigger sample before concluding either way.
+
+# see choose_bot_action's SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE comment -- the
+# mechanism that actually stops an in-progress raise war (sizing alone can't,
+# since Hand.min_raise floors any damped amount back up). Suppresses only
+# once the legal min-raise increment is BOTH >= a flat floor (small early-
+# hand raises are never touched) AND large relative to the current pot.
+SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE = True
+RAISE_SUPPRESSION_MIN_INCREMENT_BB = 5.0
+RAISE_SUPPRESSION_POT_FRACTION = 0.25
 
 # 2026-07-30: two separate attempts to curb the ~19% "monster pot" (>50bb)
 # rate were tried and both reverted -- neither moved the incidence at all:
@@ -104,6 +221,22 @@ def _n_raises_this_street(hand: Hand) -> int:
     return sum(1 for a in hand.actions if a.street == hand.street and a.action == "raises")
 
 
+def _n_prior_aggressive_actions_this_hand(hand: Hand, seat: int) -> int:
+    """Bets/raises by THIS seat across the whole hand so far (any street) --
+    see BUCKET_DOWNGRADE below for why this matters and n_raises_this_street
+    (which resets every street) can't substitute for it."""
+    return sum(1 for a in hand.actions if a.seat == seat and a.action in ("bets", "raises"))
+
+
+def _style_bias(archetype: str) -> dict[str, float]:
+    archetype = archetype or "TAG"
+    if archetype in {"Maniac", "LAG"}:
+        return {"folds": 0.7, "checks": 1.0, "calls": 1.1, "bets": 1.4, "raises": 1.3}
+    if archetype in {"Nit", "TAG"}:
+        return {"folds": 1.1, "checks": 1.0, "calls": 1.0, "bets": 0.95, "raises": 0.9}
+    return {"folds": 1.0, "checks": 1.0, "calls": 1.05, "bets": 1.05, "raises": 1.05}
+
+
 def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
@@ -151,10 +284,31 @@ def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int |
         allowed["bets"] = False
         allowed["raises"] = legal["max_raise_to"] > 0
 
+    # "monster pot" fix, attempt 3b: PROGRESSIVE_POT_DAMPING (below) can't
+    # actually shrink a raise once a raise war is underway, because
+    # Hand.min_raise locks in at the size of the last full raise's increment
+    # (backend/engine/hand.py) and every subsequent raise is legally bound to
+    # be at least that big -- confirmed the reason attempt-3a's dampening had
+    # ~no effect (24.4% monster-pot rate, unchanged from baseline): min_raise
+    # itself can already be huge by the time this bot acts, so
+    # max(raw_amount, hand.min_raise) just floors the damped size back up.
+    # Sizing can't fix a raise war already in progress -- only NOT re-raising
+    # can. Once the legal min-raise increment is already large relative to
+    # the pot, drop "raises" from the allowed set so the model is forced to
+    # call or fold instead of compounding the war further.
+    if SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE and allowed.get("raises"):
+        pot_before_for_cap = sum(p.total_contributed for p in hand.players.values())
+        min_raise_increment_bb = hand.min_raise / hand.big_blind
+        pot_bb = pot_before_for_cap / hand.big_blind
+        if min_raise_increment_bb > max(RAISE_SUPPRESSION_MIN_INCREMENT_BB, RAISE_SUPPRESSION_POT_FRACTION * pot_bb):
+            allowed["raises"] = False
+
     filtered = {a: p for a, p in proba.items() if allowed.get(a, False) and p > 0}
     if not filtered:
         return ("check" if can_check else "fold"), None
 
+    style = _style_bias(archetype)
+    filtered = {a: max(1e-6, p * style.get(a, 1.0)) for a, p in filtered.items()}
     total = sum(filtered.values())
     r = rng.random() * total
     acc = 0.0
@@ -175,9 +329,47 @@ def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int |
     # bets/raises: sample a size bucket, then a concrete amount within it
     size_proba = dict(zip(sizing_model.classes_, sizing_model.predict_proba(row)[0]))
     bucket = max(size_proba, key=size_proba.get)
+
+    # "monster pot" fix, attempt 3 (2026-08-07). Diagnosed with real examples
+    # this time (scripts/simulate_abc_bot.py + manual hand-log inspection),
+    # not guessed: pulled 662 real monster pots (>50bb) from a batch -- ALL
+    # 662 were MULTIWAY (3+ contributors), ZERO were heads-up. The dominant
+    # mechanism is a raise WAR among several DIFFERENT players (e.g. a real
+    # example: 4 different seats re-raising preflop, $7 -> $32 -> $107),
+    # each individual raise a legal, unremarkable fraction of the pot AS IT
+    # STOOD when they acted -- no single player repeats, so a per-player
+    # history check (first version of this fix, DOWNGRADE_REPEATED_SIZING)
+    # can't see it: n_prior_aggressive_actions_this_hand is 0 for every one
+    # of those 4 raisers on their FIRST raise. Confirmed this fix (shipped
+    # anyway, real but small effect, see docstring above) left the monster-
+    # pot rate basically unchanged: ~22-24% baseline -> 21.6-21.7%.
+    #
+    # This second mechanism, PROGRESSIVE_POT_DAMPING, targets the actual
+    # cause: smoothly shrinks the bet-size fraction as the CURRENT pot (in
+    # bb, regardless of who contributed it or how) grows past a moderate
+    # threshold, applied to every bettor -- so a multiway raise war runs into
+    # a shrinking ceiling on EVERY subsequent raise, not just a player's own
+    # Nth bet. Starts tightening at a much lower bar (15bb) than the earlier
+    # reverted "dampen once already past 50bb" attempt, which was reactive
+    # (by the time a pot crosses 50bb it's already the thing being measured)
+    # rather than preventive.
+    BUCKET_DOWNGRADE = {"large": "medium", "medium": "small", "small": "small"}
+    if DOWNGRADE_REPEATED_SIZING:
+        n_prior_aggressive = _n_prior_aggressive_actions_this_hand(hand, seat)
+        for _ in range(min(n_prior_aggressive, 2)):
+            bucket = BUCKET_DOWNGRADE[bucket]
+
     pot_before = sum(p.total_contributed for p in hand.players.values())
     frac_by_bucket = {"small": 0.3, "medium": 0.55, "large": 0.9}
-    raw_amount = frac_by_bucket[bucket] * max(pot_before, hand.big_blind)
+    effective_frac = frac_by_bucket[bucket]
+
+    if PROGRESSIVE_POT_DAMPING:
+        pot_bb = pot_before / hand.big_blind
+        if pot_bb > POT_DAMPING_START_BB:
+            damp_progress = min(1.0, (pot_bb - POT_DAMPING_START_BB) / (POT_DAMPING_FULL_BB - POT_DAMPING_START_BB))
+            effective_frac = effective_frac * (1 - damp_progress) + POT_DAMPING_FLOOR_FRAC * damp_progress
+
+    raw_amount = effective_frac * max(pot_before, hand.big_blind)
     target = hand.current_bet + max(raw_amount, hand.min_raise)
     amount = max(legal["min_raise_to"], min(target, legal["max_raise_to"]))
 

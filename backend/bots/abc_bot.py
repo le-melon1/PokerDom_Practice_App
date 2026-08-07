@@ -1,4 +1,4 @@
-"""ABC v11: a simple but COMPLETE decision tree, built on top of the published
+"""ABC v20: a simple but COMPLETE decision tree, built on top of the published
 Tier-1 ABC guide (PokerDom_Microlimits_Analysis, "ABC-стратегия NL25 — три
 уровня"). Tier 1 as written only covers opening ranges + one flop cbet rule;
 everything else here was added and then EMPIRICALLY TESTED via
@@ -186,6 +186,231 @@ script's docstring). Revision history, each one a real measured finding:
   the ceiling gain** -- the rule doesn't depend on cheating to work; a
   realistic in-session read captures nearly all of the value.
 
+  v14: two hypotheses read directly off PokerDom_Microlimits_Analysis's
+  archetype tables, tested here rather than assumed:
+    A1 (STEAL_WIDER_VS_NIT): archetype_vs_raise.csv shows Nit folds to a
+    raise 90.3-93.1%, almost flat across every position -- so widen the open
+    range (STEAL_VPIP_BY_POSITION, roughly +15pp of VPIP per position) when
+    every live opponent still to act is a known Nit.
+    A2 (SIZING_TARGET_ARCHETYPES): archetype_facing_bet.csv's "large" bucket
+    shows fold% to a big bet scales with tightness (Nit 73-75%, TAG 66-72%)
+    but barely moves for Station/Maniac (~52-62%, same as their fold% to
+    smaller bets) -- so size value bets up (0.75 pot vs the standard 0.525)
+    specifically against a known Nit/TAG, heads-up only.
+  Clean same-seed A/B (only these two flags toggled, everything else
+  identical): baseline +11.63 bb/100 with rake (CI +/-2.82) / +16.23 without
+  (CI +/-2.95); A1+A2 +12.26 with rake (CI +/-2.79) / +23.05 without
+  (CI +/-3.03). **With realistic rake -- the number that actually matters --
+  the delta is +0.63 bb/100, inside the noise floor: not a demonstrated
+  win.** Without rake the delta is +6.82, bigger than the combined CI and
+  plausibly real. Working theory for the gap: A2's bigger sizing raises pot
+  size specifically in hands that get called/reach showdown -- exactly the
+  pots rake (5%, capped 5bb) taxes -- while A1's extra preflop-only folds
+  should be rake-free ("no flop no drop") but aren't enough on their own to
+  clear the noise floor. Left both rules ON (STEAL_WIDER_VS_NIT=True,
+  SIZING_TARGET_ARCHETYPES={"Nit","TAG"}) since neither measured harmful and
+  A1 in particular is theoretically sound even unproven at this sample size
+  -- but don't report this pair as a confirmed win to anyone relying on the
+  with-rake number.
+
+  Separately, noted in passing: this session's baseline run (+11.63 bb/100,
+  ground-truth archetypes, same seed=42 as v12/v13) measured BELOW v12/v13's
+  own recorded ground-truth numbers (+15.05, +14.51) despite being nominally
+  the same comparison. Also found and fixed, same session: backend/
+  dossier.py's `_position_label` carried its own copy of the seat->position
+  table truncated at 5 seats (KeyError/IndexError on any 6-8max hand -- this
+  project's actual default table size), now imports behavior_clone.py's full
+  8-seat table instead of re-duplicating it. Didn't chase down whether that
+  bug (or something else) explains the baseline drift -- flagging as an open
+  discrepancy rather than a resolved one; if the baseline number matters for
+  future work here, re-verify it rather than trusting either old or new
+  numbers blindly.
+
+  v15: two more hypotheses off the same archetype tables:
+    B1 (WIDER_3BET_VS_LOOSE): archetype_vs_raise.csv / archetype_facing_bet.csv
+    show Maniac and Station continue facing aggression far more than average
+    -- widen VALUE_3BET (add 99/88/AJs/AJo/KQs/KQo) specifically when the
+    raiser hero is 3-betting is a known Maniac/Station.
+    B2 (SIZE_UP_ON_TURN): archetype_facing_bet.csv shows small-bet fold%
+    drops sharply on the turn specifically vs flop/river, across every
+    archetype (Nit flop-small fold 39% vs turn-small fold 27%) -- since this
+    bot only ever bets the turn for value, size up unconditionally there
+    (reused BIG_VALUE_SIZING_POT_FRACTION rather than adding a third number).
+  Same clean same-seed A/B discipline as v14 (only these two flags toggled,
+  A1/A2 left on both sides): baseline +10.50 bb/100 with rake (CI +/-2.76) /
+  +18.08 without (CI +/-2.99); B1+B2 +10.23 with rake (CI +/-2.77) / +17.57
+  without (CI +/-2.94). **Delta: -0.27 with rake, -0.51 without -- both
+  trivially inside the noise floor. A clean null result, not a win and not a
+  loss.** (An earlier same-session comparison against v14's OLDER separately-
+  recorded numbers suggested B1+B2 looked worse -- that comparison wasn't a
+  controlled A/B, just two different runs; the baseline itself had drifted
+  between them the same way v12/v13's numbers drifted from this session's
+  v14 baseline, see that note above. Lesson reinforced: always re-run a
+  same-session baseline before trusting a delta, never diff against an old
+  recorded number.) Kept both rules ON, same reasoning as v14 (theoretically
+  sound, measured neither harmful nor helpful) -- but this is now three
+  archetype-table-derived hypotheses (A1, A2, B1+B2) that read as strong,
+  simple wins on paper and measured as noise-or-worse in practice. Worth
+  registering as a pattern, not just three isolated nulls: a population-level
+  frequency table (X% fold to Y) doesn't automatically translate into bot-vs-
+  bot EV the way it would against a human, because the OPPOSING side here is
+  itself a fixed statistical model (CAT_FEATURES = street/position/archetype
+  only, see behavior_clone.py) reacting to hero's bet in ways that may not
+  decompose the way the raw population table suggests. Future archetype-
+  table-derived rules should be treated as unproven until measured here, not
+  assumed to transfer 1:1 -- which is exactly the discipline this file has
+  followed throughout, just worth saying explicitly now that it's happened
+  three times in a row.
+
+  Follow-up, same session: user asked whether B1 and B2 might be individually
+  real but canceling each other out when combined. Isolated each (same
+  baseline, only one flag on at a time): B1 alone +10.65 with rake (CI
+  +/-2.80) / +18.40 without (CI +/-3.02) -- delta +0.15 / +0.32 vs baseline,
+  trivial, confirms B1 alone is also just noise, not masked by B2. B2 alone
+  +12.66 with rake (CI +/-2.75) / +15.48 without (CI +/-2.92) -- delta +2.16
+  with rake but -2.60 without, i.e. the sign FLIPS depending on rake. Neither
+  delta clears its own combined CI, so still not a confirmed effect, but the
+  flip is a real data point: consistent with the same rake-taxes-bigger-
+  called-pots mechanism floated for A2 above, and a reminder that "B1+B2
+  measured as ~0" can hide individually noisy, opposite-signed components
+  rather than meaning "neither one does anything" -- worth remembering before
+  concluding a null result means the underlying idea was wrong, vs. just
+  underpowered at this sample size or entangled with rake in a way a single
+  bb/100 number doesn't show.
+
+  v16, C1 (ISO_RAISE_OVER_LIMPERS): unlike A2/B1/B2 (archetype-table-derived
+  numbers), this one is a standard live-poker sizing convention -- isolate a
+  limper for open-size + ~1bb per limper instead of the flat open size the
+  bot used before. Clean same-seed A/B (only this flag toggled, A1/A2/B1/B2
+  all ON both sides): baseline +10.83 bb/100 with rake (CI +/-2.75) / +17.54
+  without (CI +/-2.91); C1 +12.97 with rake (CI +/-2.76) / +22.64 without
+  (CI +/-2.99). **Delta +2.14 with rake (inside the combined ~+/-3.9 CI, not
+  fully clearing it, but the largest with-rake point estimate of any single
+  rule tested this session) and +5.10 without rake (exceeds the combined
+  ~+/-4.2 CI -- the clearest without-rake result since A1+A2's original
+  +6.82).** Kept ON. Notably this is the one rule this session that did NOT
+  come from an archetype population table read cold -- it's textbook sizing
+  theory, tested rather than assumed like everything else here -- and it's
+  also the one with the cleanest result. Weak evidence for a pattern: rules
+  grounded in how the BETTING STRUCTURE itself works (pot math, isolation
+  odds) may transfer to this ML-bot population more reliably than rules
+  inferred from population fold-frequency tables (see the v15 note on why
+  those may not decompose the way raw frequencies suggest) -- one data point,
+  not proven, but worth watching if more rules get tested here.
+
+  v17, C2 (DONK_BLUFF_VS_TIGHT): PokerDom_Microlimits_Analysis's decision_
+  points.py was extended this session to tag each postflop bet with whether
+  the bettor had preflop initiative, producing archetype_facing_bet_by_
+  initiative.csv for the first time -- new data, not previously available.
+  It shows Nit/TAG/LAG fold to a donk bet/lead meaningfully more than to a
+  same-sized cbet (Nit +13.6pp, TAG +9.3pp, LAG +6.0pp, on 60k-460k-row
+  samples); Station/Maniac showed no real difference and were excluded. The
+  bot previously only ever bluffed as an in-position flop cbet WITH
+  initiative -- this adds a genuinely new behavior, a donk bluff with no
+  hand at all, specifically when hero lacks initiative, is heads-up, and
+  the single opponent is a known Nit/TAG/LAG. Clean same-seed A/B (only this
+  flag toggled, A1/A2/B1/B2/C1 all ON both sides): baseline +14.71 bb/100
+  with rake (CI +/-2.78) / +21.46 without (CI +/-2.95); C2 +17.04 with rake
+  (CI +/-2.76) / +26.80 without (CI +/-2.98). **Delta +2.33 with rake
+  (inside the combined ~+/-3.9 CI, same "suggestive but not fully clearing"
+  pattern as C1) and +5.34 without rake (exceeds the combined ~+/-4.2 CI --
+  real).** Kept ON; +17.04 bb/100 with rake is the highest single-rule
+  with-rake result of the whole session. This complicates the v15/v16
+  pattern-hunting: C2 IS archetype-frequency-table-derived (like A1/A2/B1/
+  B2, which mostly measured as noise) but represents a NEW behavior rather
+  than a range/sizing tweak on an existing action (like C1, which measured
+  well) -- so on the "new behavior vs. parameter tweak" axis it groups with
+  the winner (C1), not the data-source axis. Tentative revised read: what
+  predicts a real result here isn't where the number came from, it's
+  whether the rule changes WHAT the bot does (a new action in a spot it
+  previously played the same way regardless) rather than HOW MUCH of
+  something it already does (a wider range, a bigger bet). Two data points
+  (C1, C2) now, still not proof -- but a more specific hypothesis than v16's
+  original guess, worth testing again if a Tier D ever gets scoped.
+
+  v18 (2026-08-07): user asked to actually settle whether v11's bundled
+  MULTIWAY_AWARE (all three sub-rules toggled together, measured as hurting)
+  was hiding one good rule under two bad ones. Split the single flag into
+  three independent ones -- MULTIWAY_NARROW_CALL_RANGE, MULTIWAY_DISABLE_
+  AIR_CBET, MULTIWAY_DISABLE_LOOSE_CALL -- and A/B'd each alone against the
+  same fresh baseline (+12.26 bb/100 with rake, CI +/-2.82; this baseline is
+  itself post monster-pot-fix, see behavior_clone.py, so not comparable to
+  pre-2026-08-07 numbers above). All three individually:
+    - disable air cbet in multiway: +4.32 (delta -7.94, clearly hurts --
+      the unconditional flop cbet is one of the strategy's biggest positive
+      levers per v6, and 3+-way flops are common enough that restricting it
+      costs a lot)
+    - disable the v10 loose-archetype call-loosening in multiway: +6.35
+      (delta -5.91, clearly hurts -- v10 is THE single biggest lever in this
+      file, and per v11's own finding this population is weak/loose
+      regardless of table size, so restricting the exploit specifically in
+      multiway throws away most of its value there too)
+    - narrow the call range when a raise is already called by someone else:
+      +8.30 (delta -3.96, borderline -- inside/at the edge of the combined
+      CI with rake, +1.04 without rake i.e. flat) -- closest to noise of the
+      three, but still not a demonstrated win
+  **Conclusion: no hidden winner. Bundling didn't mask anything -- all three
+  sub-rules are individually neutral-to-harmful, confirming v11's original
+  finding was correct for the right reason, not just correct on average.**
+  All three flags shipped False (unchanged from v11). If multiway-specific
+  strategy is revisited, the productive direction per this file's own C1/C2
+  pattern-hunting is probably a NEW behavior for multiway pots specifically
+  (not yet scoped), not further restricting existing ones.
+
+  v19 (2026-08-07): two more tests, user-requested. (a) HERO_PROGRESSIVE_
+  POT_DAMPING -- behavior_clone.py's 2026-08-07 monster-pot fix only touched
+  the ML opponent bots; hero's OWN value-bet sizing was never covered, still
+  a flat ~55% pot regardless of how big the pot already was. Added the same
+  damping shape hero-side (starts softening past 8bb pot, floors at 8% pot by
+  30bb pot). Clean isolated A/B, same seed, both arms otherwise identical:
+  without damping +12.21 bb/100 with rake (CI +/-2.83) / +23.01 without (CI
+  +/-3.08); with damping +21.78 / +35.33 (CI +/-3.05 / +/-3.31). Delta +9.57
+  / +12.32, both several times the combined CI -- a real, large effect, and
+  the biggest single lever measured since v10. Notably the monster-pot RATE
+  barely moved (20.1% -> 19.8%, within noise of a rate this size) -- this
+  fix doesn't stop pots from ballooning, it stops hero from overbetting
+  chips into ones that already have. Shipped True.
+  (b) SIZE_UP_PREMIUM_OPENS -- user's hypothesis: open premium hands
+  (VALUE_3BET_TIGHT) bigger, scaled by limper count, since a hand that plays
+  well multiway benefits less from folding out limpers than one that wants
+  it heads-up for stack-off value. Implemented as a flat +1.5bb bonus on the
+  standard 2.5bb open. Re-tested AFTER (a) above, both arms with hero damping
+  on, so this is the clean comparison: without +21.78 with rake (CI +/-3.05)
+  / +35.33 without (CI +/-3.31); with +23.54 / +34.57 (CI +/-3.03 / +/-3.33).
+  Delta +1.76 with rake, -0.76 without -- inside the combined CI both ways,
+  sign even flips between the two rake conditions on the same seed. Not a
+  demonstrated effect. Shipped False, per this file's standing policy of not
+  carrying unproven complexity (same call made for behavior_clone.py's
+  reverted 4th monster-pot refinement the same day).
+
+  v20 (2026-08-07 pm): follow-up on the monster-pot investigation -- see
+  behavior_clone.py's "Monster-pot fix, follow-up" docstring section for the
+  full diagnosis (scripts/diagnose_monster_pots.py classified the remaining
+  ~20% of monster pots: 84.9% turned out to be moderate 1-2-raises-per-street
+  escalation compounding across several streets, not the suspected multiway-
+  calling-without-a-raise pattern, which was only 1.4%). Tightened
+  HERO_POT_DAMPING_START_BB/FULL_BB/FLOOR_FRAC the same way as behavior_
+  clone.py's matching constants (8/30/0.08 -> 5/18/0.05), since this hero-
+  side damping uses the identical mechanism. Measured together with the
+  ML-bot-side tightening, 80k hands, same seed: monster-pot rate 19.87% ->
+  12.02%/11.82% (with/without rake), bb/100 excl. monster pots +21.78 ->
+  +61.30 with rake (CI +/-3.05 vs +/-3.98) / +35.33 -> +78.04 without (CI
+  +/-3.31 vs +/-4.31) -- both moved substantially in the right direction
+  together, no rate-vs-magnitude tradeoff. Honest caveat: ~12% of hands
+  still exceed 50bb, and at this table's 100bb effective stack depth some
+  real portion of that is likely legitimate deep-stack variance rather than
+  a residual bug -- the 50bb threshold was always a coarse flag, not a
+  strict bug definition.
+
+  Same session, immediate follow-up: tightened behavior_clone.py's
+  SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE thresholds too (ML-bot-only mechanism,
+  no hero-side equivalent needed -- hero never raises postflop and preflop
+  sizing isn't gated by this legal-action suppression). Real further drop,
+  monster-pot rate 12.02%/11.82% -> 11.14%/11.09%; bb/100 excl. monster pots
+  flat within noise both ways (+61.30->+63.57 with rake, +78.04->+77.03
+  without). See behavior_clone.py's "third pass" docstring section for the
+  full numbers -- kept since it's a real rate improvement at no cost.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -259,6 +484,16 @@ from backend.engine.hand import Hand
 OPEN_VPIP_BY_POSITION = {"UTG": 0.139, "MP": 0.165, "CO": 0.216, "BTN": 0.266, "SB": 0.245}
 CALL_VPIP_BY_POSITION = {pos: vpip * 0.5 for pos, vpip in OPEN_VPIP_BY_POSITION.items()}
 
+# v14, part 1 (STEAL_WIDER_VS_NIT): PokerDom_Microlimits_Analysis's
+# archetype_vs_raise.csv shows Nit folds to a preflop raise 90-93% of the
+# time at EVERY position (BB 90.3%, BTN 92.7%, CO 93.1%, MP 91.6%, SB 92.7%)
+# -- an order of magnitude more foldy than any other archetype. Mirrors the
+# existing LOOSE_ARCHETYPES postflop rule, but on the betting side: widen the
+# open range when every live opponent still to act is a known Nit.
+STEAL_VPIP_BY_POSITION = {pos: min(1.0, vpip + 0.15) for pos, vpip in OPEN_VPIP_BY_POSITION.items()}
+TIGHT_ARCHETYPES_FOR_STEAL = {"Nit"}
+STEAL_WIDER_VS_NIT = True  # flip False to A/B-test against the baseline (normal open range regardless of opponent)
+
 # Real hands from data/processed/showdowns.parquet (284,622 genuine revealed
 # hole cards -- PokerDom_Microlimits_Analysis/scripts/extract_showdowns.py):
 # for each position, hands real players opened with and reached showdown
@@ -306,6 +541,67 @@ REAL_DATA_CALL_RANGE_ADDITIONS = {
 OPEN_SIZING_BB = 2.5  # "2.5-3bb" in the guide; picking the low end, fixed, as the one sizing Tier 1 calls for
 THREEBET_MULTIPLIER = 3.0  # standard "make it 3x" value 3-bet sizing
 
+# v14, A2: archetype_facing_bet.csv's "large" bucket shows fold% to a big bet
+# scales with how tight the archetype is (Nit 73-75%, TAG 66-72%) but barely
+# moves for loose archetypes (Station/Maniac ~52-62%, close to their fold%
+# at smaller sizes too) -- a bigger bet buys real extra fold equity against
+# Nit/TAG specifically, and just inflates the pot with no extra folds against
+# Station/Maniac/Loose-passive. Only applied to hero's OWN value bet (the
+# to_call<=0 branch), heads-up only (opponent identity is ambiguous
+# multiway) -- sizing up a bluff isn't part of this bot's plan either way.
+SIZING_TARGET_ARCHETYPES = {"Nit", "TAG"}
+BIG_VALUE_SIZING_POT_FRACTION = 0.75
+STANDARD_SIZING_POT_FRACTION = 0.525
+
+# monster-pot fix, hero side -- see choose_abc_action's
+# HERO_PROGRESSIVE_POT_DAMPING comment. Same shape/rationale as behavior_
+# clone.py's PROGRESSIVE_POT_DAMPING, applied to hero's own value-bet sizing.
+HERO_PROGRESSIVE_POT_DAMPING = True
+HERO_POT_DAMPING_START_BB = 5.0
+HERO_POT_DAMPING_FULL_BB = 18.0
+HERO_POT_DAMPING_FLOOR_FRAC = 0.05
+
+# v15, B2: archetype_facing_bet.csv shows small-bet fold% drops sharply on
+# the TURN specifically vs flop/river, across every archetype (e.g. Nit:
+# flop-small fold 39% vs turn-small fold 27%) -- a small turn bet doesn't buy
+# the fold equity a same-sized flop/river bet would. Since this bot only ever
+# bets the turn for value (no turn bluff in this plan -- UNCONDITIONAL_FLOP_
+# CBET is flop-only), there's no reason to undersize there: reuse the same
+# BIG_VALUE_SIZING_POT_FRACTION tier on the turn regardless of opponent
+# archetype, rather than adding a third sizing number to keep this simple.
+SIZE_UP_ON_TURN = True  # flip False to A/B-test against the flat standard-fraction baseline
+
+# v16, C1: the bot currently treats "someone already limped" identically to
+# "unopened pot" -- always OPEN_SIZING_BB flat. Standard live convention is
+# to isolate a limper for MORE than a plain open (open size + ~1bb per
+# limper), both to charge the limper for their speculative hand and to price
+# out anyone left to act. This is a standard-theory sizing convention, not a
+# number fit to a specific measured breakeven point (unlike A2/B2's
+# archetype-table-derived sizes) -- flagged as such.
+ISO_RAISE_OVER_LIMPERS = True  # flip False to A/B-test against the flat OPEN_SIZING_BB baseline
+ISO_SIZING_PER_LIMPER_BB = 1.0
+
+# v19: open bigger with a premium hand (reuses VALUE_3BET_TIGHT below as the
+# "premium" set), stacking with the C1 per-limper bonus above -- i.e. a
+# premium hand opened over 2 limpers gets BOTH bonuses. User's hypothesis,
+# untested until now; note this cuts against the usual "keep your whole
+# range's sizing the same so it isn't readable" argument, worth checking
+# empirically rather than assuming either way given how this file's other
+# theory-first guesses (A1/A2/B1/B2) mostly measured as noise.
+SIZE_UP_PREMIUM_OPENS = False  # flip False to A/B-test against flat sizing regardless of hand strength
+PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
+
+# v17, C2: archetype_facing_bet_by_initiative.csv (new this session --
+# PokerDom_Microlimits_Analysis/scripts/build_archetype_tables.py, extended
+# to tag each postflop bet with whether the bettor had preflop initiative)
+# shows Nit/TAG/LAG fold to a donk bet/lead meaningfully more than to a
+# same-sized cbet (Nit +13.6pp, TAG +9.3pp, LAG +6.0pp on large real
+# samples, 60k-460k rows per cell); Station/Maniac showed no real
+# difference and are deliberately excluded. See the choose_abc_action
+# comment for the actual rule.
+TIGHT_ARCHETYPES_FOR_DONK_BLUFF = {"Nit", "TAG", "LAG"}
+DONK_BLUFF_VS_TIGHT = True  # flip False to A/B-test against the baseline (no donk bluffing at all)
+
 VALUE_3BET_TIGHT = {"AA", "KK", "QQ", "AKs", "AKo"}
 VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
 # A/B-test switch: Tier 2 found this population barely 3-bets (2-5% of raise
@@ -316,6 +612,17 @@ VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
 USE_WIDE_VALUE_3BET = True
 VALUE_3BET = VALUE_3BET_WIDE if USE_WIDE_VALUE_3BET else VALUE_3BET_TIGHT
 PREMIUM_VS_3BET = VALUE_3BET_TIGHT  # facing a 3-bet+, stay tight regardless -- going deeper with JJ/TT/AQ vs real aggression isn't worth it
+
+# v15, B1: archetype_vs_raise.csv / archetype_facing_bet.csv show Maniac and
+# Station continue/call facing aggression far more than the population
+# average -- a thin value 3-bet (not just a premium hand) is more often still
+# ahead of what they'd continue with. Widen VALUE_3BET specifically when the
+# original raiser hero is facing is a known Maniac/Station. A modest, round
+# widening (not fit to a specific breakeven number) -- the hypothesis is
+# "wider works here," not a precise optimal range.
+LOOSE_ARCHETYPES_FOR_3BET = {"Maniac", "Station"}
+VALUE_3BET_VS_LOOSE = VALUE_3BET | {"99", "88", "AJs", "AJo", "KQs", "KQo"}
+WIDER_3BET_VS_LOOSE = True  # flip False to A/B-test against the baseline (VALUE_3BET regardless of raiser)
 
 # A/B-test switch for scripts/simulate_abc_bot.py: Tier 1 says "one flop cbet
 # on most flops," unconditionally. If this population doesn't fold enough to
@@ -339,21 +646,26 @@ ALLOW_CALLING_RAISES = True
 # multiway pots (top pair is much weaker against 2+ opponents; a flop cbet
 # with air has far less fold equity against multiple players; cold-calling a
 # raise that's already been called once is worse odds than isolating
-# heads-up). MULTIWAY_AWARE gates three things when 2+ opponents are live:
-# (1) the unconditional flop cbet only fires heads-up, made-hand-only
-# otherwise; (2) the loosened any-pair-or-better call vs a known loose
-# archetype only applies heads-up; (3) facing a raise already called by
-# someone else, only continue with VALUE_3BET-tier hands, not the wider
-# call range.
-MULTIWAY_AWARE = False
+# heads-up). v11 bundled all three into one MULTIWAY_AWARE flag, tested the
+# bundle, and found it hurt (-7ish bb/100) -- but a bundle can't tell you
+# whether all three sub-rules are bad, or one good one is being drowned out
+# by two bad ones. Split into three independently-toggleable flags (2026-08-
+# 07) to test each in isolation; see the v18 changelog entry for the result.
+# MULTIWAY_AWARE stays as a combined read-only flag for any code that wants
+# "any multiway awareness is on."
+MULTIWAY_NARROW_CALL_RANGE = False  # (1) facing a raise already called by someone else, only continue with VALUE_3BET-tier hands
+MULTIWAY_DISABLE_AIR_CBET = False  # (2) the unconditional flop cbet only fires heads-up, made-hand-only otherwise
+MULTIWAY_DISABLE_LOOSE_CALL = False  # (3) the any-pair-or-better call vs a known loose archetype only applies heads-up
+MULTIWAY_AWARE = MULTIWAY_NARROW_CALL_RANGE or MULTIWAY_DISABLE_AIR_CBET or MULTIWAY_DISABLE_LOOSE_CALL
 
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
 _call_range_cache: dict[str, set] = {}
+_steal_range_cache: dict[str, set] = {}
 
 
 def _ranges():
-    global _rankings_cache, _open_range_cache, _call_range_cache
+    global _rankings_cache, _open_range_cache, _call_range_cache, _steal_range_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
         _open_range_cache = {
@@ -364,7 +676,11 @@ def _ranges():
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
-    return _open_range_cache, _call_range_cache
+        _steal_range_cache = {
+            pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
+            for pos, vpip in STEAL_VPIP_BY_POSITION.items()
+        }
+    return _open_range_cache, _call_range_cache, _steal_range_cache
 
 
 def _hand_notation(hole: list[str]) -> str:
@@ -390,6 +706,11 @@ def _had_preflop_initiative(hand: Hand, seat: int) -> bool:
     return bool(preflop_raises) and preflop_raises[-1].seat == seat
 
 
+def _last_preflop_raiser_seat(hand: Hand) -> int | None:
+    preflop_raises = [a for a in hand.actions if a.street == "preflop" and a.action == "raises"]
+    return preflop_raises[-1].seat if preflop_raises else None
+
+
 def _n_live_opponents(hand: Hand, seat: int) -> int:
     return sum(1 for s, p in hand.players.items() if s != seat and p.in_hand)
 
@@ -404,6 +725,21 @@ def _n_callers_since_last_raise_preflop(hand: Hand) -> int:
     if last_raise_i is None:
         return 0
     return sum(1 for a in preflop[last_raise_i + 1 :] if a.action == "calls")
+
+
+def _n_limpers_preflop(hand: Hand) -> int:
+    """Callers before any raise this preflop -- i.e. limps into what's still
+    an technically-unopened pot from hero's perspective (n_raises==0 branch).
+    See ISO_RAISE_OVER_LIMPERS above."""
+    count = 0
+    for a in hand.actions:
+        if a.street != "preflop":
+            continue
+        if a.action == "raises":
+            break
+        if a.action == "calls":
+            count += 1
+    return count
 
 
 _RANK_ORDER = "23456789TJQKA"
@@ -525,6 +861,23 @@ def _last_aggressor_this_street(hand: Hand) -> int | None:
     return street_bets[-1].seat if street_bets else None
 
 
+def _live_opponent_seats(hand: Hand, seat: int) -> list[int]:
+    return [s for s, p in hand.players.items() if s != seat and p.in_hand]
+
+
+def _all_live_opponents_are_tight(hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None) -> bool:
+    """True only if every opponent still live to act this hand is a KNOWN
+    tight archetype (see TIGHT_ARCHETYPES_FOR_STEAL / STEAL_WIDER_VS_NIT) --
+    unknown/missing archetypes don't count as tight, so this only fires with
+    real information, never as a default."""
+    if not opponent_archetypes:
+        return False
+    live = _live_opponent_seats(hand, seat)
+    if not live:
+        return False
+    return all(opponent_archetypes.get(s) in TIGHT_ARCHETYPES_FOR_STEAL for s in live)
+
+
 def should_call_with_draw(hole: list[str], board: list[str], street: str, to_call: float, pot_before: float) -> bool:
     """Pot-odds-aware draw continuation: call a bet with no made hand yet if
     hero holds a real flush/straight draw AND the price is at least as good
@@ -550,7 +903,7 @@ def choose_abc_action(
     from each seat's session dossier (`dossier.style`, an estimate); the
     simulation script can also pass the ground-truth archetype to measure the
     ceiling of what opponent-awareness is worth before dossier noise."""
-    open_ranges, call_ranges = _ranges()
+    open_ranges, call_ranges, steal_ranges = _ranges()
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     to_call = legal["call_amount"]
@@ -563,9 +916,26 @@ def choose_abc_action(
         if n_raises == 0:
             if to_call <= 0:
                 return ("check", None)
-            open_range = open_ranges.get(position)
+            # v14, part 1 (STEAL_WIDER_VS_NIT): widen the open range when
+            # every live opponent is a known Nit (90-93% fold to a raise at
+            # every position -- see the constant's comment above).
+            use_steal = STEAL_WIDER_VS_NIT and _all_live_opponents_are_tight(hand, seat, opponent_archetypes)
+            open_range = steal_ranges.get(position) if use_steal else open_ranges.get(position)
             if open_range and notation in open_range:
-                amount = hand.big_blind * OPEN_SIZING_BB
+                # v16, C1 (see ISO_RAISE_OVER_LIMPERS above): size up over
+                # already-limped-in callers instead of the flat open size.
+                sizing_bb = OPEN_SIZING_BB
+                if ISO_RAISE_OVER_LIMPERS:
+                    sizing_bb += ISO_SIZING_PER_LIMPER_BB * _n_limpers_preflop(hand)
+                # v19, hand-strength-dependent sizing: size up further with a
+                # premium hand (reuses VALUE_3BET_TIGHT as the "premium" set,
+                # rather than defining a second premium-hand list) -- untested
+                # theory, not read off any archetype table, opposite of the
+                # usual balanced-range argument for keeping opens flat. Testing
+                # it rather than assuming either direction.
+                if SIZE_UP_PREMIUM_OPENS and notation in VALUE_3BET_TIGHT:
+                    sizing_bb += PREMIUM_OPEN_SIZING_BONUS_BB
+                amount = hand.big_blind * sizing_bb
                 amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                 return ("raise", amount)
             return ("fold" if to_call > 0 else "check", None)
@@ -576,7 +946,14 @@ def choose_abc_action(
             return ("fold", None)
 
         # Facing exactly one raise.
-        if notation in VALUE_3BET:
+        # v15, B1: widen the value-3-bet range when the raiser hero is facing
+        # is a known Maniac/Station (see LOOSE_ARCHETYPES_FOR_3BET above).
+        value_3bet_range = VALUE_3BET
+        if WIDER_3BET_VS_LOOSE and opponent_archetypes:
+            raiser_seat = _last_preflop_raiser_seat(hand)
+            if raiser_seat is not None and opponent_archetypes.get(raiser_seat) in LOOSE_ARCHETYPES_FOR_3BET:
+                value_3bet_range = VALUE_3BET_VS_LOOSE
+        if notation in value_3bet_range:
             amount = hand.current_bet * THREEBET_MULTIPLIER
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("raise", amount)
@@ -589,7 +966,7 @@ def choose_abc_action(
         # MULTIWAY_AWARE: if someone already called this raise, it's already a
         # forming multiway pot -- worse odds to cold-call marginal hands into,
         # so only the wide call range applies heads-up (no callers yet).
-        already_multiway = MULTIWAY_AWARE and _n_callers_since_last_raise_preflop(hand) > 0
+        already_multiway = MULTIWAY_NARROW_CALL_RANGE and _n_callers_since_last_raise_preflop(hand) > 0
         if ALLOW_CALLING_RAISES and not already_multiway:
             call_range = call_ranges.get(position)
             if call_range and notation in call_range:
@@ -601,7 +978,8 @@ def choose_abc_action(
     n_bets = _n_bets_or_raises_this_street(hand)
     made = has_top_pair_or_better(player.hole_cards, hand.board)
     pot_before = sum(p.total_contributed for p in hand.players.values())
-    is_multiway = MULTIWAY_AWARE and _n_live_opponents(hand, seat) >= 2
+    n_live_opps_2plus = _n_live_opponents(hand, seat) >= 2
+    is_multiway = MULTIWAY_AWARE and n_live_opps_2plus  # combined flag; specific sub-rules below use their own flag
 
     if to_call <= 0:
         # "Don't auto-barrel" means don't keep firing without a hand -- it does
@@ -616,11 +994,57 @@ def choose_abc_action(
         # it's heads-up -- MULTIWAY_AWARE drops the free-roll cbet against
         # 2+ opponents, where fold equity is much lower.
         cbet_with_air = UNCONDITIONAL_FLOP_CBET and had_initiative and hand.street == "flop" and n_bets == 0
-        if is_multiway:
+        if MULTIWAY_DISABLE_AIR_CBET and n_live_opps_2plus:
             cbet_with_air = False
-        should_bet = made or cbet_with_air
+        # v17, C2 (see TIGHT_ARCHETYPES_FOR_DONK_BLUFF above): a donk bet with
+        # NO hand at all, specifically into a known Nit/TAG/LAG -- these
+        # archetypes fold to a donk/lead meaningfully more than to a same-
+        # sized cbet (archetype_facing_bet_by_initiative.csv: Nit +13.6pp,
+        # TAG +9.3pp, LAG +6.0pp; Station/Maniac showed no real difference,
+        # correctly excluded). This is a genuinely new behavior, not a
+        # sizing/range tweak on an existing bet -- the bot previously only
+        # ever bluffed as an in-position flop cbet with initiative.
+        donk_bluff_with_air = False
+        if DONK_BLUFF_VS_TIGHT and not had_initiative and n_bets == 0 and opponent_archetypes:
+            # heads-up-only is already enforced below via len(...)==1 --
+            # deliberately not gated by is_multiway/MULTIWAY_AWARE, so this
+            # v17 rule stays independent of the (2026-08-07-split) v18
+            # multiway sub-rule flags being tested.
+            donk_live_opponents = _live_opponent_seats(hand, seat)
+            if len(donk_live_opponents) == 1:
+                if opponent_archetypes.get(donk_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                    donk_bluff_with_air = True
+        should_bet = made or cbet_with_air or donk_bluff_with_air
         if should_bet and n_bets == 0:
-            amount = pot_before * 0.525
+            # v14, A2 (see SIZING_TARGET_ARCHETYPES above): size up specifically
+            # against a known Nit/TAG, where a bigger bet measurably buys extra
+            # folds -- against everyone else (unknown, or a known loose
+            # archetype that calls regardless of size), keep the standard
+            # sizing. Heads-up only, same reasoning as LOOSE_ARCHETYPES below:
+            # opponent identity is ambiguous once 2+ live opponents are facing
+            # the same bet.
+            sizing = STANDARD_SIZING_POT_FRACTION
+            live_opponents = _live_opponent_seats(hand, seat)
+            if opponent_archetypes and len(live_opponents) == 1:
+                if opponent_archetypes.get(live_opponents[0]) in SIZING_TARGET_ARCHETYPES:
+                    sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # v15, B2 (see SIZE_UP_ON_TURN above): small turn bets don't buy
+            # extra folds here regardless of opponent -- size up unconditionally.
+            if SIZE_UP_ON_TURN and hand.street == "turn":
+                sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # monster-pot fix, hero side (2026-08-07): the earlier fix only
+            # touched the ML bots' sizing (backend/bots/behavior_clone.py) --
+            # confirmed via a fresh hand-log pull that hero's OWN sizing here
+            # is an equally real contributor (a real example: hero betting
+            # $44 into an already-~$85 pot on the river, completely
+            # undamped). Same progressive-damping shape as the ML-bot fix,
+            # applied to hero's value-bet sizing too.
+            if HERO_PROGRESSIVE_POT_DAMPING:
+                pot_bb_hero = pot_before / hand.big_blind
+                if pot_bb_hero > HERO_POT_DAMPING_START_BB:
+                    hero_damp = min(1.0, (pot_bb_hero - HERO_POT_DAMPING_START_BB) / (HERO_POT_DAMPING_FULL_BB - HERO_POT_DAMPING_START_BB))
+                    sizing = sizing * (1 - hero_damp) + HERO_POT_DAMPING_FLOOR_FRAC * hero_damp
+            amount = pot_before * sizing
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("bet", amount)
         return ("check", None)
@@ -628,7 +1052,7 @@ def choose_abc_action(
     if made:
         return ("call", None)
 
-    if opponent_archetypes and not is_multiway:
+    if opponent_archetypes and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
         aggressor = _last_aggressor_this_street(hand)
         aggressor_archetype = opponent_archetypes.get(aggressor) if aggressor is not None else None
         if aggressor_archetype in LOOSE_ARCHETYPES and has_any_pair_or_better(player.hole_cards, hand.board):
