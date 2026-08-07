@@ -155,6 +155,18 @@ improvement (the explicit ask), the monster-pot rate is still far below the
 original 20-24% baseline, and bb/100 wasn't measurably hurt -- but it's a
 real tradeoff, not a free win, and worth knowing about if the monster-pot
 rate is revisited again.
+
+Immediate follow-up, same night: since the regression above was traced to
+the new model raising more confidently (not to the damping/suppression
+mechanisms themselves weakening), retightened RAISE_SUPPRESSION_MIN_
+INCREMENT_BB (5bb->4bb) and RAISE_SUPPRESSION_POT_FRACTION (0.25->0.2) to
+compensate, without touching PROGRESSIVE_POT_DAMPING. Recovered most of the
+regression: monster-pot rate 12.68%/12.72% -> 11.52%/11.37% (close to the
+pre-had_initiative 11.14%/11.09%, a small ~0.3-0.4pp residual remains),
+bb/100 excl. monster pots unchanged within noise both directions (+64.09 ->
++62.06 with rake, +75.58 -> +81.31 without -- both deltas inside the
+combined CI). Kept -- recovers most of the cost of the realism gain at no
+measurable cost of its own.
 """
 
 import random
@@ -229,8 +241,8 @@ POT_DAMPING_FLOOR_FRAC = 0.05
 # once the legal min-raise increment is BOTH >= a flat floor (small early-
 # hand raises are never touched) AND large relative to the current pot.
 SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE = True
-RAISE_SUPPRESSION_MIN_INCREMENT_BB = 5.0
-RAISE_SUPPRESSION_POT_FRACTION = 0.25
+RAISE_SUPPRESSION_MIN_INCREMENT_BB = 4.0
+RAISE_SUPPRESSION_POT_FRACTION = 0.2
 
 # 2026-07-30: two separate attempts to curb the ~19% "monster pot" (>50bb)
 # rate were tried and both reverted -- neither moved the incidence at all:
