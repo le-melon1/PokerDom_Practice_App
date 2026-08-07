@@ -305,8 +305,27 @@
     .center { top: 30%; }
     .chip-stack { display: none; }
     .seat { width: 98px; padding: 4px 6px; font-size: 0.82em; }
-    .seat .dossier-pop { display: none !important; }
+    /* the per-seat hover popup stays suppressed here -- #mobile-dossier
+       (tap-triggered) replaces it; some touch browsers simulate :hover on
+       tap, which would otherwise show both at once. */
+    .seat:hover .dossier-pop { display: none; }
     .dealer-button { width: 18px; height: 18px; font-size: 0.6em; }
+    /* Hover doesn't work on touch, so seats are tap-to-toggle instead (see
+       #mobile-dossier / openMobileDossier in the JS) -- a single shared
+       bottom-sheet element, not each seat's own nested .dossier-pop copy.
+       Nesting position:fixed inside .seat (which has its own `transform`
+       for centering) doesn't actually fix to the viewport -- a transformed
+       ancestor becomes the containing block for fixed descendants, so a
+       per-seat fixed popup would just track that seat, not the screen, and
+       still clip at the viewport edge for seats near the left/right of a
+       ~370px-wide table. */
+    #mobile-dossier {
+      display: none; position: fixed; left: 50%; bottom: 12px;
+      transform: translateX(-50%); width: min(280px, 90vw);
+      background: #111; border: 1px solid #555; border-radius: 8px;
+      padding: 12px; font-size: 0.95em; z-index: 20;
+    }
+    #mobile-dossier.show { display: block; }
     .action-log, .ev-panel { width: 100%; }
     .solver-summary .row, .ev-row { align-items: flex-start; gap: 10px; }
     .solver-summary .row span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
@@ -419,6 +438,7 @@
     </div>
   </div>
 </div>
+<div id="mobile-dossier" onclick="this.classList.remove('show')"></div>
 
 <script>
 const API = "";
@@ -627,6 +647,30 @@ function render(s) {
     div.className = "seat" + (p.seat === s.hero_seat ? " hero" : "") + (p.seat === s.current_actor ? " acting" : "");
     div.style.left = pos.left;
     div.style.top = pos.top;
+    // Dossier popup is hover-only, which doesn't work reliably on touch
+    // devices -- tap the seat to show the shared #mobile-dossier sheet
+    // instead (see its CSS comment for why it's a separate top-level
+    // element rather than each seat's own nested .dossier-pop). No-op on
+    // desktop beyond also toggling it, which is harmless since hover
+    // already reveals the per-seat one there.
+    div.onclick = (evt) => {
+      evt.stopPropagation();
+      const sheet = document.getElementById("mobile-dossier");
+      if (sheet.dataset.seat === String(p.seat) && sheet.classList.contains("show")) {
+        sheet.classList.remove("show");
+        return;
+      }
+      sheet.dataset.seat = String(p.seat);
+      sheet.innerHTML = d ? `
+        <b>${p.name}</b> (${d.style}, ${d.hands} рук)<br>
+        VPIP: ${(d.vpip * 100).toFixed(0)}% &middot;
+        PFR: ${(d.pfr * 100).toFixed(0)}% &middot;
+        3-bet: ${(d.threebet * 100).toFixed(0)}%<br>
+        AFq: ${(d.afq * 100).toFixed(0)}% &middot;
+        Выигрыш: ${d.net_won.toFixed(2)}bb
+      ` : `<b>${p.name}</b><br>Недостаточно данных для досье.`;
+      sheet.classList.add("show");
+    };
     const cards = (p.hole_cards || []).map(renderCard).join("");
     const d = p.dossier;
     const la = lastActionBySeat[p.seat];
