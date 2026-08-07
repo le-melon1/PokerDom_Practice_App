@@ -1,0 +1,9 @@
+fastapi>=0.140
+uvicorn>=0.51
+catboost>=1.2
+scikit-learn>=1.9
+pandas>=3.0
+pyarrow>=25.0
+reportlab>=5.0
+playwright>=1.61
+pytest>=9.1

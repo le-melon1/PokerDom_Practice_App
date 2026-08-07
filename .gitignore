@@ -6,3 +6,8 @@ catboost_info/
 *.pkl
 *.pkl.tmp
 .DS_Store
+
+# Regenerate via backend/bots/build_training_data.py (reads the sibling
+# PokerDom_Microlimits_Analysis repo's processed data) -- 370M, exceeds
+# GitHub's 100MB hard limit, only needed to retrain, not to run the app.
+data/behavior_clone_training_data.parquet
