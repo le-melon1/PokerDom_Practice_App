@@ -11,3 +11,8 @@ catboost_info/
 # PokerDom_Microlimits_Analysis repo's processed data) -- 370M, exceeds
 # GitHub's 100MB hard limit, only needed to retrain, not to run the app.
 data/behavior_clone_training_data.parquet
+
+# Debug/visual-check output (scripts/browser_check.py), not meaningful to
+# keep versioned -- just a screenshot of whatever table state existed at
+# check time.
+screenshots/
