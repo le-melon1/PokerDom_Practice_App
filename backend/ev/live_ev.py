@@ -413,6 +413,13 @@ def _solve_live_postflop_subgame(
     return result
 
 
+def _uncertainty_band(ev_values: list[float | None]) -> float:
+    finite = [ev for ev in ev_values if ev is not None]
+    if not finite:
+        return 0.0
+    return max(0.25, 0.05 * max(1.0, max(abs(v) for v in finite)))
+
+
 def recommend_gto_action(
     hand: Hand,
     hero_seat: int,
@@ -444,14 +451,19 @@ def recommend_gto_action(
 
     ranked = sorted(candidates, key=lambda item: item.ev if item.ev is not None else float("-inf"), reverse=True)
     best = ranked[0]
-    if best.ev is None:
+    best_ev = best.ev
+    recommended_action = best.action
+    recommended_amount = best.amount
+    if best_ev is None:
         recommended_action = "fold"
         recommended_amount = None
         best_ev = None
     else:
-        recommended_action = best.action
-        recommended_amount = best.amount
-        best_ev = best.ev
+        second_ev = next((item.ev for item in ranked[1:] if item.ev is not None), None)
+        if second_ev is not None and (best_ev - second_ev) < _uncertainty_band([best_ev, second_ev]):
+            recommended_action = "fold" if best.action in {"fold", "check"} else "call" if best.action == "call" else "raise"
+            recommended_amount = None
+            best_ev = None
 
     matrix = [[0.0, 1.0, -1.0], [-1.0, 0.0, 1.0], [1.0, -1.0, 0.0]]
     hero_probs, villain_probs = solve_three_action_equilibrium(matrix)
