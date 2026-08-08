@@ -169,6 +169,7 @@ combined CI). Kept -- recovers most of the cost of the realism gain at no
 measurable cost of its own.
 """
 
+import math
 import random
 import sys
 import time
@@ -469,7 +470,20 @@ def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int |
     amount = max(legal["min_raise_to"], min(target, legal["max_raise_to"]))
 
     verb = "bet" if chosen == "bets" else "raise"
-    return verb, round(amount, 2)
+    # 2026-08-08: plain round(amount, 2) can land a fraction of a cent BELOW
+    # legal["min_raise_to"] when that bound itself isn't a clean 2-decimal
+    # number (e.g. min_raise_to=14.371538... rounds to 14.37) -- Hand.
+    # apply_action then rejects it as IllegalAction. Rare (~0.03% of bot
+    # actions in a 20k-hand check) and already silently absorbed by every
+    # caller's fold-on-IllegalAction fallback, but that fallback quietly
+    # understates this archetype's true intended aggression frequency each
+    # time it fires. Round normally, then nudge up to the true legal floor
+    # (never down past legal["max_raise_to"], which IS already a real
+    # stack/pot value with no such rounding tail) if rounding crossed it.
+    final_amount = round(amount, 2)
+    if final_amount < legal["min_raise_to"]:
+        final_amount = min(math.ceil(legal["min_raise_to"] * 100) / 100, legal["max_raise_to"])
+    return verb, final_amount
 
 
 def bot_think_time(action: str) -> float:
