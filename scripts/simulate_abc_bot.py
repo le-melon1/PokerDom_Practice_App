@@ -10,6 +10,23 @@ disclaimer ("рейк нигде выше не учтён... реальная п
 
 Usage: python3 scripts/simulate_abc_bot.py [n_hands] [--no-rake-only] [--both]
 Default: calibrates on a small sample first, then runs a sized batch.
+
+2026-08-08: a real chip-conservation bug in backend/engine/hand.py was found
+and fixed the same day -- a side-pot layer whose only-ever contributor later
+folded (the classic "uncalled bet" case, e.g. a big bet nobody could fully
+call, followed by the bettor folding to a subsequent street's action) was
+silently dropped instead of refunded. Confirmed with scripts/
+smoke_test_table.py (random actions lost hundreds of chips within a handful
+of hands) AND with this project's own real bots (0.3-0.4% or so of hands
+triggered it in early spot-checks, before precise measurement was abandoned
+as not worth the time; 20,000 real-bot hands post-fix showed zero further
+violations). Every bb/100 number measured before this date carries some
+amount of additional, previously-undocumented noise from this source on top
+of the reported 95% CI -- almost certainly small relative to the sampling
+noise already being reported (the bug needs a fairly specific multi-way
+all-in-then-fold shape to trigger), but not something the CI itself
+accounted for. Numbers measured from this date forward do not have this
+caveat.
 """
 
 import statistics

@@ -176,3 +176,55 @@ def test_rake_capped_and_split_across_side_pots_at_showdown():
     assert hand.result.rake == cap  # 5% of 300 (=15) is above the 5bb cap, so it's capped
     total_paid_out = sum(hand.result.payouts.values())
     assert abs(total_paid_out - (total_pot - cap)) < 1e-6
+
+
+def test_folding_the_uncalled_top_of_a_bet_refunds_it_instead_of_vanishing():
+    # Regression test for a real bug (found 2026-08-08 by scripts/
+    # smoke_test_table.py -- random actions lost hundreds of chips within a
+    # handful of hands, and it reproduced with real bots too, not just
+    # randomness). A bet/raise bigger than any live opponent's remaining
+    # stack creates a side-pot LAYER whose only eligible contributor is the
+    # bettor themselves. If that same player later folds (fully legal --
+    # nothing stops folding when you could check for free, e.g. a random
+    # policy or a misclick), the old code did `continue` on that layer when
+    # it found no live eligible player, silently dropping the chips instead
+    # of returning them -- the poker-standard "uncalled bet" case, just
+    # discovered late (at final payout) instead of immediately.
+    #
+    # Three players: P1=200 (will bet big, then fold), P2=20 (short, calls
+    # all-in early, stays passive to showdown), P3=90 (medium, ends up
+    # all-in-for-less against P1's big bet, stays live to showdown).
+    players = [
+        Player(seat=1, name="P1", stack=200.0),
+        Player(seat=2, name="P2", stack=20.0),
+        Player(seat=3, name="P3", stack=90.0),
+    ]
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    stacks_before_hand = {1: 200.0, 2: 20.0, 3: 90.0}
+
+    hand.apply_action(1, "call")
+    hand.apply_action(2, "call")
+    hand.apply_action(3, "check")
+    assert hand.street == "flop"
+
+    hand.apply_action(2, "raise", amount=18.0)  # P2 shoves their last 18 (all-in)
+    hand.apply_action(3, "call")
+    hand.apply_action(1, "call")
+    assert hand.street == "turn"
+
+    hand.apply_action(3, "check")
+    hand.apply_action(1, "raise", amount=170.0)  # far more than P3 can ever call
+    hand.apply_action(3, "call")  # all-in for less -- only 70 of the 150 owed
+    assert hand.street == "river"
+    assert not hand.finished  # P1 still has chips and gets one more decision
+
+    hand.apply_action(1, "fold")  # legal even though checking was free
+    assert hand.finished
+
+    # The layer only P1 ever reached (P1's total 190 vs P3's cap at 90) has
+    # to come back to P1 -- nobody else was ever eligible for it, so there's
+    # no one to award it to via showdown, and it was never really "at risk."
+    assert abs(hand.result.payouts[1] - 100.0) < 1e-6
+
+    total_end = sum(p.stack for p in hand.players.values())
+    assert abs(total_end - sum(stacks_before_hand.values())) < 1e-6

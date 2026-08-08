@@ -83,7 +83,14 @@ want to retrain on different/updated data.
 ## What's real vs. approximated
 
 - **Game engine**: full rules, side pots, all-ins, real rake. Stress-tested
-  (1500+ hands, chip conservation holds).
+  (20,000+ hands with real bots, 500+ with random actions, chip conservation
+  holds). A real chip-conservation bug survived undetected until 2026-08-08
+  (`scripts/smoke_test_table.py` caught it): a side-pot layer whose only-ever
+  contributor later folded -- the standard "uncalled bet" case -- was
+  silently dropped instead of refunded. Fixed and covered by a regression
+  test (`tests/test_hand_engine.py`); every bb/100 number measured before
+  that date carries a small amount of extra, previously-undocumented noise
+  from this source on top of its reported 95% CI.
 - **ML bots**: trained on a 1M-row sample of real decision points (the full
   dataset hit a measured non-linear CatBoost slowdown on this machine — see
   `train_behavior_clone.py`'s comments). Archetype mix on re-seating is

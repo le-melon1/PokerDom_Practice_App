@@ -292,38 +292,60 @@ class Hand:
         self.finished = True
         live = self._players_still_live()
         total_pot = sum(p.total_contributed for p in self.players.values())
-        rake = self._compute_rake(total_pot)
+        nominal_rake = self._compute_rake(total_pot)
 
         if len(live) == 1:
             winner = live[0]
-            net = total_pot - rake
+            net = total_pot - nominal_rake
             winner.stack += net
-            self.result = HandResult(winners_by_pot=[], payouts={winner.seat: net}, rake=rake)
+            self.result = HandResult(winners_by_pot=[], payouts={winner.seat: net}, rake=nominal_rake)
             return
 
         while len(self.board) < 5:
             self.board.append(str(self.deck.draw(1)[0]))
 
         pots = self._build_side_pots()
-        rake_ratio = rake / total_pot if total_pot > 0 else 0.0
+        rake_ratio = nominal_rake / total_pot if total_pot > 0 else 0.0
         payouts: dict[int, float] = {}
         winners_by_pot = []
+        rake_taken = 0.0
 
         for pot in pots:
             eligible_live = [s for s in pot.eligible_seats if self.players[s].in_hand]
             if not eligible_live:
+                # Nobody who ever contributed to this side-pot LAYER is
+                # still in the hand (all folded on a later street) -- there's
+                # no one left to award it to via showdown, so it was never
+                # actually a contested pot. The common case: a bet/raise
+                # bigger than any opponent could ever call, so this layer's
+                # eligible_seats has exactly one member (a real "uncalled
+                # bet" that should never have been at showdown risk in the
+                # first place) -- but the same fix covers the rarer case of
+                # several contributors to one layer who all later fold.
+                # Refund each contributor their own stake in this specific
+                # layer. Never raked -- nothing was actually won here, same
+                # as a real uncalled bet is never raked. Fixed 2026-08-08
+                # after scripts/smoke_test_table.py caught real chip loss
+                # (this layer's money previously just vanished via a bare
+                # `continue`).
+                refund_each = pot.amount / len(pot.eligible_seats)
+                for s in pot.eligible_seats:
+                    payouts[s] = payouts.get(s, 0.0) + refund_each
+                    self.players[s].stack += refund_each
                 continue
             scores = {s: evaluate_7cards([Card(c) for c in self.players[s].hole_cards] + [Card(c) for c in self.board]) for s in eligible_live}
             best = max(scores.values())
             pot_winners = [s for s, v in scores.items() if v == best]
-            net_amount = pot.amount * (1 - rake_ratio)
+            pot_rake = pot.amount * rake_ratio
+            net_amount = pot.amount - pot_rake
+            rake_taken += pot_rake
             share = net_amount / len(pot_winners)
             for s in pot_winners:
                 payouts[s] = payouts.get(s, 0.0) + share
                 self.players[s].stack += share
             winners_by_pot.append((pot, pot_winners))
 
-        self.result = HandResult(winners_by_pot=winners_by_pot, payouts=payouts, rake=rake)
+        self.result = HandResult(winners_by_pot=winners_by_pot, payouts=payouts, rake=rake_taken)
 
     def _build_side_pots(self) -> list[SidePot]:
         contributions = {s: p.total_contributed for s, p in self.players.items() if p.total_contributed > 0}
