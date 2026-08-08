@@ -360,7 +360,21 @@ def _solve_live_postflop_subgame(
         dossier_entry = dossier.by_seat.get(opponent.seat) if dossier is not None else None
         villain_range, _ = live_opponent_defend_range(opponent_position, dossier_entry, rankings)
 
-    if legal["can_call"]:
+    # 2026-08-08 fix: the solver below decides "am I facing a bet" from the
+    # ROUNDED call amount it's given (flop_subgame.py: facing_bet = to_call
+    # > 0), but this wrapper used to decide which action_amounts branch to
+    # build from the RAW legal["can_call"] (unrounded). A sub-cent residue
+    # call amount (0 < call_amount < 0.005, real floating-point leftovers
+    # from street-by-street pot math) rounds to 0.00 -- the solver then
+    # returns raise_investments=None (checked_to path), but this wrapper
+    # still took the can_call branch and indexed into it directly, crashing
+    # with "'NoneType' object is not subscriptable" (found by a random-
+    # action stress test against the live EV/GTO code, not a hand-picked
+    # scenario). Round once, decide once, and pass the SAME value to both.
+    call_amount_rounded = round(legal["call_amount"], 2)
+    facing_bet = call_amount_rounded > 0
+
+    if facing_bet:
         effective_stack = max(1.0, min(hero.stack, opponent.stack + legal["call_amount"]))
         raise_to = min(legal["min_raise_to"], legal["max_raise_to"])
         raise_investment = max(legal["call_amount"], raise_to - hero.street_contributed)
@@ -382,13 +396,13 @@ def _solve_live_postflop_subgame(
             pot,
             effective_stack,
             (hero.hole_cards[0], hero.hole_cards[1]),
-            round(legal["call_amount"], 2),
+            call_amount_rounded,
             round(raise_investment, 2) if raise_investment is not None else None,
             round(min_bet_investment, 2) if min_bet_investment is not None else None,
         )
     )
     result["cache_hit"] = _cached_postflop_subgame.cache_info().hits > cache_before
-    if legal["can_call"]:
+    if facing_bet:
         result["action_amounts"] = {
             "fold": None,
             "call": legal["call_amount"],

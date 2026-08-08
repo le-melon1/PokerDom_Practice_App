@@ -216,3 +216,37 @@ def test_auto_mode_leans_toward_observed_session_stats_as_hands_accumulate():
     # by test_wider_villain_range_increases_equity_and_can_flip_ev above.
     assert r_seasoned.opponent_range_size >= r_fresh.opponent_range_size
     assert r_seasoned.equity_vs_range >= r_fresh.equity_vs_range
+
+
+def test_recommend_gto_action_survives_a_subcent_call_amount():
+    # Regression test for a real crash found 2026-08-08 by a random-action
+    # stress test against the live EV/GTO code (not a hand-picked scenario --
+    # this class of bug hides from those). Root cause: flop_subgame.py's
+    # solver decides "am I facing a bet" from the ROUNDED call amount it's
+    # given (facing_bet = to_call > 0 after round(..., 2)), but
+    # _solve_live_postflop_subgame used to decide which action_amounts
+    # branch to build from the RAW, unrounded legal["can_call"]. A sub-cent
+    # residue call amount (a real possibility after several streets of
+    # pot-fraction sizing math) rounds to 0.00 -- the solver then returns
+    # raise_investments=None (its "checked to" path), but the wrapper still
+    # took the can_call branch and indexed straight into it, crashing with
+    # "'NoneType' object is not subscriptable". Fixed by rounding once and
+    # using that single rounded value to decide both the solver's inputs and
+    # the wrapper's own branch, so they can never disagree.
+    table = Table(small_blind=1.0, big_blind=2.0, max_seats=2)
+    table.add_player(seat=1, name="Hero", stack=200.0)
+    table.add_player(seat=2, name="Villain", stack=200.0)
+    hand = table.start_new_hand()
+    hand.apply_action(1, "call")
+    hand.apply_action(2, "check")
+    assert hand.street == "flop"
+    hand.players[1].hole_cards = ["Ah", "Kd"]
+    hand.players[2].hole_cards = ["2c", "7s"]
+    # Engineer the exact edge case: a real but sub-cent-after-rounding call
+    # amount, the kind real street-by-street pot arithmetic can produce.
+    hand.current_bet = hand.players[1].street_contributed + 0.003
+    assert 0 < hand.legal_actions(1)["call_amount"] < 0.005
+
+    base = estimate_live_ev(hand, 1, opponent_archetype="TAG", equity_trials=50)
+    rec = recommend_gto_action(hand, 1, opponent_archetype="TAG", equity_trials=50, base=base)
+    assert rec.recommended_action in {"fold", "check", "call", "raise", "bet"}
