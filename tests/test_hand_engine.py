@@ -1,5 +1,10 @@
+import random
+
+import pytest
+
 from backend.engine.hand import Hand, IllegalAction
 from backend.engine.models import Player
+from backend.engine.table import Table
 
 
 def make_players(n, stack=200.0):
@@ -228,3 +233,71 @@ def test_folding_the_uncalled_top_of_a_bet_refunds_it_instead_of_vanishing():
 
     total_end = sum(p.stack for p in hand.players.values())
     assert abs(total_end - sum(stacks_before_hand.values())) < 1e-6
+
+
+def _random_legal_action(hand, seat):
+    legal = hand.legal_actions(seat)
+    choices = ["fold"]
+    if legal["can_check"]:
+        choices.append("check")
+    if legal["can_call"]:
+        choices.append("call")
+    if legal["max_raise_to"] > hand.current_bet:
+        choices.append("raise")
+    action = random.choice(choices)
+    if action == "raise":
+        lo, hi = legal["min_raise_to"], legal["max_raise_to"]
+        return action, round(random.uniform(lo, hi), 2)
+    return action, None
+
+
+@pytest.mark.parametrize("n_players", [2, 3, 4, 5, 6, 7, 8])
+def test_chip_conservation_under_random_play(n_players):
+    # Property-based regression test standing in for scripts/
+    # smoke_test_table.py, which is what actually caught the real
+    # uncalled-side-pot chip-loss bug fixed 2026-08-08 (hand-picked
+    # scenario tests, however thorough, hadn't hit it in many sessions of
+    # this project's history -- adversarial random play across many table
+    # sizes and stack depths found it within a couple dozen hands). Keeping
+    # a seeded, bounded version of that here means this class of bug can't
+    # silently regress again without pytest catching it. random.choice on
+    # a raise-to amount can occasionally land a hair below the precise
+    # legal minimum (float rounding) -- IllegalAction there just means
+    # "try folding instead," exactly like the live bots' own fallback in
+    # simulate_abc_bot.py, not a bug in itself.
+    random.seed(n_players)
+    stacks = [random.choice([20.0, 50.0, 200.0, 500.0]) for _ in range(n_players)]
+    table = Table(small_blind=1.0, big_blind=2.0, max_seats=n_players, rake_percent=0.05, rake_cap_bb=5.0)
+    for i in range(n_players):
+        table.add_player(seat=i + 1, name=f"P{i+1}", stack=stacks[i])
+
+    total_start = sum(p.stack for p in table.players.values())
+    rake_collected = 0.0
+
+    for _ in range(300):
+        if len([p for p in table.players.values() if p.stack > 0]) < 2:
+            break
+        try:
+            hand = table.start_new_hand()
+        except RuntimeError:
+            break
+        guard = 0
+        while not hand.finished and guard < 300:
+            seat = hand.current_actor()
+            if seat is None:
+                break
+            action, amount = _random_legal_action(hand, seat)
+            try:
+                hand.apply_action(seat, action, amount)
+            except IllegalAction:
+                hand.apply_action(seat, "fold")
+            guard += 1
+        assert guard < 300, "hand did not finish within 300 actions -- possible infinite loop"
+        if not hand.finished:
+            continue
+        rake_collected += hand.result.rake if hand.result else 0.0
+        total_now = sum(p.stack for p in table.players.values())
+        expected = total_start - rake_collected
+        assert abs(total_now - expected) < 1e-4, (
+            f"chip conservation violated: total={total_now:.4f} expected={expected:.4f}"
+        )
