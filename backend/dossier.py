@@ -47,6 +47,26 @@ class SeatDossier:
     postflop_aggression: dict[str, int] = field(default_factory=dict)
     postflop_passivity: dict[str, int] = field(default_factory=dict)
 
+    def __setstate__(self, state: dict) -> None:
+        """Backwards-compatible unpickle support.
+
+        Older saved app state may contain SeatDossier objects serialized before
+        context fields were introduced. When such objects are restored, ensure
+        new fields are present so live requests don't crash.
+        """
+        self.__dict__.update(state)
+        self.ensure_compat()
+
+    def ensure_compat(self) -> None:
+        if not hasattr(self, "position_vpip") or self.position_vpip is None:
+            self.position_vpip = {}
+        if not hasattr(self, "position_pfr") or self.position_pfr is None:
+            self.position_pfr = {}
+        if not hasattr(self, "postflop_aggression") or self.postflop_aggression is None:
+            self.postflop_aggression = {}
+        if not hasattr(self, "postflop_passivity") or self.postflop_passivity is None:
+            self.postflop_passivity = {}
+
     @property
     def vpip(self) -> float:
         return self.vpip_hands / self.hands_seen if self.hands_seen else 0.0
@@ -114,6 +134,7 @@ class TableDossier:
             if a.street == "preflop":
                 continue
             dossier = self.by_seat.setdefault(a.seat, SeatDossier())
+            dossier.ensure_compat()
             if a.action in ("bets", "raises"):
                 dossier.aggressive_postflop += 1
                 dossier.postflop_aggression[a.street] = dossier.postflop_aggression.get(a.street, 0) + 1
@@ -125,6 +146,7 @@ class TableDossier:
             if player.sitting_out:
                 continue  # wasn't actually dealt into this hand
             dossier = self.by_seat.setdefault(seat, SeatDossier())
+            dossier.ensure_compat()
             dossier.hands_seen += 1
             position = self._position_label(hand, seat)
             if seat in vpip_seats:
@@ -139,5 +161,6 @@ class TableDossier:
         if hand.result:
             for seat, amount in hand.result.payouts.items():
                 dossier = self.by_seat.setdefault(seat, SeatDossier())
+                dossier.ensure_compat()
                 invested = hand.players[seat].total_contributed
                 dossier.net_won += amount - invested
