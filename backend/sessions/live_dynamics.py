@@ -59,10 +59,16 @@ def sample_session_length(archetype: str, rng: random.Random | None = None) -> i
 
 
 class SeatOccupant:
-    def __init__(self, archetype: str, planned_length: int):
+    def __init__(self, archetype: str, planned_length: int, profile_id: str | None = None):
         self.archetype = archetype
         self.planned_length = planned_length
         self.hands_played = 0
+        # None in normal archetype mode. When set, this seat is a "real
+        # player" bot (see backend/bots/player_profile_bots.py) instead of
+        # the population-wide archetype model -- hands_played doubles as
+        # that model's session_hands_so_far feature, the exact same causal
+        # quantity build_player_profile_training_data.py computed it as.
+        self.profile_id = profile_id
 
     def should_leave(self, busted: bool) -> bool:
         return busted or self.hands_played >= self.planned_length
@@ -76,23 +82,44 @@ class TableTurnover:
     gets seated (e.g. "only practice against Nits") -- population weights
     among the allowed subset are preserved, not flattened to uniform, so
     restricting to a wide subset still feels like the real population mix.
-    None/empty means the full pool, matching the original default."""
+    None/empty means the full pool, matching the original default.
+
+    `player_profile_ids`: optional list of specific real-player profile_ids
+    (backend/bots/player_profile_bots.py's ~20-player pool). When given and
+    non-empty, this OVERRIDES allowed_archetypes entirely -- every bot seat
+    is one of these specific real, individually-identified players (chosen
+    uniformly, not weighted by their own hand count -- "play against these
+    N people" should mean an equal chance of seeing each, not a chance
+    proportional to how much historical data happened to exist for them)
+    instead of the population-wide archetype model."""
 
     def __init__(
         self,
         bot_seats: list[int],
         rng_seed: int | None = None,
         allowed_archetypes: list[str] | None = None,
+        player_profile_ids: list[str] | None = None,
     ):
         self.rng = random.Random(rng_seed)
         self.allowed_archetypes = [a for a in ARCHETYPE_POOL if a in allowed_archetypes] if allowed_archetypes else list(ARCHETYPE_POOL)
         if not self.allowed_archetypes:
             self.allowed_archetypes = list(ARCHETYPE_POOL)
+        self.player_profile_ids = list(player_profile_ids) if player_profile_ids else None
         self.occupants: dict[int, SeatOccupant] = {}
         for seat in bot_seats:
             self._seat_new_occupant(seat)
 
     def _seat_new_occupant(self, seat: int) -> SeatOccupant:
+        if self.player_profile_ids:
+            from backend.bots.player_profile_bots import load_profile_pool
+
+            profile_id = self.rng.choice(self.player_profile_ids)
+            archetype = load_profile_pool()[profile_id]["archetype"]
+            length = sample_session_length(archetype, self.rng)
+            occ = SeatOccupant(archetype, length, profile_id=profile_id)
+            self.occupants[seat] = occ
+            return occ
+
         pool = self.allowed_archetypes
         archetype = self.rng.choices(
             pool,
@@ -105,6 +132,9 @@ class TableTurnover:
 
     def archetype_for(self, seat: int) -> str:
         return self.occupants[seat].archetype
+
+    def profile_id_for(self, seat: int) -> str | None:
+        return self.occupants[seat].profile_id
 
     def after_hand(self, seat_stacks: dict[int, float], starting_stack: float) -> dict[int, bool]:
         """Call once per finished hand with each bot seat's current stack.

@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.bots.behavior_clone import bot_think_time, choose_bot_action
+from backend.bots.player_profile_bots import choose_player_profile_action, load_profile_pool, player_profile_think_time
 from backend.dossier import TableDossier
 from backend.engine.hand import IllegalAction
 from backend.engine.table import Table
@@ -51,6 +52,7 @@ STATE_FILE = Path(__file__).resolve().parent.parent / "data" / "app_state.pkl"
 DEFAULT_SETTINGS = {
     "hints_enabled": True,
     "allowed_archetypes": None,
+    "player_profile_ids": None,
     "starting_stack": 200.0,
     "max_seats": 6,
 }
@@ -122,6 +124,7 @@ class ActionRequest(BaseModel):
 class SettingsRequest(BaseModel):
     hints_enabled: bool | None = None
     allowed_archetypes: list[str] | None = None
+    player_profile_ids: list[str] | None = None
     starting_stack: float | None = None
     max_seats: int | None = None
 
@@ -143,7 +146,11 @@ def _new_table(max_seats: int = 6, starting_stack: float = 200.0, sb: float = 1.
     )
     dossier = TableDossier()
     bot_seats = [s for s in range(1, max_seats + 1) if s != HERO_SEAT]
-    turnover = TableTurnover(bot_seats, allowed_archetypes=state["settings"].get("allowed_archetypes"))
+    turnover = TableTurnover(
+        bot_seats,
+        allowed_archetypes=state["settings"].get("allowed_archetypes"),
+        player_profile_ids=state["settings"].get("player_profile_ids"),
+    )
 
     for seat in range(1, max_seats + 1):
         table.add_player(seat=seat, name=("Hero" if seat == HERO_SEAT else f"Bot{seat}"), stack=starting_stack)
@@ -173,12 +180,18 @@ def _step_one_bot() -> float | None:
         return None
 
     turnover: TableTurnover = state["turnover"]
-    archetype = turnover.archetype_for(seat)
-    hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
-    action, amount = choose_bot_action(
-        hand, seat, archetype=archetype, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
-    )
-    think_time = bot_think_time(action)
+    profile_id = turnover.profile_id_for(seat)
+    if profile_id:
+        session_hands_so_far = turnover.occupants[seat].hands_played
+        action, amount = choose_player_profile_action(hand, seat, profile_id, session_hands_so_far)
+        think_time = player_profile_think_time(action)
+    else:
+        archetype = turnover.archetype_for(seat)
+        hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
+        action, amount = choose_bot_action(
+            hand, seat, archetype=archetype, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
+        )
+        think_time = bot_think_time(action)
     try:
         hand.apply_action(seat, action, amount)
     except IllegalAction:
@@ -330,9 +343,16 @@ def reset_table(max_seats: int | None = None, starting_stack: float | None = Non
     return {"ok": True}
 
 
+def _profile_pool_summary() -> dict:
+    return {
+        pid: {"archetype": p["archetype"], "vpip": p["vpip"], "pfr": p["pfr"], "hands_seen": p["hands_seen"]}
+        for pid, p in load_profile_pool().items()
+    }
+
+
 @app.get("/api/settings")
 def get_settings():
-    return {**state["settings"], "archetype_pool": ARCHETYPE_POOL}
+    return {**state["settings"], "archetype_pool": ARCHETYPE_POOL, "player_profile_pool": _profile_pool_summary()}
 
 
 @app.post("/api/settings")
@@ -355,6 +375,19 @@ def update_settings(req: SettingsRequest):
         new_value = cleaned or None
         if new_value != settings.get("allowed_archetypes"):
             settings["allowed_archetypes"] = new_value
+            table_reset_needed = True
+
+    if req.player_profile_ids is not None:
+        # player_profile_ids overrides allowed_archetypes entirely at
+        # seating time (see TableTurnover) -- both are kept in settings
+        # independently so switching back to archetype mode (clearing this
+        # to an empty list) restores whatever allowed_archetypes was set to,
+        # rather than losing that choice.
+        valid_ids = set(load_profile_pool().keys())
+        cleaned_profiles = [pid for pid in req.player_profile_ids if pid in valid_ids]
+        new_profile_value = cleaned_profiles or None
+        if new_profile_value != settings.get("player_profile_ids"):
+            settings["player_profile_ids"] = new_profile_value
             table_reset_needed = True
 
     if req.starting_stack is not None and req.starting_stack != settings.get("starting_stack"):

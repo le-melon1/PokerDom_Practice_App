@@ -70,6 +70,11 @@
   .settings-hint { font-size: 0.8em; color: #789; margin: 4px 0 0; }
   .archetype-checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px 12px; }
   .archetype-check { display: flex; align-items: center; gap: 6px; font-size: 0.9em; }
+  .bot-mode-row { display: flex; gap: 16px; margin-bottom: 10px; font-size: 0.88em; flex-wrap: wrap; }
+  .bot-mode-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .profile-checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 5px 12px; max-height: 220px; overflow-y: auto; padding-right: 4px; }
+  .profile-check { display: flex; align-items: center; gap: 6px; font-size: 0.82em; color: #dfe; }
+  .profile-check .pc-meta { color: #789; }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; }
   .settings-select { background: #14301f; color: #dfe; border: 1px solid #2a6b46; border-radius: 6px; padding: 6px 8px; }
   .apply-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
@@ -487,8 +492,18 @@
     <div class="modal-body">
       <div class="settings-section">
         <h4>С какими ботами играем</h4>
-        <div class="archetype-checks" id="archetype-checks"></div>
-        <p class="settings-hint">Ничего не выбрано = реальный микс населения микролимитов (по частоте архетипов). Можно оставить только один тип, например Nit, чтобы целенаправленно тренировать конкретный матч-ап.</p>
+        <div class="bot-mode-row">
+          <label><input type="radio" name="bot-mode" value="archetype" id="bot-mode-archetype" checked> По архетипам</label>
+          <label><input type="radio" name="bot-mode" value="profiles" id="bot-mode-profiles"> Конкретные реальные игроки</label>
+        </div>
+        <div id="archetype-mode-body">
+          <div class="archetype-checks" id="archetype-checks"></div>
+          <p class="settings-hint">Ничего не выбрано = реальный микс населения микролимитов (по частоте архетипов). Можно оставить только один тип, например Nit, чтобы целенаправленно тренировать конкретный матч-ап.</p>
+        </div>
+        <div id="profile-mode-body" style="display:none">
+          <div class="profile-checks" id="profile-checks"></div>
+          <p class="settings-hint">Каждый — конкретный анонимный реальный игрок NL25 (не усреднение по архетипу): модель обучена на его собственных решениях, плюс на том, как его игра меняется по ходу сессии. Ничего не выбрано = обычный режим по архетипам.</p>
+        </div>
       </div>
       <div class="settings-section">
         <h4>Подсказки</h4>
@@ -629,6 +644,11 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---- settings panel: which bots, hints on/off, stack-depth "sizing", table size ----
+function setBotModeUI(mode) {
+  document.getElementById("archetype-mode-body").style.display = mode === "archetype" ? "block" : "none";
+  document.getElementById("profile-mode-body").style.display = mode === "profiles" ? "block" : "none";
+}
+
 async function openSettingsModal() {
   const settings = await api("/api/settings");
   const pool = settings.archetype_pool || [];
@@ -637,6 +657,19 @@ async function openSettingsModal() {
     const checked = !allowed || allowed.includes(a);
     return `<label class="archetype-check"><input type="checkbox" value="${a}" ${checked ? "checked" : ""}> ${a}</label>`;
   }).join("");
+
+  const profilePool = settings.player_profile_pool || {};
+  const selectedProfiles = settings.player_profile_ids || [];
+  document.getElementById("profile-checks").innerHTML = Object.entries(profilePool).map(([pid, p]) => {
+    const checked = selectedProfiles.includes(pid);
+    return `<label class="profile-check"><input type="checkbox" value="${pid}" ${checked ? "checked" : ""}> ${pid} <span class="pc-meta">· ${p.archetype} · ${p.hands_seen.toLocaleString("ru")} рук</span></label>`;
+  }).join("");
+
+  const useProfiles = selectedProfiles.length > 0;
+  document.getElementById("bot-mode-archetype").checked = !useProfiles;
+  document.getElementById("bot-mode-profiles").checked = useProfiles;
+  setBotModeUI(useProfiles ? "profiles" : "archetype");
+
   document.getElementById("hints-toggle").checked = settings.hints_enabled !== false;
   const depthBb = String(Math.round((settings.starting_stack || 200) / 2));
   const depthSelect = document.getElementById("stack-depth-select");
@@ -646,6 +679,10 @@ async function openSettingsModal() {
   document.getElementById("settings-status").textContent = "";
   openModal("settings-modal");
 }
+
+document.querySelectorAll('input[name="bot-mode"]').forEach(el => {
+  el.addEventListener("change", () => setBotModeUI(document.getElementById("bot-mode-profiles").checked ? "profiles" : "archetype"));
+});
 
 function applyHintsVisibility(enabled) {
   const hintsOffNote = document.getElementById("hints-off-note");
@@ -665,6 +702,10 @@ async function applySettings() {
   const statusEl = document.getElementById("settings-status");
   statusEl.textContent = "Применяю…";
   const checked = Array.from(document.querySelectorAll("#archetype-checks input:checked")).map(el => el.value);
+  const useProfiles = document.getElementById("bot-mode-profiles").checked;
+  const checkedProfiles = useProfiles
+    ? Array.from(document.querySelectorAll("#profile-checks input:checked")).map(el => el.value)
+    : [];
   const hints = document.getElementById("hints-toggle").checked;
   const depthBb = parseFloat(document.getElementById("stack-depth-select").value);
   const maxSeats = parseInt(document.getElementById("table-size-select").value, 10);
@@ -675,6 +716,7 @@ async function applySettings() {
       body: JSON.stringify({
         hints_enabled: hints,
         allowed_archetypes: checked,
+        player_profile_ids: checkedProfiles,
         starting_stack: depthBb * 2,
         max_seats: maxSeats,
       }),

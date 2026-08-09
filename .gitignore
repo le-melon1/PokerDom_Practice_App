@@ -12,6 +12,12 @@ catboost_info/
 # GitHub's 100MB hard limit, only needed to retrain, not to run the app.
 data/behavior_clone_training_data.parquet
 
+# Same pattern, smaller (8.6M, well under the limit) but still just a
+# retraining intermediate -- regenerate via
+# backend/bots/build_player_profile_training_data.py. The trained
+# player_profile_*.cbm models it produces ARE shipped (small, ready to use).
+data/player_profile_training_data.parquet
+
 # Debug/visual-check output (scripts/browser_check.py), not meaningful to
 # keep versioned -- just a screenshot of whatever table state existed at
 # check time.
