@@ -34,7 +34,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium   # only needed for scripts/browser_check.py
 
-pytest tests/ -q               # 77 tests, should be all green
+pytest tests/ -q               # 86 tests, should be all green
 python3 run_app.py
 ```
 
@@ -47,7 +47,7 @@ outside the project directory.
 | Path | Responsibility |
 |---|---|
 | `backend/engine/` | Full Texas Hold'em rules engine: side pots, all-ins, rake (5%, capped 5bb, "no flop no drop" — matches the Analysis repo's `src/config.py`). Stress-tested; several real ordering/rotation bugs were found and fixed here, all covered by regression tests. |
-| `backend/bots/abc_bot.py` | Hand-coded, non-ML "ABC strategy" bot. Every rule was added and then A/B-tested via `scripts/simulate_abc_bot.py` against real, measured bb/100 deltas — its own module docstring is a complete v1→v20 changelog, read that before touching the file, it explains *why* each rule exists, not just what it does. |
+| `backend/bots/abc_bot.py` | Hand-coded, non-ML "ABC strategy" bot. Every rule was added and then A/B-tested via `scripts/simulate_abc_bot.py` against real, measured bb/100 deltas — its own module docstring is a complete v1→v21 changelog, read that before touching the file, it explains *why* each rule exists, not just what it does. |
 | `backend/bots/behavior_clone.py` | The ML opponent population: two CatBoost models (action type, sizing) trained on real hand-history decision points from the sibling repo, sampled stochastically (not argmax) so they don't play identically every time. Its docstring documents a real, measured "monster pot" bug and fix (see below). |
 | `backend/bots/build_training_data.py`, `train_behavior_clone.py` | Regenerate the training parquet and the two `.cbm` model files from the Analysis repo's processed data. Not needed to just run the app — the trained models are already shipped in `data/`. |
 | `backend/dossier.py` | Session-scoped opponent stats (VPIP/PFR/3-bet/aggression, position-split), reset whenever a seat's occupant turns over. |
@@ -57,7 +57,7 @@ outside the project directory.
 | `backend/api.py` | FastAPI routes + JSON state serialization. |
 | `frontend/` | Vanilla JS/HTML UI — circular table, live EV panel, hand history, dossier view. |
 | `scripts/` | One-off tools: `simulate_abc_bot.py` (80k-hand A/B testing harness with 95% CI), `diagnose_monster_pots.py` (classifies pot-inflation mechanism), `check_donk_bluff_reaction.py` (confirms ML bots can't learn within a hand), `browser_check.py`/`smoke_test_table.py` (Playwright visual checks), `generate_strategy_pdf.py`/`generate_cheatsheet_pdf.py` (produce the two PDFs at repo root). |
-| `tests/` | 77 tests, pytest. |
+| `tests/` | 86 tests, pytest. |
 
 ## Data/model pipeline (why some files are shipped and some aren't)
 
@@ -96,6 +96,11 @@ want to retrain on different/updated data.
   `train_behavior_clone.py`'s comments). Archetype mix on re-seating is
   weighted by real population frequency, refreshed against the current
   3.56M-hand dataset (`ARCHETYPE_POPULATION_WEIGHTS` in `live_dynamics.py`).
+  A rounding edge case (`round(amount, 2)` occasionally landing a fraction
+  of a cent below the legal minimum raise) silently turned ~0.03% of bot
+  raises into folds via the caller's fold-on-IllegalAction fallback; fixed
+  2026-08-08 by nudging up to the true legal floor when rounding crosses it
+  (`behavior_clone.py`, verified 0/234,337 actions post-fix).
 - **"Monster pots"**: the ML bots' sizing model has no stack-depth feature
   (a retraining attempt that added one measured *worse*, not just neutral —
   documented in `train_behavior_clone.py`), so multi-street raise
@@ -111,7 +116,17 @@ want to retrain on different/updated data.
   reliability gate, resets on seat turnover.
 - **Live EV panel**: real Monte Carlo equity, but pools multiple live
   opponents into one combined range rather than a true multi-way solve —
-  disclosed simplification, not a bug.
+  disclosed simplification, not a bug. A real crash existed until
+  2026-08-08: the postflop solver (`flop_subgame.py`) decides whether hero
+  is "facing a bet" from a *rounded* call amount, but the EV wrapper
+  (`live_ev.py`) used to decide which branch to build from the *raw* call
+  amount — a genuine sub-cent residue (possible after several streets of
+  pot-fraction sizing math) could round to 0.00 and disagree between the
+  two, crashing with `'NoneType' object is not subscriptable`. Found via
+  randomized stress testing (not a hand-picked scenario — this class of bug
+  hides from those), fixed by rounding once and sharing that single value
+  for both decisions, covered by a regression test
+  (`tests/test_live_ev.py`).
 - **Trainer grading** (`backend/hand_history.py`): compares the chosen
   action against the live solver's own EV estimates and grades
   optimal/inaccuracy/mistake/blunder.
