@@ -167,6 +167,35 @@ bb/100 excl. monster pots unchanged within noise both directions (+64.09 ->
 +62.06 with rake, +75.58 -> +81.31 without -- both deltas inside the
 combined CI). Kept -- recovers most of the cost of the realism gain at no
 measurable cost of its own.
+
+## Hero-extreme-archetype adaptation (2026-08-09)
+
+These bots are otherwise fully memoryless -- no opponent-history features at
+all, confirmed both by the FEATURES list above and by a dedicated simulation
+(scripts/check_donk_bluff_reaction.py, p=0.44, flat across deciles). But the
+sibling PokerDom_Microlimits_Analysis repo found real PokerStars NL25 players
+DO show one specific, measurable within-session adaptation: fold rate to a
+specific repeat opponent's bets drops as a session goes on, but ONLY when
+that opponent reads as an obvious, extreme archetype -- confirmed for Nit
+specifically (fold% 89.6% -> 87.1% within a session, Delta=-2.54pp,
+p=0.0007, n=3560/3884 for Nit alone, p=0.0009), with NO detectable shift for
+moderate archetypes (TAG/LAG/Station/Loose-passive pooled: Delta=-0.36pp,
+p=0.637 -- see that repo's scripts/check_extreme_opponent_adaptation.py).
+
+Rather than build general online learning, this ships the one narrow,
+data-grounded case: once the HUMAN hero's own session dossier reads as an
+obvious Nit (backend/dossier.py's own vpip<0.15 threshold) with enough hands
+seen to trust the read (HERO_ADAPTATION_MIN_HANDS -- a judgment call, not
+measured off data; small enough to matter within a normal session, large
+enough that a freshly-seated hero with 0 observed hands can't spuriously
+read as "Nit" from dossier.style's 0/0 default), a bot facing a bet/raise
+made BY the hero this street gets its fold probability nudged down by the
+same measured magnitude (HERO_ADAPTATION_FOLD_REDUCTION_PP=0.025), with that
+mass moved to "calls". Gated on hero_dossier being passed in at all (None by
+default, so every existing caller -- simulate_abc_bot.py,
+diagnose_monster_pots.py, check_donk_bluff_reaction.py -- is unaffected).
+See tests/test_hero_archetype_adaptation.py for the seeded-sweep regression
+tests (no-op when ungated, measurable fold-rate drop when gated).
 """
 
 import math
@@ -174,6 +203,7 @@ import random
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 ANALYSIS_ROOT = Path(__file__).resolve().parents[3] / "PokerDom_Microlimits_Analysis"
@@ -183,6 +213,9 @@ from catboost import CatBoostClassifier
 
 from backend.engine.hand import Hand
 from src.pipeline.board_texture import texture_features
+
+if TYPE_CHECKING:
+    from backend.dossier import SeatDossier
 
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -244,6 +277,13 @@ POT_DAMPING_FLOOR_FRAC = 0.05
 SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE = True
 RAISE_SUPPRESSION_MIN_INCREMENT_BB = 4.0
 RAISE_SUPPRESSION_POT_FRACTION = 0.2
+
+# see choose_bot_action's "Hero-extreme-archetype adaptation" docstring
+# section above for the real-data finding this implements and why the
+# thresholds are what they are.
+ADAPT_TO_HERO_EXTREME_ARCHETYPE = True
+HERO_ADAPTATION_MIN_HANDS = 20
+HERO_ADAPTATION_FOLD_REDUCTION_PP = 0.025
 
 # 2026-07-30: two separate attempts to curb the ~19% "monster pot" (>50bb)
 # rate were tried and both reverted -- neither moved the incidence at all:
@@ -314,6 +354,26 @@ def _had_preflop_initiative(hand: Hand, seat: int) -> bool:
     return bool(preflop_raises) and preflop_raises[-1].seat == seat
 
 
+def _last_street_aggressor_seat(hand: Hand) -> int | None:
+    """Whoever bet/raised most recently on the CURRENT street (None if no
+    one has -- e.g. still just blinds posted, or everyone's checked so
+    far). hand.actions is append-only and chronological, so once reversed
+    iteration reaches an action from an earlier street, this street's
+    actions are exhausted."""
+    for a in reversed(hand.actions):
+        if a.street != hand.street:
+            break
+        if a.action in ("bets", "raises"):
+            return a.seat
+    return None
+
+
+def _hero_reads_as_extreme_nit(dossier: "SeatDossier | None") -> bool:
+    if dossier is None or dossier.hands_seen < HERO_ADAPTATION_MIN_HANDS:
+        return False
+    return dossier.style == "Nit"
+
+
 def _n_prior_aggressive_actions_this_hand(hand: Hand, seat: int) -> int:
     """Bets/raises by THIS seat across the whole hand so far (any street) --
     see BUCKET_DOWNGRADE below for why this matters and n_raises_this_street
@@ -350,9 +410,22 @@ def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
     return features
 
 
-def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int | None = None) -> tuple[str, float | None]:
+def choose_bot_action(
+    hand: Hand,
+    seat: int,
+    archetype: str = "TAG",
+    seed: int | None = None,
+    hero_seat: int | None = None,
+    hero_dossier: "SeatDossier | None" = None,
+) -> tuple[str, float | None]:
     """Returns (action, amount) ready to pass to Hand.apply_action. `amount` is
-    None for fold/check/call."""
+    None for fold/check/call.
+
+    `hero_seat`/`hero_dossier`: optional, both None by default (a full no-op
+    for every caller that doesn't pass them). When both are given and this
+    bot is facing a bet/raise made by hero_seat THIS street, and hero_dossier
+    reads as an obvious, well-observed Nit, see the module docstring's
+    "Hero-extreme-archetype adaptation" section for what changes and why."""
     action_model, sizing_model = _load_models()
     rng = random.Random(seed)
 
@@ -405,6 +478,25 @@ def choose_bot_action(hand: Hand, seat: int, archetype: str = "TAG", seed: int |
 
     style = _style_bias(archetype)
     filtered = {a: max(1e-6, p * style.get(a, 1.0)) for a, p in filtered.items()}
+
+    if (
+        ADAPT_TO_HERO_EXTREME_ARCHETYPE
+        and hero_seat is not None
+        and "folds" in filtered
+        and "calls" in filtered
+        and _last_street_aggressor_seat(hand) == hero_seat
+        and _hero_reads_as_extreme_nit(hero_dossier)
+    ):
+        # Shift HERO_ADAPTATION_FOLD_REDUCTION_PP worth of probability MASS
+        # (not a flat 0.025 in these possibly-unnormalized weights -- scaled
+        # by the current total so it means the same "~2.5 percentage
+        # points" the real data measured regardless of how style bias
+        # already redistributed this filtered set) from folds to calls.
+        shift = min(HERO_ADAPTATION_FOLD_REDUCTION_PP * sum(filtered.values()), filtered["folds"] - 1e-6)
+        if shift > 0:
+            filtered["folds"] -= shift
+            filtered["calls"] += shift
+
     total = sum(filtered.values())
     r = rng.random() * total
     acc = 0.0

@@ -34,7 +34,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium   # only needed for scripts/browser_check.py
 
-pytest tests/ -q               # 86 tests, should be all green
+pytest tests/ -q               # 91 tests, should be all green
 python3 run_app.py
 ```
 
@@ -57,7 +57,7 @@ outside the project directory.
 | `backend/api.py` | FastAPI routes + JSON state serialization. |
 | `frontend/` | Vanilla JS/HTML UI — circular table, live EV panel, hand history, dossier view. |
 | `scripts/` | One-off tools: `simulate_abc_bot.py` (80k-hand A/B testing harness with 95% CI), `diagnose_monster_pots.py` (classifies pot-inflation mechanism), `check_donk_bluff_reaction.py` (confirms ML bots can't learn within a hand), `browser_check.py`/`smoke_test_table.py` (Playwright visual checks), `generate_strategy_pdf.py`/`generate_cheatsheet_pdf.py` (produce the two PDFs at repo root). |
-| `tests/` | 86 tests, pytest. |
+| `tests/` | 91 tests, pytest. |
 
 ## Data/model pipeline (why some files are shipped and some aren't)
 
@@ -139,14 +139,18 @@ want to retrain on different/updated data.
   coarse flag. The real missing feature is genuine stack-depth-aware
   sizing; a retraining attempt with stack/SPR features measured worse and
   was reverted (see `train_behavior_clone.py`).
-- **ML bots architecturally cannot adapt within a session** — no
+- **ML bots are architecturally memoryless otherwise** — no general
   opponent-history features at all (confirmed both by code and by a
   dedicated simulation, `scripts/check_donk_bluff_reaction.py`, p=0.44,
   flat across deciles). The Analysis repo found real players *do* show
   measurable within-session adaptation, but specifically to Nit-styled and
   frequent-bluffer opponents, not to archetypes generally — see that repo's
-  README. Teaching the ML bots this one specific pattern is scoped but not
-  built.
+  README. The narrow Nit case is now built (2026-08-09): once the hero's own
+  session dossier reads as an obvious, well-observed Nit, a bot facing a bet
+  from the hero folds ~2.5pp less often, matching the measured magnitude —
+  see `behavior_clone.py`'s "Hero-extreme-archetype adaptation" docstring
+  section and `tests/test_hero_archetype_adaptation.py`. The
+  frequent-bluffer half of that finding is not built.
 - **No persistence**: all app state (table, dossier, rake collected) lives
   in the running process's memory; restarting the server resets everything.
 - **Phone access on the same Wi-Fi**: `run_app.py` binds `0.0.0.0` and prints

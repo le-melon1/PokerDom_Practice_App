@@ -150,7 +150,10 @@ def _step_one_bot() -> float | None:
 
     turnover: TableTurnover = state["turnover"]
     archetype = turnover.archetype_for(seat)
-    action, amount = choose_bot_action(hand, seat, archetype=archetype)
+    hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
+    action, amount = choose_bot_action(
+        hand, seat, archetype=archetype, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
+    )
     think_time = bot_think_time(action)
     try:
         hand.apply_action(seat, action, amount)
