@@ -23,7 +23,7 @@ from backend.engine.hand import IllegalAction
 from backend.engine.table import Table
 from backend.ev.live_ev import estimate_live_ev, recommend_gto_action
 from backend.hand_history import HandHistoryStore, grade_decision
-from backend.sessions.live_dynamics import TableTurnover
+from backend.sessions.live_dynamics import ARCHETYPE_POOL, TableTurnover
 
 app = FastAPI(title="PokerDom Practice")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -39,6 +39,22 @@ HERO_SEAT = 1
 # whole point is surviving process restarts, not concurrent access.
 STATE_FILE = Path(__file__).resolve().parent.parent / "data" / "app_state.pkl"
 
+# Settings panel: "which bots" (allowed_archetypes, None = full real
+# population mix), "are hints given" (hints_enabled -- purely advisory, the
+# frontend just doesn't call /api/live_ev or render that panel when off; the
+# post-action grade in trainer_feedback is a separate, always-on feature, not
+# gated by this), and "sizing" as effective stack depth in bb (starting_stack
+# is already denominated in bb-equivalent chips at sb=1/bb=2, so 200 == 100bb
+# effective). Changing any of allowed_archetypes/starting_stack/max_seats
+# requires a fresh table (can't swap opponent pool or stack depth mid-session)
+# -- see update_settings below.
+DEFAULT_SETTINGS = {
+    "hints_enabled": True,
+    "allowed_archetypes": None,
+    "starting_stack": 200.0,
+    "max_seats": 6,
+}
+
 state = {
     "table": None,
     "hand": None,
@@ -48,6 +64,7 @@ state = {
     "hand_history": None,
     "hand_number": 0,
     "hero_decisions": [],
+    "settings": dict(DEFAULT_SETTINGS),
 }
 LIVE_EV_CACHE_MAX = 64
 _live_ev_response_cache: OrderedDict[tuple, dict] = OrderedDict()
@@ -102,6 +119,13 @@ class ActionRequest(BaseModel):
     amount: float | None = None
 
 
+class SettingsRequest(BaseModel):
+    hints_enabled: bool | None = None
+    allowed_archetypes: list[str] | None = None
+    starting_stack: float | None = None
+    max_seats: int | None = None
+
+
 # PokerDom's real microlimit rake structure (see PokerDom_Microlimits_Analysis/
 # src/config.py: RAKE_PERCENT / RAKE_CAP_BB, cross-checked against parsed
 # hand-history summaries): 5% of the pot, capped at 5 big blinds, "no flop no drop".
@@ -119,7 +143,7 @@ def _new_table(max_seats: int = 6, starting_stack: float = 200.0, sb: float = 1.
     )
     dossier = TableDossier()
     bot_seats = [s for s in range(1, max_seats + 1) if s != HERO_SEAT]
-    turnover = TableTurnover(bot_seats)
+    turnover = TableTurnover(bot_seats, allowed_archetypes=state["settings"].get("allowed_archetypes"))
 
     for seat in range(1, max_seats + 1):
         table.add_player(seat=seat, name=("Hero" if seat == HERO_SEAT else f"Bot{seat}"), stack=starting_stack)
@@ -282,21 +306,74 @@ def _serialize_state(reveal_hero_cards: bool = True) -> dict:
         "action_log": action_log,
         "total_rake_collected": round(table.total_rake_collected, 2),
         "session_summary": session_summary,
+        "settings": state["settings"],
     }
 
 
 @app.post("/api/table/start")
-def start_table(max_seats: int = 6, starting_stack: float = 200.0):
-    _new_table(max_seats=max_seats, starting_stack=starting_stack)
+def start_table(max_seats: int | None = None, starting_stack: float | None = None):
+    _new_table(
+        max_seats=max_seats if max_seats is not None else state["settings"]["max_seats"],
+        starting_stack=starting_stack if starting_stack is not None else state["settings"]["starting_stack"],
+    )
     _save_state()
     return {"ok": True}
 
 
 @app.post("/api/table/reset")
-def reset_table(max_seats: int = 6, starting_stack: float = 200.0):
-    _new_table(max_seats=max_seats, starting_stack=starting_stack)
+def reset_table(max_seats: int | None = None, starting_stack: float | None = None):
+    _new_table(
+        max_seats=max_seats if max_seats is not None else state["settings"]["max_seats"],
+        starting_stack=starting_stack if starting_stack is not None else state["settings"]["starting_stack"],
+    )
     _save_state()
     return {"ok": True}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return {**state["settings"], "archetype_pool": ARCHETYPE_POOL}
+
+
+@app.post("/api/settings")
+def update_settings(req: SettingsRequest):
+    """Hints can be toggled live, no reset needed (the frontend simply stops
+    calling /api/live_ev when off). Changing the opponent pool, stack depth,
+    or table size takes effect on a fresh table only -- you can't swap who's
+    sitting or how deep the stacks are mid-session -- so those trigger
+    _new_table the same way the "Сбросить стол" button already does; the
+    caller (frontend) is expected to follow a table_reset:true response with
+    the same /api/hand/new call resetTable() already makes."""
+    settings = state["settings"]
+    table_reset_needed = False
+
+    if req.hints_enabled is not None:
+        settings["hints_enabled"] = req.hints_enabled
+
+    if req.allowed_archetypes is not None:
+        cleaned = [a for a in req.allowed_archetypes if a in ARCHETYPE_POOL]
+        new_value = cleaned or None
+        if new_value != settings.get("allowed_archetypes"):
+            settings["allowed_archetypes"] = new_value
+            table_reset_needed = True
+
+    if req.starting_stack is not None and req.starting_stack != settings.get("starting_stack"):
+        if req.starting_stack <= 0:
+            raise HTTPException(400, "starting_stack must be positive")
+        settings["starting_stack"] = req.starting_stack
+        table_reset_needed = True
+
+    if req.max_seats is not None and req.max_seats != settings.get("max_seats"):
+        if not (2 <= req.max_seats <= 8):
+            raise HTTPException(400, "max_seats must be between 2 and 8")
+        settings["max_seats"] = req.max_seats
+        table_reset_needed = True
+
+    if table_reset_needed:
+        _new_table(max_seats=settings["max_seats"], starting_stack=settings["starting_stack"])
+
+    _save_state()
+    return {**settings, "archetype_pool": ARCHETYPE_POOL, "table_reset": table_reset_needed}
 
 
 @app.post("/api/hand/new")

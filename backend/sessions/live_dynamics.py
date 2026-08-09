@@ -70,18 +70,33 @@ class SeatOccupant:
 
 class TableTurnover:
     """Tracks each bot seat's current occupant and decides when to replace
-    them, using real archetype-conditioned session lengths."""
+    them, using real archetype-conditioned session lengths.
 
-    def __init__(self, bot_seats: list[int], rng_seed: int | None = None):
+    `allowed_archetypes`: optional subset of ARCHETYPE_POOL to restrict who
+    gets seated (e.g. "only practice against Nits") -- population weights
+    among the allowed subset are preserved, not flattened to uniform, so
+    restricting to a wide subset still feels like the real population mix.
+    None/empty means the full pool, matching the original default."""
+
+    def __init__(
+        self,
+        bot_seats: list[int],
+        rng_seed: int | None = None,
+        allowed_archetypes: list[str] | None = None,
+    ):
         self.rng = random.Random(rng_seed)
+        self.allowed_archetypes = [a for a in ARCHETYPE_POOL if a in allowed_archetypes] if allowed_archetypes else list(ARCHETYPE_POOL)
+        if not self.allowed_archetypes:
+            self.allowed_archetypes = list(ARCHETYPE_POOL)
         self.occupants: dict[int, SeatOccupant] = {}
         for seat in bot_seats:
             self._seat_new_occupant(seat)
 
     def _seat_new_occupant(self, seat: int) -> SeatOccupant:
+        pool = self.allowed_archetypes
         archetype = self.rng.choices(
-            ARCHETYPE_POOL,
-            weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in ARCHETYPE_POOL],
+            pool,
+            weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
         )[0]
         length = sample_session_length(archetype, self.rng)
         occ = SeatOccupant(archetype, length)

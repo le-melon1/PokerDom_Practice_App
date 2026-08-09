@@ -6,9 +6,87 @@
 <title>PokerDom Practice</title>
 <style>
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body { font-family: -apple-system, sans-serif; background: #07140d; color: #eee; margin: 0; padding: 20px; }
-  .wrap { max-width: 900px; margin: 0 auto; }
-  h2 { text-align: center; margin: 0 0 12px; }
+  h2 { margin: 0; font-size: 1.3em; }
+
+  /* ---- desktop app shell: everything fits in one viewport, no page
+     scroll -- table+controls on the left, hints/grade on the right. Below
+     900px wide we fall back to the original stacked, scrollable flow (see
+     the max-width:600px block further down for phones specifically). ---- */
+  .app-shell { display: flex; flex-direction: column; gap: 8px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    background: #14301f; color: #bfe; border: 1px solid #2a6b46; border-radius: 8px;
+    width: 34px; height: 34px; font-size: 1.05em; cursor: pointer; line-height: 1;
+  }
+  .icon-btn:hover { background: #1c4229; }
+  .main-grid { display: block; }
+  .left-col, .right-col { display: flex; flex-direction: column; gap: 8px; }
+  .bottom-toolbar { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+  .grade-card {
+    background: #0a1f16; border: 1px solid #2a6; border-radius: 8px; padding: 12px;
+  }
+  .grade-card-title { font-weight: 700; color: #7fe0ac; margin-bottom: 6px; font-size: 0.92em; }
+  .grade-card-body { font-size: 0.9em; color: #9ac; }
+  .grade-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700;
+    font-size: 0.85em; margin-right: 8px; vertical-align: middle;
+  }
+  .grade-badge.optimal { background: rgba(127,224,172,0.22); color: #7fe0ac; }
+  .grade-badge.inaccuracy { background: rgba(255,213,74,0.22); color: #ffd54a; }
+  .grade-badge.mistake { background: rgba(230,150,50,0.25); color: #ffa552; }
+  .grade-badge.blunder { background: rgba(220,70,70,0.28); color: #ff8a8a; }
+  .grade-badge.neutral { background: rgba(255,255,255,0.1); color: #cde; }
+  .grade-explain { display: block; margin-top: 8px; color: #dfe; line-height: 1.45; }
+  .hints-off-note {
+    padding: 12px; text-align: center; color: #789; font-size: 0.88em;
+    border: 1px dashed #2a6b46; border-radius: 8px;
+  }
+
+  /* ---- modals: settings / history / playbook, all off-canvas so opening
+     them never changes the base page height ---- */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    z-index: 50; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #0c1a13; border: 1px solid #2a6b46; border-radius: 12px;
+    width: min(560px, 100%); max-height: min(640px, 90vh); display: flex; flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .modal-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid #1a3324; font-weight: 700; color: #7fe0ac;
+  }
+  .modal-close { background: none; border: none; color: #9ac; font-size: 1.1em; cursor: pointer; }
+  .modal-body { padding: 14px 16px; overflow-y: auto; }
+
+  .settings-section { margin-bottom: 16px; }
+  .settings-section h4 { margin: 0 0 8px; color: #ffe28a; font-size: 0.92em; }
+  .settings-hint { font-size: 0.8em; color: #789; margin: 4px 0 0; }
+  .archetype-checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px 12px; }
+  .archetype-check { display: flex; align-items: center; gap: 6px; font-size: 0.9em; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+  .settings-select { background: #14301f; color: #dfe; border: 1px solid #2a6b46; border-radius: 6px; padding: 6px 8px; }
+  .apply-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+  .apply-btn { background: #2a8a4a; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-weight: 600; }
+  .apply-btn:hover { background: #34a35a; }
+
+  @media (min-width: 900px) {
+    body { padding: 12px 18px; overflow: hidden; }
+    .app-shell { height: calc(100vh - 24px); }
+    .main-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 16px; }
+    .left-col { min-height: 0; }
+    .right-col { min-height: 0; overflow-y: auto; padding-right: 2px; }
+    .table-wrap { flex: 1 1 auto; min-height: 0; max-height: 100%; aspect-ratio: 820 / 500; width: auto; margin: 0 auto; }
+    .controls { flex: 0 0 auto; margin: 8px 0; min-height: 0; }
+    .action-log { flex: 0 0 auto; margin: 0; max-width: none; }
+    .action-log, .ev-panel, .grade-card { max-width: none; margin-left: 0; margin-right: 0; }
+  }
 
   .turn-banner {
     text-align: center;
@@ -168,7 +246,7 @@
 
   .ev-panel { background: #0a1f16; border: 1px solid #2a6; border-radius: 8px; padding: 12px; margin-top: 8px; max-width: 760px; margin-left: auto; margin-right: auto; }
   .ev-panel select { margin-left: 8px; }
-  .ev-row { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .ev-row { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
   .ev-confidence { margin-top: 6px; font-size: 0.82em; color: #9ac; }
   .gto-recommendation { margin-top: 10px; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid #2a6b46; }
   .gto-recommendation .title { font-weight: 700; color: #7fe0ac; margin-bottom: 6px; }
@@ -193,7 +271,6 @@
   .line-analysis .line-row.best { color: #ffe28a; }
   .line-analysis .line-explanation { grid-column: 1 / -1; color: #9ac; font-size: 0.9em; }
   .result-banner { text-align: center; font-size: 1em; margin-top: 8px; color: #dfe; }
-  .trainer-banner { text-align: center; min-height: 20px; margin-top: 6px; color: #ffe28a; font-size: 0.9em; }
 
   .history-toggle {
     display: block; margin: 14px auto 0; background: #14301f; color: #bfe; border: 1px solid #2a6b46;
@@ -300,7 +377,7 @@
 
   @media (max-width: 600px) {
     body { padding: 8px; overflow-x: hidden; }
-    .wrap { width: 100%; overflow: hidden; }
+    .app-shell { width: 100%; overflow: hidden; }
     .table-wrap { height: 480px; margin-bottom: 0; }
     .center { top: 30%; }
     .chip-stack { display: none; }
@@ -337,107 +414,186 @@
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h2>PokerDom Practice</h2>
-  <div class="rake-total" id="rake-total"></div>
+<div class="app-shell">
+  <div class="topbar">
+    <h2>PokerDom Practice</h2>
+    <div class="topbar-right">
+      <div class="rake-total" id="rake-total"></div>
+      <button class="icon-btn" id="settings-btn" onclick="openSettingsModal()" title="Настройки">⚙</button>
+    </div>
+  </div>
   <div class="turn-banner" id="turn-banner">—</div>
 
-  <div class="table-wrap">
-    <div class="oval">
-      <div class="center">
-        <div class="pot" id="pot"></div>
-        <div class="board-row" id="board"></div>
+  <div class="main-grid">
+    <div class="left-col">
+      <div class="table-wrap">
+        <div class="oval">
+          <div class="center">
+            <div class="pot" id="pot"></div>
+            <div class="board-row" id="board"></div>
+          </div>
+        </div>
+        <div id="seats"></div>
+      </div>
+
+      <div class="controls">
+        <div class="waiting-overlay" id="waiting-overlay"><span>Боты думают<span class="dots"></span></span></div>
+        <div class="actions" id="actions"></div>
+        <div id="raise-panel-holder"></div>
+        <div class="result-banner" id="result-banner"></div>
+      </div>
+
+      <div class="action-log" id="action-log"></div>
+
+      <div class="bottom-toolbar">
+        <button class="history-toggle" id="new-hand-btn" onclick="startFreshHand()">Новая раздача</button>
+        <button class="history-toggle" id="reset-table-btn" onclick="resetTable()">Сбросить стол</button>
+        <button class="history-toggle" id="history-toggle" onclick="openModal('history-modal'); loadHistoryList()">История раздач</button>
+        <button class="history-toggle" onclick="openModal('playbook-modal')">Playbook</button>
       </div>
     </div>
-    <div id="seats"></div>
+
+    <div class="right-col">
+      <div class="grade-card" id="grade-card">
+        <div class="grade-card-title">Оценка вашего последнего хода</div>
+        <div class="grade-card-body" id="grade-card-body">Сделайте ход — здесь появится оценка и объяснение.</div>
+      </div>
+
+      <div class="ev-panel" id="ev-panel" style="display:none">
+        <div><b>Live EV / подсказки</b>
+          <select id="archetype-select" onchange="refreshEV()">
+            <option value="">Авто (по статам этой сессии)</option>
+            <option value="__force_hypothesis__" disabled>── или проверить гипотезу: ──</option>
+            <option value="Nit">Nit</option>
+            <option value="TAG">TAG</option>
+            <option value="LAG">LAG</option>
+            <option value="Loose-passive">Loose-passive</option>
+            <option value="Station">Station</option>
+            <option value="Maniac">Maniac</option>
+          </select>
+        </div>
+        <div id="ev-content"></div>
+      </div>
+      <div class="hints-off-note" id="hints-off-note" style="display:none">Подсказки выключены — включите в настройках (⚙), если захотите видеть live EV и рекомендацию.</div>
+
+      <div class="ev-panel" id="session-summary" style="display:none"></div>
+    </div>
   </div>
+</div>
 
-  <div class="action-log" id="action-log"></div>
-
-  <div class="controls">
-    <div class="waiting-overlay" id="waiting-overlay"><span>Боты думают<span class="dots"></span></span></div>
-    <div class="actions" id="actions"></div>
-    <div id="raise-panel-holder"></div>
-    <div class="result-banner" id="result-banner"></div>
-    <div class="trainer-banner" id="trainer-banner"></div>
-    <div class="ev-panel" id="session-summary" style="margin-top:10px; display:none"></div>
-    <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
-      <button class="history-toggle" id="new-hand-btn" onclick="startFreshHand()">Новая раздача</button>
-      <button class="history-toggle" id="reset-table-btn" onclick="resetTable()">Сбросить стол</button>
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-head"><span>Настройки</span><button class="modal-close" onclick="closeModal('settings-modal')">✕</button></div>
+    <div class="modal-body">
+      <div class="settings-section">
+        <h4>С какими ботами играем</h4>
+        <div class="archetype-checks" id="archetype-checks"></div>
+        <p class="settings-hint">Ничего не выбрано = реальный микс населения микролимитов (по частоте архетипов). Можно оставить только один тип, например Nit, чтобы целенаправленно тренировать конкретный матч-ап.</p>
+      </div>
+      <div class="settings-section">
+        <h4>Подсказки</h4>
+        <div class="toggle-row">
+          <span>Показывать live EV и GTO-рекомендацию перед ходом</span>
+          <input type="checkbox" id="hints-toggle" style="width:18px;height:18px">
+        </div>
+        <p class="settings-hint">Оценка каждого вашего хода после решения показывается всегда, независимо от этой настройки.</p>
+      </div>
+      <div class="settings-section">
+        <h4>Сайзинг: глубина стека</h4>
+        <select class="settings-select" id="stack-depth-select">
+          <option value="50">50bb (короткий стек)</option>
+          <option value="100">100bb (стандарт)</option>
+          <option value="150">150bb</option>
+          <option value="200">200bb (глубокий стек)</option>
+        </select>
+        <p class="settings-hint">Меняет эффективный стек в bb — как размеры ставок и решения на префлопе/постфлопе меняются с глубиной. Применится на новом столе.</p>
+      </div>
+      <div class="settings-section">
+        <h4>Размер стола</h4>
+        <select class="settings-select" id="table-size-select">
+          <option value="2">Heads-up (2)</option>
+          <option value="3">3-max</option>
+          <option value="4">4-max</option>
+          <option value="5">5-max</option>
+          <option value="6">6-max</option>
+          <option value="7">7-max</option>
+          <option value="8">8-max</option>
+        </select>
+      </div>
+      <div class="apply-row">
+        <button class="apply-btn" onclick="applySettings()">Применить</button>
+      </div>
+      <p class="settings-hint" id="settings-status"></p>
     </div>
   </div>
+</div>
 
-  <div class="ev-panel" id="ev-panel" style="display:none">
-    <div><b>Live EV</b>
-      <select id="archetype-select" onchange="refreshEV()">
-        <option value="">Авто (по статам этой сессии)</option>
-        <option value="__force_hypothesis__" disabled>── или проверить гипотезу: ──</option>
-        <option value="Nit">Nit</option>
-        <option value="TAG">TAG</option>
-        <option value="LAG">LAG</option>
-        <option value="Loose-passive">Loose-passive</option>
-        <option value="Station">Station</option>
-        <option value="Maniac">Maniac</option>
-      </select>
-    </div>
-    <div id="ev-content"></div>
+<div class="modal-overlay" id="history-modal">
+  <div class="modal">
+    <div class="modal-head"><span>История раздач</span><button class="modal-close" onclick="closeModal('history-modal')">✕</button></div>
+    <div class="modal-body"><div class="history-panel show" id="history-panel"></div></div>
   </div>
+</div>
 
-  <button class="history-toggle" id="history-toggle" onclick="toggleHistory()">История раздач ▾</button>
-  <div class="history-panel" id="history-panel"></div>
+<div class="modal-overlay" id="playbook-modal">
+  <div class="modal">
+    <div class="modal-head"><span>Playbook</span><button class="modal-close" onclick="closeModal('playbook-modal')">✕</button></div>
+    <div class="modal-body">
+      <div class="playbook-wrap" style="margin:0; border:0;">
+        <div class="playbook-head">
+          <div class="title">Как играть в этой версии</div>
+          <div class="subtitle">Под реальную логику EV/solver/dossier, не общий покерный учебник</div>
+        </div>
+        <div class="playbook-grid">
+          <div class="playbook-card">
+            <h4>Простая стратегия (старт)</h4>
+            <ul>
+              <li>Если EV колла отрицательный, чаще фолд.</li>
+              <li>При низкой уверенности играй осторожнее: чек/колл лучше тонких рейзов.</li>
+              <li>В мультивее не раздувай банк без сильного value.</li>
+              <li>Проверяй 2 режима: авто и archetype-гипотезу.</li>
+            </ul>
+            <span class="tag">Лучше всего для стабильной игры</span>
+          </div>
 
-  <div class="playbook-wrap">
-    <div class="playbook-head">
-      <div class="title">Playbook: как играть в этой версии</div>
-      <div class="subtitle">Под реальную логику EV/solver/dossier, не общий покерный учебник</div>
-    </div>
-    <div class="playbook-grid">
-      <div class="playbook-card">
-        <h4>Простая стратегия (старт)</h4>
-        <ul>
-          <li>Если EV колла отрицательный, чаще фолд.</li>
-          <li>При низкой уверенности играй осторожнее: чек/колл лучше тонких рейзов.</li>
-          <li>В мультивее не раздувай банк без сильного value.</li>
-          <li>Проверяй 2 режима: авто и archetype-гипотезу.</li>
-        </ul>
-        <span class="tag">Лучше всего для стабильной игры</span>
-      </div>
+          <div class="playbook-card">
+            <h4>Сложная стратегия (продвинуто)</h4>
+            <ul>
+              <li>Heads-up постфлоп: доверяй solver-линии сильнее.</li>
+              <li>Сравнивай top-2 действия: если EV близки, снижай дисперсию.</li>
+              <li>Эксплойт по стилю: Nit/TAG дави чаще, Maniac/LAG чаще bluff-catch.</li>
+              <li>Смотри повторяющиеся ошибки в истории и убирай их первыми.</li>
+            </ul>
+            <span class="tag">Максимум EV на дистанции</span>
+          </div>
 
-      <div class="playbook-card">
-        <h4>Сложная стратегия (продвинуто)</h4>
-        <ul>
-          <li>Heads-up постфлоп: доверяй solver-линии сильнее.</li>
-          <li>Сравнивай top-2 действия: если EV близки, снижай дисперсию.</li>
-          <li>Эксплойт по стилю: Nit/TAG дави чаще, Maniac/LAG чаще bluff-catch.</li>
-          <li>Смотри повторяющиеся ошибки в истории и убирай их первыми.</li>
-        </ul>
-        <span class="tag">Максимум EV на дистанции</span>
-      </div>
+          <div class="playbook-card">
+            <h4>Что работает лучше всего</h4>
+            <ul>
+              <li>Дисциплина против -EV коллов.</li>
+              <li>Value-ставки против пассивных профилей.</li>
+              <li>Контроль банка в спорных спотах.</li>
+              <li>Адаптация к confidence-note и текущему стилю оппа.</li>
+            </ul>
+            <span class="tag">Основные источники выигрыша</span>
+          </div>
 
-      <div class="playbook-card">
-        <h4>Что работает лучше всего</h4>
-        <ul>
-          <li>Дисциплина против -EV коллов.</li>
-          <li>Value-ставки против пассивных профилей.</li>
-          <li>Контроль банка в спорных спотах.</li>
-          <li>Адаптация к confidence-note и текущему стилю оппа.</li>
-        </ul>
-        <span class="tag">Основные источники выигрыша</span>
-      </div>
-
-      <div class="playbook-card">
-        <h4>Ограничения модели (важно)</h4>
-        <ul>
-          <li>Мультивей оценивается упрощённо, не как полный solve.</li>
-          <li>Префлоп менее точный, чем HU постфлоп.</li>
-          <li>Dossier усиливается с числом рук; в начале больше популяционный read.</li>
-          <li>Тренер оценивает против внутренней модели, а не абсолютной истины.</li>
-        </ul>
-        <span class="tag">Условия применения советов</span>
+          <div class="playbook-card">
+            <h4>Ограничения модели (важно)</h4>
+            <ul>
+              <li>Мультивей оценивается упрощённо, не как полный solve.</li>
+              <li>Префлоп менее точный, чем HU постфлоп.</li>
+              <li>Dossier усиливается с числом рук; в начале больше популяционный read.</li>
+              <li>Тренер оценивает против внутренней модели, а не абсолютной истины.</li>
+            </ul>
+            <span class="tag">Условия применения советов</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
 <div id="mobile-dossier" onclick="this.classList.remove('show')"></div>
 
 <script>
@@ -456,6 +612,103 @@ function setBusy(isBusy) {
   busy = isBusy;
   document.getElementById("waiting-overlay").classList.toggle("show", isBusy);
   document.querySelectorAll(".actions button, .raise-presets button, #raise-confirm").forEach(b => b.disabled = isBusy);
+}
+
+// ---- generic modal helpers (settings / history / playbook) ----
+function openModal(id) {
+  document.getElementById(id).classList.add("show");
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove("show");
+}
+document.querySelectorAll(".modal-overlay").forEach(overlay => {
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.classList.remove("show"); });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelectorAll(".modal-overlay.show").forEach(o => o.classList.remove("show"));
+});
+
+// ---- settings panel: which bots, hints on/off, stack-depth "sizing", table size ----
+async function openSettingsModal() {
+  const settings = await api("/api/settings");
+  const pool = settings.archetype_pool || [];
+  const allowed = settings.allowed_archetypes;
+  document.getElementById("archetype-checks").innerHTML = pool.map(a => {
+    const checked = !allowed || allowed.includes(a);
+    return `<label class="archetype-check"><input type="checkbox" value="${a}" ${checked ? "checked" : ""}> ${a}</label>`;
+  }).join("");
+  document.getElementById("hints-toggle").checked = settings.hints_enabled !== false;
+  const depthBb = String(Math.round((settings.starting_stack || 200) / 2));
+  const depthSelect = document.getElementById("stack-depth-select");
+  const validDepths = Array.from(depthSelect.options).map(o => o.value);
+  depthSelect.value = validDepths.includes(depthBb) ? depthBb : "100";
+  document.getElementById("table-size-select").value = String(settings.max_seats || 6);
+  document.getElementById("settings-status").textContent = "";
+  openModal("settings-modal");
+}
+
+function applyHintsVisibility(enabled) {
+  const hintsOffNote = document.getElementById("hints-off-note");
+  const evPanel = document.getElementById("ev-panel");
+  const isHeroTurn = !!(lastState && !lastState.finished && lastState.legal_actions);
+  if (!enabled) {
+    evPanel.style.display = "none";
+    hintsOffNote.style.display = isHeroTurn ? "block" : "none";
+  } else {
+    hintsOffNote.style.display = "none";
+    if (isHeroTurn) { evPanel.style.display = "block"; refreshEV(); }
+  }
+}
+
+async function applySettings() {
+  if (busy) return;
+  const statusEl = document.getElementById("settings-status");
+  statusEl.textContent = "Применяю…";
+  const checked = Array.from(document.querySelectorAll("#archetype-checks input:checked")).map(el => el.value);
+  const hints = document.getElementById("hints-toggle").checked;
+  const depthBb = parseFloat(document.getElementById("stack-depth-select").value);
+  const maxSeats = parseInt(document.getElementById("table-size-select").value, 10);
+  try {
+    const res = await api("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hints_enabled: hints,
+        allowed_archetypes: checked,
+        starting_stack: depthBb * 2,
+        max_seats: maxSeats,
+      }),
+    });
+    if (lastState) lastState.settings = res;
+    applyHintsVisibility(res.hints_enabled);
+    if (res.table_reset) {
+      statusEl.textContent = "Стол пересобран с новыми настройками…";
+      closeModal("settings-modal");
+      await newHand();
+    } else {
+      statusEl.textContent = "Применено.";
+      setTimeout(() => { statusEl.textContent = ""; }, 2000);
+    }
+  } catch (e) {
+    statusEl.textContent = "Ошибка: " + e.message;
+  }
+}
+
+// ---- persistent per-action grade card (replaces the old fading toast) ----
+const GRADE_LABEL = {
+  optimal: "Оптимально", inaccuracy: "Неточность", mistake: "Ошибка", blunder: "Грубая ошибка", ungraded: "Без оценки",
+};
+function renderGradeCard(feedback, actionLabel, amount) {
+  if (!feedback) return;
+  const grade = feedback.grade || "ungraded";
+  const badgeClass = ["optimal", "inaccuracy", "mistake", "blunder"].includes(grade) ? grade : "neutral";
+  const label = GRADE_LABEL[grade] || "Без оценки";
+  const amountTxt = amount != null ? ` ${amount.toFixed(2)}bb` : "";
+  document.getElementById("grade-card-body").innerHTML = `
+    <span class="grade-badge ${badgeClass}">${label}</span>
+    <span>Ваш ход: ${actionLabel}${amountTxt}</span>
+    <span class="grade-explain">${feedback.verdict}</span>
+  `;
 }
 
 async function startTable() {
@@ -529,10 +782,7 @@ async function act(action, amount) {
     });
     render(s);
     if (s.trainer_feedback) {
-      const feedback = document.getElementById("trainer-banner");
-      const recommendedSize = s.trainer_feedback.solver_amount != null ? ` ${s.trainer_feedback.solver_amount.toFixed(2)}bb` : "";
-      feedback.textContent = `${s.trainer_feedback.verdict}${s.trainer_feedback.solver_action ? ` · ${s.trainer_feedback.solver_action}${recommendedSize}` : ""}`;
-      setTimeout(() => { feedback.textContent = ""; }, 5000);
+      renderGradeCard(s.trainer_feedback, ACTION_LABEL[action] || action, amount);
     }
     await driveBotsIfNeeded();
   } catch (e) {
@@ -769,6 +1019,7 @@ function render(s) {
     banner.className = "turn-banner";
     actionsEl.innerHTML = "";
     evPanel.style.display = "none";
+    document.getElementById("hints-off-note").style.display = "none";
     if (s.result) {
       const names = Object.entries(s.result.payouts).map(([seat, amt]) => {
         const p = s.players.find(pl => pl.seat === Number(seat));
@@ -790,14 +1041,14 @@ function render(s) {
       : `<button id="btn-call" onclick="act('call')">Колл ${la.call_amount.toFixed(2)}</button>`;
     html += `<button id="btn-raise" onclick="openRaisePanel(${la.min_raise_to}, ${la.max_raise_to})">Рейз/Бет</button>`;
     actionsEl.innerHTML = html;
-    evPanel.style.display = "block";
-    refreshEV();
+    applyHintsVisibility((s.settings && s.settings.hints_enabled) !== false);
   } else {
     const actorName = (s.players.find(p => p.seat === s.current_actor) || {}).name || "бот";
     banner.innerHTML = `Ходит: ${actorName}<span class="dots"></span>`;
     banner.className = "turn-banner bot-turn";
     actionsEl.innerHTML = "";
     evPanel.style.display = "none";
+    document.getElementById("hints-off-note").style.display = "none";
   }
 }
 
@@ -898,20 +1149,10 @@ async function refreshEV() {
 }
 
 // ---- hand history: list of past hands + per-decision EV grading ----
-let historyOpen = false;
 let expandedHandNumber = null;
 
-async function toggleHistory() {
-  historyOpen = !historyOpen;
-  const panel = document.getElementById("history-panel");
-  const toggleBtn = document.getElementById("history-toggle");
-  panel.classList.toggle("show", historyOpen);
-  toggleBtn.textContent = historyOpen ? "История раздач ▴" : "История раздач ▾";
-  if (historyOpen) await loadHistoryList();
-}
-
 async function refreshHistoryIfOpen() {
-  if (historyOpen) await loadHistoryList();
+  if (document.getElementById("history-modal").classList.contains("show")) await loadHistoryList();
 }
 
 async function loadHistoryList() {
