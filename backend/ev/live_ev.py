@@ -25,6 +25,20 @@ Heads-up (exactly one live opponent) is mathematically unaffected -- a
 pairwise functions unchanged. Real measured cost of doing this properly on
 a 5-live-opponent 6-max table: see the changelog entry for the exact
 before/after latency numbers.
+
+Real downstream effect, unplanned: solve_gto_wizard_like_strategy's raise
+EV formula (see that module) uses this same equity number, and multiway
+postflop facing-bet recommendations were measured over-raising even after
+the earlier fold-equity fix (917d8a5) -- 73.1% raise on a 483-decision
+sample, disclosed as a known imperfection at the time (see _abc_strategy_
+action's docstring for the full "tried ABC override, made it worse"
+story). Since the pooled equity was systematically too HIGH for multiway
+spots (equity vs one random opponent overstates equity vs beating all of
+them), the old raise EV was inflated too. Re-measured the same style of
+diagnostic after this fix, no other code changed: raise 39.1% / fold
+34.2% / call 26.7% on a fresh 281-decision sample -- a real, substantial
+improvement that came from fixing the actual root cause (equity) rather
+than patching the symptom (the EV formula or the recommendation source).
 """
 
 import sys
