@@ -31,6 +31,72 @@ def _get_hero_facing_raise():
     return hand
 
 
+def _get_hero_with_two_live_opponents():
+    """Deterministic-ish: fold everyone except hero and two others preflop,
+    leaving hero with a genuine 2-opponent decision (checked to, no bet
+    faced -- exercises the preflop/no-board multiway equity path)."""
+    table = Table(small_blind=1.0, big_blind=2.0, max_seats=6)
+    for i in range(6):
+        table.add_player(seat=i + 1, name=f"Bot{i+1}", stack=200.0)
+    hand = table.start_new_hand()
+
+    guard = 0
+    live_others = 0
+    while not hand.finished and guard < 20:
+        seat = hand.current_actor()
+        if seat is None or seat == 1:
+            break
+        if live_others < 2:
+            hand.apply_action(seat, "call")
+            live_others += 1
+        else:
+            hand.apply_action(seat, "fold")
+        guard += 1
+    return hand
+
+
+def _get_hero_facing_raise_with_two_live_opponents():
+    """First non-hero actor raises, second calls, everyone else folds --
+    hero faces a decision with 2 genuinely live opponents."""
+    table = Table(small_blind=1.0, big_blind=2.0, max_seats=6)
+    for i in range(6):
+        table.add_player(seat=i + 1, name=f"Bot{i+1}", stack=200.0)
+    hand = table.start_new_hand()
+
+    live_others = 0
+    guard = 0
+    while not hand.finished and guard < 20:
+        seat = hand.current_actor()
+        if seat is None or seat == 1:
+            break
+        if live_others == 0:
+            hand.apply_action(seat, "raise", 6.0)
+        elif live_others == 1:
+            hand.apply_action(seat, "call")
+        else:
+            hand.apply_action(seat, "fold")
+        live_others += 1
+        guard += 1
+    return hand
+
+
+def test_multiway_equity_is_lower_than_heads_up_equity_against_the_same_archetype():
+    # 2026-08-10 fix: equity against N independently-ranged live opponents
+    # must be <= equity against just one of them (beating everyone at once
+    # is at least as hard as beating one) -- the old pooled-range approach
+    # got this backwards/wrong (see live_ev.py's module docstring).
+    heads_up = _get_hero_facing_raise()
+    heads_up.players[1].hole_cards = ["Ks", "Qs"]
+    r_heads_up = estimate_live_ev(heads_up, 1, opponent_archetype="Maniac", equity_trials=800)
+
+    multiway = _get_hero_facing_raise_with_two_live_opponents()
+    multiway.players[1].hole_cards = ["Ks", "Qs"]
+    r_multiway = estimate_live_ev(multiway, 1, opponent_archetype="Maniac", equity_trials=800)
+
+    assert r_multiway.equity_vs_range < r_heads_up.equity_vs_range
+    assert r_multiway.opponent_range_size > r_heads_up.opponent_range_size
+
+
 def _get_heads_up_hero_facing_flop_bet():
     table = Table(small_blind=1.0, big_blind=2.0, max_seats=2)
     table.add_player(seat=1, name="Hero", stack=80.0)

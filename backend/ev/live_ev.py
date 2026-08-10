@@ -7,14 +7,24 @@ up against a Maniac."
 Reuses the already-validated analysis-project building blocks rather than
 re-deriving equity/range logic:
   - analysis/implied_range.py -- VPIP%/defend% -> a concrete range
-  - engine/range_equity.py -- narrow_range_by_board, combos_vs_range_equity_on_board
+  - engine/range_equity.py -- narrow_range_by_board, combos_vs_range_equity_on_board,
+    combos_vs_multiple_ranges_equity_on_board
   - data/reference/archetype_*.csv -- per-archetype frequency tables
 
-Simplification, disclosed rather than hidden: with more than one live
-opponent, all their ranges are pooled into one combined range rather than
-resolved as separate simultaneous ranges -- a genuine multi-way pot needs a
-real multi-agent equity solver, out of scope for a live panel that has to
-answer in a few seconds.
+2026-08-10: with more than one live opponent, each opponent's own range used
+to get pooled into one combined range and equity was computed vs that single
+union -- a different, wrong question ("equity vs one random opponent drawn
+from everyone's combined range" is not "probability of beating ALL live
+opponents simultaneously," which is strictly harder and generally lower with
+more opponents live). Replaced with a genuine multiway Monte Carlo
+(combos_vs_multiple_ranges_equity_on_board in the sibling repo): each live
+opponent's range stays separate, sampled independently every trial, hero's
+equity share reflects beating (or splitting with) all of them at once.
+Heads-up (exactly one live opponent) is mathematically unaffected -- a
+"union" of one range is just that range -- and still uses the original
+pairwise functions unchanged. Real measured cost of doing this properly on
+a 5-live-opponent 6-max table: see the changelog entry for the exact
+before/after latency numbers.
 """
 
 import sys
@@ -37,7 +47,12 @@ from backend.solver.gto_wizard_like import solve_gto_wizard_like_strategy
 from backend.solver.solver_tree import build_solver_tree
 from src.analysis.hand_rankings import compute_hand_rankings
 from src.analysis.implied_range import implied_range
-from src.engine.range_equity import combos_vs_range_equity_on_board, narrow_range_by_board, range_vs_range_equity
+from src.engine.range_equity import (
+    combos_vs_multiple_ranges_equity_on_board,
+    combos_vs_range_equity_on_board,
+    narrow_range_by_board,
+    range_vs_range_equity,
+)
 
 REFERENCE_DIR = Path(__file__).resolve().parents[2] / "data"
 _ANALYSIS_REFERENCE_DIR = ANALYSIS_ROOT / "data" / "reference"
@@ -729,53 +744,71 @@ def estimate_live_ev(
     if not opponents:
         return LiveEVResult(hand.street, pot_before, to_call, None, 0, None, None, "no live opponents", 1.0, "")
 
-    # Pool all live opponents' implied ranges into one combined range (see module
-    # docstring for why this is a simplification, not a true multi-way solve).
-    combined_range: list[str] = []
+    # Each opponent's own implied range, kept SEPARATE (not pooled into one
+    # union) -- see module docstring for why pooling was wrong and
+    # combos_vs_multiple_ranges_equity_on_board's docstring for the fix.
+    # With exactly one opponent this is identical to the pre-fix pooled
+    # range (a "union" of one thing is just that thing), so heads-up spots
+    # use the same pairwise equity functions as before, unchanged.
+    opponent_ranges: list[list[str]] = []
     confidences: list[float] = []
     for opp in opponents:
         opp_position = _seat_position(hand, opp.seat)
         if opponent_archetype:
-            combined_range.extend(opponent_defend_range(opp_position, opponent_archetype, rankings))
-            confidences.append(1.0)
+            opp_range = opponent_defend_range(opp_position, opponent_archetype, rankings)
+            conf = 1.0
         else:
             dossier_entry = dossier.by_seat.get(opp.seat) if dossier is not None else None
             opp_range, conf = live_opponent_defend_range(opp_position, dossier_entry, rankings)
-            combined_range.extend(opp_range)
-            confidences.append(conf)
-    combined_range = list(dict.fromkeys(combined_range)) or rankings["hand"].tolist()
+        opponent_ranges.append(list(dict.fromkeys(opp_range)) or rankings["hand"].tolist())
+        confidences.append(conf)
     min_confidence = min(confidences) if confidences else 0.0
+    multiway = len(opponents) >= 2
+    hero_combo = (hero.hole_cards[0], hero.hole_cards[1])
 
     if hand.street == "preflop" or not hand.board:
-        equity, _ = range_vs_range_equity([_hero_hand_notation(hero)], combined_range, trials=equity_trials)
-        opp_range_for_size = combined_range
+        if multiway:
+            equity = combos_vs_multiple_ranges_equity_on_board([hero_combo], opponent_ranges, board=None, trials=equity_trials)
+            opp_range_for_size = [c for r in opponent_ranges for c in r]
+        else:
+            equity, _ = range_vs_range_equity([_hero_hand_notation(hero)], opponent_ranges[0], trials=equity_trials)
+            opp_range_for_size = opponent_ranges[0]
     else:
         pot_fraction = (to_call / pot_before) if pot_before > 0 else 0.0
-        if opponent_archetype:
-            stats = opponent_facing_bet_stats(hand.street, pot_fraction, opponent_archetype)
-        else:
-            # Multiple live opponents in auto mode: blend using whichever has
-            # the least session data, since a cautious (population-leaning)
-            # read is the safer default when any opponent is still unknown.
-            least_known = min(opponents, key=lambda o: (dossier.by_seat.get(o.seat).hands_seen if dossier and dossier.by_seat.get(o.seat) else 0))
-            dossier_entry = dossier.by_seat.get(least_known.seat) if dossier is not None else None
-            stats, _ = live_opponent_facing_bet_stats(hand.street, pot_fraction, dossier_entry)
-        continue_frac = min(1.0, stats["call_pct"] + stats["raise_pct"]) or 1.0
+        # Each opponent's OWN facing-bet stats narrow THEIR OWN range
+        # independently -- no more borrowing one "least known" opponent's
+        # continue-frequency and applying it to everyone pooled together.
+        narrowed_ranges: list[list] = []
         # forward_equity_trials=30 (not the function's own 150 default):
         # this narrowing is explicitly documented as "directional, not
         # exact" (see narrow_range_by_board's docstring) -- it decides which
         # combos count as "still continuing," not a displayed EV number, so
         # the live app can afford noisier per-combo ranking in exchange for
-        # not blocking on this Monte Carlo pass for several seconds on every
-        # postflop decision (O(range_size * trials_per_combo), no caching,
-        # and range_size grows with every additional live opponent pooled
-        # in). The offline analysis project's multistreet_ev.py keeps the
-        # full default -- only this live, latency-sensitive call site trades
-        # precision for speed.
-        narrowed = narrow_range_by_board(combined_range, hand.board, keep_fraction=continue_frac, forward_equity_trials=30)
-        opp_range_for_size = narrowed
-        hero_combo = (hero.hole_cards[0], hero.hole_cards[1])
-        equity, _ = combos_vs_range_equity_on_board([hero_combo], narrowed, hand.board, trials=equity_trials)
+        # not blocking for several seconds on every postflop decision. Now
+        # paid once PER OPPONENT (was once on the pooled range) -- measured
+        # 4.0s for 5 opponents at a flat 30, real regression back toward the
+        # pre-fix latency problem. Scaled down inversely with opponent count
+        # (30 heads-up, unchanged; 6 at 5-way) to keep roughly the same
+        # TOTAL narrowing work regardless of how many opponents are live --
+        # measured 0.8s for 5 opponents at 6, ~1.0-1.3s end to end, back in
+        # the target range the original latency fix (a2554b3) established.
+        narrow_trials = max(6, 30 // len(opponents))
+        for i, opp in enumerate(opponents):
+            if opponent_archetype:
+                stats = opponent_facing_bet_stats(hand.street, pot_fraction, opponent_archetype)
+            else:
+                dossier_entry = dossier.by_seat.get(opp.seat) if dossier is not None else None
+                stats, _ = live_opponent_facing_bet_stats(hand.street, pot_fraction, dossier_entry)
+            continue_frac = min(1.0, stats["call_pct"] + stats["raise_pct"]) or 1.0
+            narrowed_ranges.append(
+                narrow_range_by_board(opponent_ranges[i], hand.board, keep_fraction=continue_frac, forward_equity_trials=narrow_trials)
+            )
+        if multiway:
+            equity = combos_vs_multiple_ranges_equity_on_board([hero_combo], narrowed_ranges, board=hand.board, trials=equity_trials)
+            opp_range_for_size = [c for r in narrowed_ranges for c in r]
+        else:
+            opp_range_for_size = narrowed_ranges[0]
+            equity, _ = combos_vs_range_equity_on_board([hero_combo], narrowed_ranges[0], hand.board, trials=equity_trials)
 
     confidence_note = "" if opponent_archetype else _confidence_note(min_confidence)
 
