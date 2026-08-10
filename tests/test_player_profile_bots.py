@@ -3,14 +3,24 @@ from backend.engine.table import Table
 from backend.sessions.live_dynamics import TableTurnover
 
 
-def test_load_profile_pool_has_20_real_players_with_expected_fields():
+def test_load_profile_pool_has_35_real_players_with_expected_fields():
     pool = load_profile_pool()
-    assert len(pool) == 20
+    assert len(pool) == 35
     for pid, profile in pool.items():
         assert pid.startswith("real_")
         assert profile["archetype"] in {"Nit", "TAG", "LAG", "Loose-passive", "Station", "Maniac"}
         assert 0.0 <= profile["vpip"] <= 1.0
         assert profile["hands_seen"] >= 500
+
+
+def test_load_profile_pool_has_at_least_3_nits():
+    # 20 profiles originally gave only 1 Nit (7.4% of 20 rounds down) -- user
+    # asked for enough players that Nit gets a real seat count, not a token
+    # one. 35 is the smallest N where proportional (largest-remainder)
+    # allocation from the real population weights yields >=3.
+    pool = load_profile_pool()
+    nits = [pid for pid, p in pool.items() if p["archetype"] == "Nit"]
+    assert len(nits) >= 3
 
 
 def _heads_up_hand():

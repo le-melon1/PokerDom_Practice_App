@@ -439,9 +439,34 @@ def solve_postflop_subgame(
         node.utility_samples += 1
         return node_utility
 
+    # Stratify hero_combo sampling by hero's hand-strength bucket ON THIS
+    # BOARD, instead of drawing uniformly from the whole (usually wide,
+    # preflop-shaped) hero_range. Found 2026-08-10: a real hand like a set
+    # is typically ~3% of a realistic calling/betting range on a random
+    # board, so at the live panel's speed-tuned iteration counts (96 on the
+    # flop) the "strong" bucket's info node was getting only ~2-3 genuine
+    # samples -- not enough to converge, producing near-identical EVs across
+    # call/raise_min/raise_75/raise_all_in that a stable sort then resolved
+    # in favor of "call" purely because it's listed first, not because it
+    # was actually better. This is exactly what a user flagged from the live
+    # app: the panel recommending call far more than raise/fold even with
+    # hands that should clearly bet/raise.
+    # Safe to do without reweighting: hero_combo and villain_combo are drawn
+    # independently below, and facing_bet_root's info-node key is keyed by
+    # hero's bucket alone -- changing how OFTEN each bucket's node gets
+    # visited doesn't bias what villain's hand/runout looks like conditional
+    # on that bucket, it only reduces variance for buckets that would
+    # otherwise be rare. Plain stratified sampling, not importance sampling
+    # (no likelihood-ratio reweighting needed since strata are independent
+    # of the other sampled variable).
+    hero_bucket_pools: dict[str, list[tuple[str, str]]] = {"weak": [], "medium": [], "strong": []}
+    for combo in hero_combos:
+        hero_bucket_pools[hand_bucket(combo, board)].append(combo)
+    nonempty_hero_buckets = [b for b in ("weak", "medium", "strong") if hero_bucket_pools[b]]
+
     for _ in range(iterations):
         for _ in range(50):
-            hero_combo = rng.choice(hero_combos)
+            hero_combo = rng.choice(hero_bucket_pools[rng.choice(nonempty_hero_buckets)])
             villain_combo = rng.choice(villain_combos)
             used = set(board) | set(hero_combo) | set(villain_combo)
             if len(used) == len(board) + 4:
