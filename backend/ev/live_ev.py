@@ -236,10 +236,10 @@ def _raise_fold_pct_by_bucket(hand: Hand, hero_seat: int, opponent_archetype: st
     return by_bucket
 
 
-def _abc_strategy_preflop_action(
+def _abc_strategy_action(
     hand: Hand, hero_seat: int, opponent_archetype: str | None, dossier
 ) -> tuple[str, float | None] | None:
-    """2026-08-10: preflop recommendation source, replacing
+    """Preflop-only recommendation source, replacing
     solve_gto_wizard_like_strategy's flat EV heuristic there entirely.
     That heuristic has no reliable preflop fold-equity data available (see
     _raise_fold_pct_by_bucket's preflop branch -- the one real table tried
@@ -249,10 +249,29 @@ def _abc_strategy_preflop_action(
 
     Rather than build a preflop solver from scratch, ask the ALREADY
     validated ABC strategy (backend/bots/abc_bot.py) what it does here --
-    real, A/B-tested open/call/value-3bet/steal ranges (see the published
-    strategy write-up's full version history), not a guessed heuristic.
-    This IS "the optimal play we already worked out," applied directly
-    instead of re-deriving a worse approximation of the same question.
+    real, A/B-tested open/call/value-3bet/steal ranges -- not a guessed
+    heuristic. This IS "the optimal play we already worked out," applied
+    directly instead of re-deriving a worse approximation of the same
+    question.
+
+    2026-08-10, tried and reverted: extending this to postflop MULTIWAY
+    (2+ live opponents) facing-bet spots too, on the same theory (the
+    fold-equity-corrected wizard_like heuristic there still over-raises:
+    73.1% of a 483-decision sample). Measured result on a 3000-hand,
+    324-decision self-play sample: call 69.1% / fold 30.9% / raise 0.0%.
+    Root cause: abc_bot.py's postflop-facing-a-bet rule is "call with
+    top-pair-or-better (or any-pair vs a loose opponent, or a
+    priced-in draw) else fold -- NEVER raise" (see its own docstring,
+    "POSTFLOP, facing a bet, any street"), an intentional, disclosed
+    simplification of that bot, not a bug. Routing multiway postflop
+    facing-bet decisions through it doesn't fix "recommends call too
+    often" -- it makes that exact complaint worse (raise disappears
+    entirely). Reverted to preflop-only; multiway postflop facing-bet
+    stays on the fold-equity-corrected wizard_like heuristic, imperfect
+    (73.1% raise) but at least offering a real mix of all three actions.
+    Heads-up postflop is unaffected either way: _solve_live_postflop_
+    subgame's CFR solver already covers that case and runs after this in
+    recommend_gto_action, taking final precedence when it applies.
     """
     if hand.street != "preflop":
         return None
@@ -614,13 +633,14 @@ def recommend_gto_action(
         recommended_amount = best.amount
         best_ev = best.ev
 
-    abc_preflop = _abc_strategy_preflop_action(hand, hero_seat, opponent_archetype, dossier)
-    if abc_preflop is not None:
+    abc_action = _abc_strategy_action(hand, hero_seat, opponent_archetype, dossier)
+    if abc_action is not None:
         # Overrides wizard_like's pick for preflop specifically -- see
-        # _abc_strategy_preflop_action's docstring. best_ev/action_evs above
-        # stay as informational EV context; only the actual recommendation
-        # (and its amount) changes to match the validated ABC strategy.
-        recommended_action, recommended_amount = abc_preflop
+        # _abc_strategy_action's docstring (postflop multiway was tried and
+        # reverted there). best_ev/action_evs above stay as informational EV
+        # context; only the actual recommendation (and its amount) changes
+        # to match the validated ABC strategy.
+        recommended_action, recommended_amount = abc_action
 
     tree = build_solver_tree(
         street=base.street,

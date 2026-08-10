@@ -93,7 +93,7 @@ def test_recommend_gto_action_returns_ranked_actions_and_best_ev():
 def test_recommend_gto_action_preflop_matches_the_validated_abc_strategy():
     # 2026-08-10: preflop recommendations come from the already-validated
     # ABC strategy (backend/bots/abc_bot.py), not solve_gto_wizard_like_
-    # strategy's own pick -- see live_ev.py's _abc_strategy_preflop_action
+    # strategy's own pick -- see live_ev.py's _abc_strategy_action
     # docstring for why (that heuristic has no reliable preflop
     # fold-equity data and, tested with the one real table available,
     # measured a 100%-raise over-correction). Verify the final
