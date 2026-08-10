@@ -1,5 +1,10 @@
 import backend.bots.abc_bot as abc_bot
-from backend.bots.abc_bot import choose_abc_action, has_top_pair_or_better, should_call_with_draw
+from backend.bots.abc_bot import (
+    choose_abc_action,
+    has_top_pair_or_better,
+    has_very_strong_hand,
+    should_call_with_draw,
+)
 from backend.engine.hand import Hand
 from backend.engine.models import Player
 
@@ -286,3 +291,65 @@ def test_does_not_cold_call_a_raise_already_called_by_someone_else(monkeypatch):
     hand.players[bb_seat].hole_cards = ["Jd", "Td"]  # JTs -- in the call range, not premium
     action, _ = choose_abc_action(hand, bb_seat)
     assert action == "fold"  # would call heads-up (see the non-multiway test above), but not here
+
+
+def test_very_strong_hand_detection():
+    # two pair -- strictly stronger than has_top_pair_or_better's bar
+    assert has_very_strong_hand(["9h", "6d"], ["9c", "6h", "2s"])
+    assert has_very_strong_hand(["9h", "9d"], ["9c", "6h", "2s"])  # trips
+    assert has_very_strong_hand(["Jd", "Td"], ["9d", "8d", "2d"])  # made flush
+    assert has_very_strong_hand(["9c", "8c"], ["7d", "6h", "5s", "2c"])  # made straight
+    # plain top pair / overpair are NOT very strong -- call-only, not raise
+    assert not has_very_strong_hand(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair aces
+    assert not has_very_strong_hand(["9h", "9d"], ["8c", "7d", "2s"])  # overpair, not two pair+
+    assert not has_very_strong_hand(["Kc", "Qh"], ["9d", "6h", "2s"])  # no made hand at all
+
+
+def test_calls_two_pair_facing_a_bet_by_default_value_raise_shipped_off():
+    # v22 tested VALUE_RAISE_FACING_BET and measured it WORSE (-9.66 bb/100,
+    # see abc_bot.py's changelog) -- shipped False, so even a genuine monster
+    # like two pair still just calls in the live default, same as before v22.
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["9s", "6s"]  # two pair (9s+6s vs board 9c/6d) on a 9c-6d-2h board
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "call"
+
+
+def test_value_raises_two_pair_facing_a_bet_when_flag_is_flipped_on(monkeypatch):
+    # The mechanism itself, gated behind the flag for anyone re-testing this
+    # later -- see the module docstring for why it's off by default.
+    monkeypatch.setattr(abc_bot, "VALUE_RAISE_FACING_BET", True)
+    monkeypatch.setattr(abc_bot, "HERO_PROGRESSIVE_POT_DAMPING", False)  # isolate the raise sizing from pot damping
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["9s", "6s"]
+    action, amount = choose_abc_action(hand, 4)
+    assert action == "raise"
+    assert amount == 9.0  # 3x the 3bb bet faced (VALUE_RAISE_MULTIPLIER), damping isolated off
+
+
+def test_value_raise_sizing_is_damped_in_an_already_big_pot_when_flag_is_flipped_on(monkeypatch):
+    # Same very-strong hand and bet, flag on, damping left ON (the default) --
+    # only checks the mechanism composes (raises, sized below the undamped
+    # 3x) rather than hardcoding the damped number, since it depends on the
+    # module's damping constants staying exactly as they are today.
+    monkeypatch.setattr(abc_bot, "VALUE_RAISE_FACING_BET", True)
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["9s", "6s"]
+    action, amount = choose_abc_action(hand, 4)
+    assert action == "raise"
+    assert 3.0 < amount < 9.0  # damped below the undamped 3x-the-bet sizing, still a real raise
+
+
+def test_calls_plain_top_pair_facing_a_bet_instead_of_raising():
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["9h", "Kd"]  # top pair nines, no second pair -- call, not raise
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "call"
+
+
+def test_never_value_raises_as_a_bluff_with_a_weak_hand_even_with_flag_on(monkeypatch):
+    monkeypatch.setattr(abc_bot, "VALUE_RAISE_FACING_BET", True)
+    hand = _hero_facing_a_flop_bet_from_bb()
+    hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair -- not very strong, rule doesn't apply even with the flag on
+    action, _ = choose_abc_action(hand, 4)
+    assert action == "fold"

@@ -404,8 +404,11 @@ script's docstring). Revision history, each one a real measured finding:
 
   Same session, immediate follow-up: tightened behavior_clone.py's
   SUPPRESS_RAISE_WHEN_MIN_RAISE_LARGE thresholds too (ML-bot-only mechanism,
-  no hero-side equivalent needed -- hero never raises postflop and preflop
-  sizing isn't gated by this legal-action suppression). Real further drop,
+  no hero-side equivalent needed at the time -- hero didn't raise postflop
+  yet [that changed in v22 below, gated to a strict very-strong-hand subset
+  clamped by legal["max_raise_to"], not the open-ended re-raise pattern this
+  suppression targets] and preflop sizing isn't gated by this legal-action
+  suppression). Real further drop,
   monster-pot rate 12.02%/11.82% -> 11.14%/11.09%; bb/100 excl. monster pots
   flat within noise both ways (+61.30->+63.57 with rake, +78.04->+77.03
   without). See behavior_clone.py's "third pass" docstring section for the
@@ -466,7 +469,11 @@ strategy card, not just inferred from code):
 
   POSTFLOP, facing a bet, any street:
     - Call with top-pair-or-better (rank-count based -- see
-      has_top_pair_or_better -- now including made straights/flushes).
+      has_top_pair_or_better -- now including made straights/flushes). v22
+      tested raising instead with two-pair-or-better (VALUE_RAISE_FACING_
+      BET, has_very_strong_hand) -- measured WORSE (-9.66 bb/100, see the
+      constant's comment above), shipped OFF; call-only stays the live
+      default even for a flopped set.
     - Else, IF the specific opponent who bet is a known Loose-passive/
       Station/Maniac (see LOOSE_ARCHETYPES): call with ANY pair or better
       (has_any_pair_or_better) instead of the stricter top-pair bar. This is
@@ -476,7 +483,7 @@ strategy card, not just inferred from code):
       price is at least as good as the draw's rough continue-equity
       (~35% w/ two cards to come on the flop, ~19% w/ one card on the turn --
       see should_call_with_draw). Never on the river (no card left to come).
-    - Else fold. Never raise postflop.
+    - Else fold.
 
   Known, disclosed simplifications (not bugs, just where "simple" stops):
     - Hand-strength/draw detection is rank-count and rank-window based, no
@@ -702,6 +709,35 @@ MULTIWAY_DISABLE_AIR_CBET = False  # (2) the unconditional flop cbet only fires 
 MULTIWAY_DISABLE_LOOSE_CALL = False  # (3) the any-pair-or-better call vs a known loose archetype only applies heads-up
 MULTIWAY_AWARE = MULTIWAY_NARROW_CALL_RANGE or MULTIWAY_DISABLE_AIR_CBET or MULTIWAY_DISABLE_LOOSE_CALL
 
+# v22: the postflop facing-a-bet plan had never raised at all, with ANY hand
+# -- "call with top-pair-or-better, else fold" was the entire plan (see the
+# "POSTFLOP, facing a bet" rule below). That's a defensible reason not to
+# semi-bluff-raise draws (see the BlackRain79 note earlier in this docstring
+# -- calling stations have no fold equity to give up), but it never
+# distinguished a genuine monster (two pair+/trips/a made straight or flush)
+# from a bare top pair: even a flopped set just called. The hypothesis --
+# against a population that's 68.5% Loose-passive/Station/Maniac (see
+# PokerDom_Practice_App's live_dynamics.py ARCHETYPE_POPULATION_WEIGHTS),
+# opponents who structurally don't fold, building a bigger pot with a hand
+# that's rarely behind should pay -- TESTED WORSE (scripts/simulate_abc_bot.py
+# --value-raise, 80k hands/arm, real rake, ground-truth archetypes, same
+# seed): +56.57 bb/100 baseline (CI +/-3.92) vs +46.90 with the raise (CI
+# +/-3.68), delta -9.66 bb/100, well outside the combined noise band.
+# Working theory for why: this population doesn't just fail to fold, it also
+# keeps FIRING -- a call keeps their wide betting/bluffing range live for
+# more streets ("let the fish bet for you"), while a raise narrows their
+# continuing range to hands that beat two pair often enough to matter AND
+# tends to end the hand (fold) or go check-fold from here, cutting off value
+# a flat call would have kept extracting. Consistent with this file's other
+# "standard theory doesn't transfer to this specific loose/passive-dominated
+# population" findings (v11's MULTIWAY_AWARE, the unconditional-flop-cbet
+# test) -- shipped OFF, same as those. Gated strictly to two-pair-or-better
+# (has_very_strong_hand below, stricter than has_top_pair_or_better) even
+# though it's off, so re-testing later starts from a clean value-only rule,
+# not a bluff.
+VALUE_RAISE_FACING_BET = False  # tested WORSE (-9.66 bb/100, see above) -- kept in code/tests for reference, matches this file's policy for other measured-negative features (MULTIWAY_AWARE etc.)
+VALUE_RAISE_MULTIPLIER = 3.0  # standard "raise 3x the bet" sizing, mirrors THREEBET_MULTIPLIER's preflop convention -- only matters if VALUE_RAISE_FACING_BET is flipped on
+
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
 _call_range_cache: dict[str, set] = {}
@@ -872,6 +908,26 @@ def has_top_pair_or_better(hole: list[str], board: list[str]) -> bool:
     return r == top_board_rank  # top pair
 
 
+def has_very_strong_hand(hole: list[str], board: list[str]) -> bool:
+    """Strictly stronger than has_top_pair_or_better -- excludes plain top
+    pair and a plain overpair (still call-only), keeps two-pair-or-better,
+    trips+, and made straights/flushes. Gates VALUE_RAISE_FACING_BET (see
+    above): a hand this strong is rarely behind, so raising to build the pot
+    against a population that mostly doesn't fold is a value play, not a
+    bluff -- deliberately NOT extended to plain top pair, which is strong
+    enough to call profitably but not strong enough to want a bigger pot
+    against an unknown range."""
+    if not board:
+        return False
+    if _has_made_flush(hole, board) or _has_made_straight(hole, board):
+        return True
+    counts = _rank_counts(hole + board)
+    pair_ranks = [r for r, n in counts.items() if n >= 2]
+    if len(pair_ranks) >= 2:
+        return True  # two pair or better
+    return bool(pair_ranks) and counts[pair_ranks[0]] >= 3  # trips+
+
+
 def has_any_pair_or_better(hole: list[str], board: list[str]) -> bool:
     """Weaker than has_top_pair_or_better: ANY pair (including bottom pair),
     not just top-pair-or-an-overpair. Used only when the specific opponent
@@ -1032,6 +1088,7 @@ def choose_abc_action(
     had_initiative = _had_preflop_initiative(hand, seat)
     n_bets = _n_bets_or_raises_this_street(hand)
     made = has_top_pair_or_better(player.hole_cards, hand.board)
+    very_strong = has_very_strong_hand(player.hole_cards, hand.board)
     pot_before = sum(p.total_contributed for p in hand.players.values())
     n_live_opps_2plus = _n_live_opponents(hand, seat) >= 2
     is_multiway = MULTIWAY_AWARE and n_live_opps_2plus  # combined flag; specific sub-rules below use their own flag
@@ -1103,6 +1160,24 @@ def choose_abc_action(
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("bet", amount)
         return ("check", None)
+
+    # v22 (VALUE_RAISE_FACING_BET, see the constant's comment above): a
+    # genuine monster (two pair+) raises for value instead of just calling --
+    # checked before the plain `made` call below since very_strong is a
+    # strict subset of it. Same progressive pot-damping shape as hero's own
+    # value-bet sizing (HERO_PROGRESSIVE_POT_DAMPING), applied to the raise
+    # multiplier instead of a bet fraction, so this doesn't reopen the
+    # monster-pot problem that fix specifically targeted.
+    if VALUE_RAISE_FACING_BET and very_strong:
+        multiplier = VALUE_RAISE_MULTIPLIER
+        if HERO_PROGRESSIVE_POT_DAMPING:
+            pot_bb_hero = pot_before / hand.big_blind
+            if pot_bb_hero > HERO_POT_DAMPING_START_BB:
+                hero_damp = min(1.0, (pot_bb_hero - HERO_POT_DAMPING_START_BB) / (HERO_POT_DAMPING_FULL_BB - HERO_POT_DAMPING_START_BB))
+                multiplier = multiplier * (1 - hero_damp) + 1.0 * hero_damp
+        amount = hand.current_bet * multiplier
+        amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+        return ("raise", amount)
 
     if made:
         return ("call", None)

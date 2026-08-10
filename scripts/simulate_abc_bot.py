@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import backend.bots.abc_bot as abc_bot
 from backend.bots.abc_bot import choose_abc_action
 from backend.bots.behavior_clone import choose_bot_action
 from backend.dossier import TableDossier
@@ -252,8 +253,43 @@ def run_dossier_realism_comparison(n_hands: int):
     print(f"Retained: {retained:.0f}% of the ceiling gain")
 
 
+def run_value_raise_comparison(n_hands: int):
+    """v22 A/B test: does VALUE_RAISE_FACING_BET (raise, not just call, with
+    two-pair-or-better facing a postflop bet -- see abc_bot.py's changelog)
+    actually help, or does it just inflate variance/monster pots for no real
+    gain? Both runs use real rake and ground-truth archetypes, same seed --
+    the flag is the only thing that varies."""
+    print(f"\n[1/2] {n_hands} hands, VALUE_RAISE_FACING_BET=False (pre-v22 baseline, call-only)...")
+    abc_bot.VALUE_RAISE_FACING_BET = False
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/2] {n_hands} hands, VALUE_RAISE_FACING_BET=True (v22)...")
+    abc_bot.VALUE_RAISE_FACING_BET = True
+    t0 = time.time()
+    with_value_raise = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print("\n" + "=" * 60)
+    print("VALUE-RAISE-FACING-A-BET A/B TEST (both WITH real rake)")
+    print("=" * 60)
+    for label, r in (("Baseline (call-only facing a bet)", baseline), ("v22 (value-raise two-pair+)", with_value_raise)):
+        print(f"\n{label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    delta = with_value_raise["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
+    print(f"\nValue-raise delta: {delta:+.2f} bb/100")
+
+
 def main():
     args = sys.argv[1:]
+    if "--value-raise" in args:
+        remaining = [a for a in args if a != "--value-raise"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_value_raise_comparison(n_hands)
+        return
     if "--dossier-realism" in args:
         remaining = [a for a in args if a != "--dossier-realism"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
