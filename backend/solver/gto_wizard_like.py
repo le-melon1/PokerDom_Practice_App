@@ -14,12 +14,21 @@ def _normalize(values: list[float]) -> list[float]:
     return [value / total for value in exponentials]
 
 
+def _fold_pct_for_bet(bet: float, pot: float, fold_pct_by_bucket: dict[str, float] | None) -> float:
+    if not fold_pct_by_bucket:
+        return 0.0
+    bet_to_pot = bet / max(pot, 1e-6)
+    bucket = "small" if bet_to_pot < 0.4 else ("medium" if bet_to_pot < 0.7 else "large")
+    return fold_pct_by_bucket.get(bucket, 0.0)
+
+
 def solve_gto_wizard_like_strategy(
     equity: float,
     pot: float,
     to_call: float,
     legal_actions: dict | None = None,
     raise_sizes: list[float] | None = None,
+    fold_pct_by_bucket: dict[str, float] | None = None,
 ) -> dict:
     """Create a richer solver-like recommendation for a single street.
 
@@ -27,6 +36,37 @@ def solve_gto_wizard_like_strategy(
     the earlier toy matrix solver: it evaluates multiple sizing candidates,
     ranks them by EV, and returns a softmax-style action mix so the UI can
     present a more realistic "solver" panel.
+
+    `fold_pct_by_bucket`: optional {"small"/"medium"/"large": fold_pct},
+    keyed by the RAISE bet's own size relative to pot (same small/medium/
+    large split used throughout this project's reference tables). Defaults
+    to None, meaning zero fold equity -- the original behavior, kept for
+    backward compatibility with any caller that doesn't have real
+    fold-frequency data on hand.
+
+    2026-08-10 fix: before this parameter existed, "raise" EV was computed
+    as (pot + bet) * equity - bet -- literally the same formula as "call"
+    but with a bigger bet, and the SAME equity for both. Since bet > to_call
+    for any real raise, and d(ev)/d(bet) = equity - 1 is negative for any
+    equity < 1 (i.e. always, in practice), raising could only ever look
+    better than calling when equity was almost exactly 1 -- the formula had
+    no way to represent the actual reason raising is ever correct with a
+    hand that isn't a stone-cold lock: the opponent might just fold. That
+    silently starved "raise" out of the ranking almost everywhere, which is
+    what a user correctly noticed as "the panel calls too much, should
+    raise or fold more."
+
+    Caller note (see live_ev.py's _raise_fold_pct_by_bucket): this is
+    currently only populated with real data POSTFLOP. A preflop attempt
+    using archetype_vs_raise.csv's fold_pct (how often a position's OWN
+    OPEN gets folded to, 74-82% in this population) measured as a real
+    over-correction -- with a flat fold rate that high, the fold_pct * pot
+    term swamps the equity term regardless of hand strength, and "raise"
+    won 100% of a 701-decision sample including hands that should
+    obviously fold. That's a different statistic than "how often does a
+    raiser fold to a 3-bet," which this project doesn't have measured yet
+    -- preflop is left at fold_pct=0 (the pre-fix behavior) rather than
+    ship a differently-wrong number.
     """
     legal_actions = legal_actions or {}
     min_raise_to = legal_actions.get("min_raise_to", 0.0)
@@ -78,7 +118,9 @@ def solve_gto_wizard_like_strategy(
             ev = (pot + max(0.0, to_call)) * equity - max(0.0, to_call)
         elif action == "raise":
             bet = amount or 0.0
-            ev = (pot + bet) * equity - bet
+            fold_pct = _fold_pct_for_bet(bet, pot, fold_pct_by_bucket)
+            ev_if_called = (pot + bet) * equity - bet
+            ev = fold_pct * pot + (1 - fold_pct) * ev_if_called
         else:
             ev = 0.0
         evs.append(ev)

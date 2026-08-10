@@ -179,6 +179,62 @@ def live_opponent_facing_bet_stats(street: str, pot_fraction: float, dossier_ent
     }, conf
 
 
+def _raise_fold_pct_by_bucket(hand: Hand, hero_seat: int, opponent_archetype: str | None, dossier) -> dict[str, float]:
+    """Real, grounded fold_pct estimates keyed by the raise's own small/
+    medium/large bet-to-pot bucket -- see solve_gto_wizard_like_strategy's
+    docstring for what this fixes (the raise EV formula silently assumed
+    0% fold equity before this existed). Picks one "primary" opponent the
+    same way estimate_live_ev's auto mode already does (least-observed
+    live seat, a cautious default) rather than trying to model a real
+    multi-way fold decision -- consistent with this module's existing
+    "pool into one representative read" simplification elsewhere.
+    """
+    opponents = [p for p in hand.players.values() if p.in_hand and p.seat != hero_seat]
+    if not opponents:
+        return {}
+    primary = min(
+        opponents,
+        key=lambda o: (dossier.by_seat.get(o.seat).hands_seen if dossier and dossier.by_seat.get(o.seat) else 0),
+    )
+    if hand.street == "preflop":
+        # 2026-08-10: tried wiring archetype_vs_raise.csv's fold_pct in here
+        # too, same as the postflop branch below -- measured result was
+        # WORSE, not better: that table's fold_pct measures how often a
+        # position's OWN OPEN gets folded to (already used elsewhere for
+        # opponent_defend_range), not "how often does a raiser fold to a
+        # 3-bet" -- a different, unmeasured statistic. Values run 74-82%
+        # (see the strategy write-up), and plugging that straight into the
+        # raise EV formula made "raise" win 100% of a 701-decision sample
+        # regardless of hand strength, since a high enough flat fold rate
+        # mathematically swamps the equity term no matter what hero holds.
+        # Left at 0% (no fold-equity boost preflop) rather than ship a
+        # differently-wrong number -- real 3-bet-fold-equity data would need
+        # a new reference table this project doesn't have yet.
+        return {}
+
+    position = _seat_position(hand, primary.seat)
+    dossier_entry = dossier.by_seat.get(primary.seat) if dossier is not None else None
+    by_bucket = {}
+    for bucket, representative_pot_fraction in (("small", 0.2), ("medium", 0.55), ("large", 0.85)):
+        if opponent_archetype:
+            stats = opponent_facing_bet_stats(hand.street, representative_pot_fraction, opponent_archetype)
+        else:
+            stats, _ = live_opponent_facing_bet_stats(hand.street, representative_pot_fraction, dossier_entry)
+        # 2026-08-10: `stats["fold_pct"]` is ONE opponent's fold rate, but a
+        # raise only steals the pot if EVERY live opponent folds -- using
+        # the single-opponent rate directly overstates fold equity in a
+        # multiway pot (measured: made "raise" win 84.3% of a 483-decision
+        # 6-max sample, clearly too much). Compounding across all live
+        # opponents (fold_pct ** n) is still a simplification (assumes
+        # independent, identically-distributed folding, ignores that
+        # opponents act in sequence and a fold-first-to-act changes the
+        # pot/price for whoever's left) but is a real, defensible
+        # improvement over treating "one opponent folds" as "the raise
+        # gets through."
+        by_bucket[bucket] = stats["fold_pct"] ** len(opponents)
+    return by_bucket
+
+
 @dataclass
 class LiveEVResult:
     street: str
@@ -508,6 +564,7 @@ def recommend_gto_action(
         to_call=max(0.0, legal["call_amount"] if legal["can_call"] else 0.0),
         legal_actions=legal,
         raise_sizes=[legal["min_raise_to"], legal["min_raise_to"] + max(0.0, sum(p.total_contributed for p in hand.players.values()) * 0.5), legal["min_raise_to"] + max(0.0, sum(p.total_contributed for p in hand.players.values())), legal["max_raise_to"]],
+        fold_pct_by_bucket=_raise_fold_pct_by_bucket(hand, hero_seat, opponent_archetype, dossier),
     )
     solver_action_evs = [
         ActionEV(
