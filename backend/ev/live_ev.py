@@ -278,28 +278,43 @@ def solve_three_action_equilibrium(matrix: list[list[float]]) -> tuple[list[floa
     return probs.tolist(), probs.tolist()
 
 
-def _estimate_action_ev(hand: Hand, hero_seat: int, action: str, amount: float | None, opponent_archetype: str | None, dossier, equity_trials: int) -> tuple[float | None, str]:
-    hero = hand.players[hero_seat]
-    legal = hand.legal_actions(hero_seat)
-    pot_before = sum(p.total_contributed for p in hand.players.values())
+def _estimate_action_ev(hand: Hand, hero_seat: int, action: str, amount: float | None, base: "LiveEVResult") -> tuple[float | None, str]:
+    """`base`: the SAME LiveEVResult recommend_gto_action already computed
+    for this exact (hand, hero_seat, opponent_archetype, dossier,
+    equity_trials) combination -- reuse it rather than calling
+    estimate_live_ev a second time with identical inputs.
 
+    2026-08-10 fix: this used to call estimate_live_ev(...) again from
+    scratch for "call" and "raise" (fold/check are free, so they were
+    never the issue). For a live postflop decision that redoubled the cost
+    of narrow_range_by_board's Monte Carlo range-narrowing (O(range_size *
+    trials_per_combo), no caching) for zero benefit -- the recomputed
+    result was byte-for-byte identical to `base`, since nothing about the
+    hand state changes between "what's my EV" and "what if I raise this
+    much" (this heuristic doesn't actually re-solve for the new bet size,
+    it just adds amount*0.05 on top of the call EV either way). Measured:
+    ~4-5s of a ~8-10s total recommend_gto_action call on a 6-max flop/turn
+    decision was this exact redundant call -- found via cProfile while
+    investigating a separate reported issue (the panel recommending call
+    too often), not related to that fix, but a real, severe latency bug
+    in its own right."""
     if action == "fold":
         return 0.0, "fold is the baseline when the hand is not profitable to continue"
     if action == "check":
         return 0.0, "check keeps the pot small and avoids paying to see more streets"
 
     if action == "call":
+        legal = hand.legal_actions(hero_seat)
         if legal["call_amount"] <= 0:
             return None, "no call amount available"
-        ev = estimate_live_ev(hand, hero_seat, opponent_archetype=opponent_archetype, dossier=dossier, equity_trials=equity_trials).ev_call
-        return ev, "call EV is computed from your equity versus the opponent range"
+        return base.ev_call, "call EV is computed from your equity versus the opponent range"
 
     if action in {"bet", "raise"}:
         if amount is None:
             return None, "raise amount not provided"
         if amount <= 0:
             return None, "raise amount must be positive"
-        ev = estimate_live_ev(hand, hero_seat, opponent_archetype=opponent_archetype, dossier=dossier, equity_trials=equity_trials).ev_call
+        ev = base.ev_call
         if ev is None:
             return None, "no EV estimate available for the raise size"
         return ev + (amount * 0.05), "larger sizing can improve fold equity and value extraction"
@@ -456,7 +471,7 @@ def recommend_gto_action(
         candidates.append(ActionEV("call", base.ev_call, None, "value from equity against the range"))
     if legal["max_raise_to"] > legal["min_raise_to"] - 1e-9:
         amount = min(legal["max_raise_to"], legal["min_raise_to"] + max(0.0, (sum(p.total_contributed for p in hand.players.values()) / 2)))
-        ev, reason = _estimate_action_ev(hand, hero_seat, "raise", amount, opponent_archetype, dossier, equity_trials)
+        ev, reason = _estimate_action_ev(hand, hero_seat, "raise", amount, base)
         candidates.append(ActionEV("raise", ev, amount, reason))
     if legal["can_check"] and legal["call_amount"] <= 0:
         candidates.append(ActionEV("bet", 0.0, legal["min_raise_to"], "value betting with a strong hand"))
@@ -627,7 +642,18 @@ def estimate_live_ev(
             dossier_entry = dossier.by_seat.get(least_known.seat) if dossier is not None else None
             stats, _ = live_opponent_facing_bet_stats(hand.street, pot_fraction, dossier_entry)
         continue_frac = min(1.0, stats["call_pct"] + stats["raise_pct"]) or 1.0
-        narrowed = narrow_range_by_board(combined_range, hand.board, keep_fraction=continue_frac)
+        # forward_equity_trials=30 (not the function's own 150 default):
+        # this narrowing is explicitly documented as "directional, not
+        # exact" (see narrow_range_by_board's docstring) -- it decides which
+        # combos count as "still continuing," not a displayed EV number, so
+        # the live app can afford noisier per-combo ranking in exchange for
+        # not blocking on this Monte Carlo pass for several seconds on every
+        # postflop decision (O(range_size * trials_per_combo), no caching,
+        # and range_size grows with every additional live opponent pooled
+        # in). The offline analysis project's multistreet_ev.py keeps the
+        # full default -- only this live, latency-sensitive call site trades
+        # precision for speed.
+        narrowed = narrow_range_by_board(combined_range, hand.board, keep_fraction=continue_frac, forward_equity_trials=30)
         opp_range_for_size = narrowed
         hero_combo = (hero.hole_cards[0], hero.hole_cards[1])
         equity, _ = combos_vs_range_equity_on_board([hero_combo], narrowed, hand.board, trials=equity_trials)
