@@ -46,6 +46,8 @@ class SeatDossier:
     position_pfr: dict[str, int] = field(default_factory=dict)
     postflop_aggression: dict[str, int] = field(default_factory=dict)
     postflop_passivity: dict[str, int] = field(default_factory=dict)
+    river_aggression_showdowns: int = 0
+    river_aggression_showdown_losses: int = 0
 
     def __setstate__(self, state: dict) -> None:
         """Backwards-compatible unpickle support.
@@ -66,6 +68,10 @@ class SeatDossier:
             self.postflop_aggression = {}
         if not hasattr(self, "postflop_passivity") or self.postflop_passivity is None:
             self.postflop_passivity = {}
+        if not hasattr(self, "river_aggression_showdowns") or self.river_aggression_showdowns is None:
+            self.river_aggression_showdowns = 0
+        if not hasattr(self, "river_aggression_showdown_losses") or self.river_aggression_showdown_losses is None:
+            self.river_aggression_showdown_losses = 0
 
     @property
     def vpip(self) -> float:
@@ -83,6 +89,25 @@ class SeatDossier:
     def afq(self) -> float:
         total = self.aggressive_postflop + self.passive_postflop
         return self.aggressive_postflop / total if total else 0.0
+
+    @property
+    def river_bluff_rate(self) -> float:
+        """Share of this seat's river-aggression-that-reached-a-real-showdown
+        hands they LOST -- the live, session-scoped, causal analogue of
+        PokerDom_Microlimits_Analysis's find_frequent_bluffers.py (same
+        "river aggressor loses at real showdown" proxy, same disclosed
+        limitation: conflates pure air bluffs with thin value bets that lost,
+        and can only ever see a bluff that got TO showdown, not one that won
+        via a fold). That script needed >=40 river showdowns per player to
+        trust a LONG-RUN population label; a single live session will never
+        reach that, so see HERO_BLUFFER_MIN_RIVER_SHOWDOWNS in
+        behavior_clone.py for the much smaller in-session threshold this
+        feeds into instead."""
+        return (
+            self.river_aggression_showdown_losses / self.river_aggression_showdowns
+            if self.river_aggression_showdowns
+            else 0.0
+        )
 
     @property
     def style(self) -> str:
@@ -164,3 +189,22 @@ class TableDossier:
                 dossier.ensure_compat()
                 invested = hand.players[seat].total_contributed
                 dossier.net_won += amount - invested
+
+            # Live analogue of find_frequent_bluffers.py: the LAST bets/raises
+            # action on the river ("whoever showed strength last"), IF the
+            # hand actually reached a real, contested multi-way showdown
+            # (winners_by_pot is only populated by that code path -- the
+            # single-live-player early return in Hand._finish_hand leaves it
+            # empty, correctly excluding uncalled-bet wins, which aren't a
+            # showdown at all). "Lost" = won no share of any pot, same
+            # is_winner-based definition the offline script uses.
+            river_aggressor = None
+            for a in hand.actions:
+                if a.street == "river" and a.action in ("bets", "raises"):
+                    river_aggressor = a.seat
+            if river_aggressor is not None and hand.result.winners_by_pot:
+                dossier = self.by_seat.setdefault(river_aggressor, SeatDossier())
+                dossier.ensure_compat()
+                dossier.river_aggression_showdowns += 1
+                if hand.result.payouts.get(river_aggressor, 0.0) <= 0.0:
+                    dossier.river_aggression_showdown_losses += 1

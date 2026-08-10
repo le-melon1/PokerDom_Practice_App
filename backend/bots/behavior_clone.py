@@ -196,6 +196,45 @@ default, so every existing caller -- simulate_abc_bot.py,
 diagnose_monster_pots.py, check_donk_bluff_reaction.py -- is unaffected).
 See tests/test_hero_archetype_adaptation.py for the seeded-sweep regression
 tests (no-op when ungated, measurable fold-rate drop when gated).
+
+## Hero-frequent-bluffer adaptation (2026-08-10)
+
+The Nit-adaptation finding's own writeup flagged the frequent-bluffer half of
+PokerDom_Microlimits_Analysis's check_bluffer_adaptation.py as a scoped,
+not-yet-built follow-up. Re-ran it (data already existed from
+find_frequent_bluffers.py -- a river aggressor who reaches a real showdown
+and loses more than the population baseline, standard "got caught betting"
+proxy) to get real numbers before building anything: population baseline is
+75.3% (river aggressors lose at real showdown roughly 3 times in 4 -- a
+known selection effect, not a bug, since whoever called usually had it).
+Facing a KNOWN frequent bluffer (49 identified players, >=40 river showdowns
+each to trust the population label), real responders' fold rate drops
+62.61% -> 61.68% within a session, Delta=-0.93pp, chi2 p=0.0046 (88,452
+pooled facing-events, 6+ per session) -- real and significant, though
+smaller in magnitude than the Nit finding's 2.54pp.
+
+Same "ship the one narrow, data-grounded case" approach as the Nit rule
+above, and the same wiring (hero_dossier, already threaded through every
+caller) -- but the live-session proxy for "reads as a frequent bluffer" has
+to be different from the offline one. find_frequent_bluffers.py's own
+>=40-river-showdown minimum is a LONG-RUN population-label threshold, never
+reachable within one live session (river showdowns are already a small
+fraction of hands played). Instead, backend/dossier.py's SeatDossier tracks
+the HERO's own river_aggression_showdowns / river_aggression_showdown_losses
+this session (the same is_winner-based "lost at a real, contested showdown"
+definition, computed causally hand-by-hand) and _hero_reads_as_frequent_
+bluffer below applies a much smaller in-session sample floor
+(HERO_BLUFFER_MIN_RIVER_SHOWDOWNS) plus a rate meaningfully above the 75.3%
+population baseline (HERO_BLUFFER_LOSS_RATE_THRESHOLD) -- both judgment
+calls, not measured off data, same as HERO_ADAPTATION_MIN_HANDS's own
+disclosed status. When gated, applies the real measured magnitude
+(HERO_BLUFFER_FOLD_REDUCTION_PP=0.0093) the same way: shift that much
+probability mass from folds to calls when a bot faces a bet/raise made BY
+the hero this street. Independent of, and stacks additively with, the
+Nit-adaptation shift above if somehow both conditions were true (they can't
+be in practice -- Nit reads off preflop VPIP, bluffer reads off river
+showdown outcomes, but nothing stops both being gated at once by
+construction). See tests/test_hero_frequent_bluffer_adaptation.py.
 """
 
 import math
@@ -285,6 +324,17 @@ ADAPT_TO_HERO_EXTREME_ARCHETYPE = True
 HERO_ADAPTATION_MIN_HANDS = 20
 HERO_ADAPTATION_FOLD_REDUCTION_PP = 0.025
 
+# see choose_bot_action's "Hero-frequent-bluffer adaptation" docstring
+# section above for the real-data finding this implements and why the
+# thresholds are what they are. HERO_BLUFFER_LOSS_RATE_THRESHOLD is set
+# relative to the measured 75.3% population baseline (river aggressors lose
+# at real showdown that often anyway -- see find_frequent_bluffers.py in the
+# sibling repo), not an absolute number picked in isolation.
+ADAPT_TO_HERO_FREQUENT_BLUFFER = True
+HERO_BLUFFER_MIN_RIVER_SHOWDOWNS = 4
+HERO_BLUFFER_LOSS_RATE_THRESHOLD = 0.85
+HERO_BLUFFER_FOLD_REDUCTION_PP = 0.0093
+
 # 2026-07-30: two separate attempts to curb the ~19% "monster pot" (>50bb)
 # rate were tried and both reverted -- neither moved the incidence at all:
 #   1. A per-player stack-relative cap (shove if leaving an awkward tiny
@@ -372,6 +422,12 @@ def _hero_reads_as_extreme_nit(dossier: "SeatDossier | None") -> bool:
     if dossier is None or dossier.hands_seen < HERO_ADAPTATION_MIN_HANDS:
         return False
     return dossier.style == "Nit"
+
+
+def _hero_reads_as_frequent_bluffer(dossier: "SeatDossier | None") -> bool:
+    if dossier is None or dossier.river_aggression_showdowns < HERO_BLUFFER_MIN_RIVER_SHOWDOWNS:
+        return False
+    return dossier.river_bluff_rate >= HERO_BLUFFER_LOSS_RATE_THRESHOLD
 
 
 def _n_prior_aggressive_actions_this_hand(hand: Hand, seat: int) -> int:
@@ -493,6 +549,23 @@ def choose_bot_action(
         # points" the real data measured regardless of how style bias
         # already redistributed this filtered set) from folds to calls.
         shift = min(HERO_ADAPTATION_FOLD_REDUCTION_PP * sum(filtered.values()), filtered["folds"] - 1e-6)
+        if shift > 0:
+            filtered["folds"] -= shift
+            filtered["calls"] += shift
+
+    if (
+        ADAPT_TO_HERO_FREQUENT_BLUFFER
+        and hero_seat is not None
+        and "folds" in filtered
+        and "calls" in filtered
+        and _last_street_aggressor_seat(hand) == hero_seat
+        and _hero_reads_as_frequent_bluffer(hero_dossier)
+    ):
+        # Same mechanism as the Nit-adaptation shift above, independent
+        # trigger and its own real measured magnitude
+        # (HERO_BLUFFER_FOLD_REDUCTION_PP=0.0093 -- see the module
+        # docstring's "Hero-frequent-bluffer adaptation" section).
+        shift = min(HERO_BLUFFER_FOLD_REDUCTION_PP * sum(filtered.values()), filtered["folds"] - 1e-6)
         if shift > 0:
             filtered["folds"] -= shift
             filtered["calls"] += shift
