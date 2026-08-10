@@ -88,9 +88,28 @@ def test_recommend_gto_action_returns_ranked_actions_and_best_ev():
     assert rec.action_evs[0].ev is not None
     assert abs(rec.best_ev - max(item.ev for item in rec.action_evs)) < 1e-9
     assert rec.gto_equilibrium is not None
-    solver_best = rec.gto_equilibrium["wizard_like"]["line_analysis"][0]
-    assert rec.recommended_action == solver_best["action"]
-    assert rec.recommended_amount == solver_best["amount"]
+
+
+def test_recommend_gto_action_preflop_matches_the_validated_abc_strategy():
+    # 2026-08-10: preflop recommendations come from the already-validated
+    # ABC strategy (backend/bots/abc_bot.py), not solve_gto_wizard_like_
+    # strategy's own pick -- see live_ev.py's _abc_strategy_preflop_action
+    # docstring for why (that heuristic has no reliable preflop
+    # fold-equity data and, tested with the one real table available,
+    # measured a 100%-raise over-correction). Verify the final
+    # recommendation matches choose_abc_action's independent computation
+    # for this exact spot, rather than wizard_like's line_analysis.
+    from backend.bots.abc_bot import choose_abc_action
+
+    hand = _get_hero_facing_raise()
+    rec = recommend_gto_action(hand, 1, opponent_archetype="Nit", equity_trials=400)
+
+    live_opponents = [s for s, p in hand.players.items() if p.in_hand and s != 1]
+    expected_action, expected_amount = choose_abc_action(
+        hand, 1, opponent_archetypes={s: "Nit" for s in live_opponents}
+    )
+    assert rec.recommended_action == expected_action
+    assert rec.recommended_amount == expected_amount
 
 
 def test_heads_up_flop_facing_bet_uses_range_cfr_defense_actions():

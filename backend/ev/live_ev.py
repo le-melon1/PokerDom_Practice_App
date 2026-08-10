@@ -29,6 +29,7 @@ sys.path.insert(0, str(ANALYSIS_ROOT))
 
 import pandas as pd
 
+from backend.bots.abc_bot import choose_abc_action
 from backend.engine.hand import Hand
 from backend.solver.cfr_solver import solve_cfr_equilibrium
 from backend.solver.flop_subgame import solve_postflop_subgame
@@ -233,6 +234,38 @@ def _raise_fold_pct_by_bucket(hand: Hand, hero_seat: int, opponent_archetype: st
         # gets through."
         by_bucket[bucket] = stats["fold_pct"] ** len(opponents)
     return by_bucket
+
+
+def _abc_strategy_preflop_action(
+    hand: Hand, hero_seat: int, opponent_archetype: str | None, dossier
+) -> tuple[str, float | None] | None:
+    """2026-08-10: preflop recommendation source, replacing
+    solve_gto_wizard_like_strategy's flat EV heuristic there entirely.
+    That heuristic has no reliable preflop fold-equity data available (see
+    _raise_fold_pct_by_bucket's preflop branch -- the one real table tried
+    measured a different statistic and made raise win 100% of the time)
+    and, more fundamentally, doesn't distinguish value-raising from
+    bluff-raising from "just call" the way real strategy needs to.
+
+    Rather than build a preflop solver from scratch, ask the ALREADY
+    validated ABC strategy (backend/bots/abc_bot.py) what it does here --
+    real, A/B-tested open/call/value-3bet/steal ranges (see the published
+    strategy write-up's full version history), not a guessed heuristic.
+    This IS "the optimal play we already worked out," applied directly
+    instead of re-deriving a worse approximation of the same question.
+    """
+    if hand.street != "preflop":
+        return None
+    opponents = [p for p in hand.players.values() if p.in_hand and p.seat != hero_seat]
+    if opponent_archetype:
+        opponent_archetypes = {o.seat: opponent_archetype for o in opponents}
+    else:
+        opponent_archetypes = {
+            o.seat: dossier.by_seat[o.seat].style
+            for o in opponents
+            if dossier is not None and dossier.by_seat.get(o.seat) is not None
+        } or None
+    return choose_abc_action(hand, hero_seat, opponent_archetypes=opponent_archetypes)
 
 
 @dataclass
@@ -580,6 +613,15 @@ def recommend_gto_action(
         recommended_action = best.action
         recommended_amount = best.amount
         best_ev = best.ev
+
+    abc_preflop = _abc_strategy_preflop_action(hand, hero_seat, opponent_archetype, dossier)
+    if abc_preflop is not None:
+        # Overrides wizard_like's pick for preflop specifically -- see
+        # _abc_strategy_preflop_action's docstring. best_ev/action_evs above
+        # stay as informational EV context; only the actual recommendation
+        # (and its amount) changes to match the validated ABC strategy.
+        recommended_action, recommended_amount = abc_preflop
+
     tree = build_solver_tree(
         street=base.street,
         pot=max(1.0, sum(p.total_contributed for p in hand.players.values())),
