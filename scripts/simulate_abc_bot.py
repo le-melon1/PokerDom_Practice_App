@@ -529,11 +529,17 @@ PRESET_FLAG_GROUPS = {
     "v15-loose-3bet-turn": (["WIDER_3BET_VS_LOOSE", "SIZE_UP_ON_TURN"], "v15 B1+B2"),
     "v16-iso-limpers": (["ISO_RAISE_OVER_LIMPERS"], "v16 C1"),
     "v17-donk-bluff": (["DONK_BLUFF_VS_TIGHT"], "v17 C2"),
+    "v25-barrel-bluff": (["BARREL_BLUFF_VS_TIGHT"], "v25 barrel bluff"),
 }
 
 
 def main():
     args = sys.argv[1:]
+    if "--barrel-bluff" in args:
+        remaining = [a for a in args if a != "--barrel-bluff"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_flag_confirmation(["BARREL_BLUFF_VS_TIGHT"], n_hands, "v25 barrel bluff")
+        return
     if "--flag-confirm" in args:
         idx = args.index("--flag-confirm")
         preset = args[idx + 1]

@@ -655,6 +655,22 @@ PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
 TIGHT_ARCHETYPES_FOR_DONK_BLUFF = {"Nit", "TAG", "LAG"}
 DONK_BLUFF_VS_TIGHT = True  # flip False to A/B-test against the baseline (no donk bluffing at all)
 
+# v25 (BARREL_BLUFF_VS_TIGHT): before this, the bot's only air-bluffing
+# mechanisms were a single flop cbet (UNCONDITIONAL_FLOP_CBET, flop-only)
+# and a donk-bluff without initiative (v17, DONK_BLUFF_VS_TIGHT) -- there
+# was no way to CONTINUE bluffing on the turn or river after a flop cbet,
+# even when a genuine scare card (see _is_scare_card -- a fresh overcard,
+# or a flush card arriving) makes hero's range look stronger to a tight
+# opponent who's already shown they fold to aggression. Published micro-
+# stakes strategy (BlackRain79) explicitly recommends this: "bluff nits on
+# turn/river when scare cards appear." Reuses TIGHT_ARCHETYPES_FOR_DONK_
+# BLUFF -- heads-up only (opponent identity ambiguous multiway, same
+# reasoning as every other archetype-gated bluff here), and only continues
+# a story hero actually has (had preflop initiative) -- doesn't fire on a
+# random checked-to turn/river hero never bet into. Untested, standard-
+# theory hypothesis -- see scripts/simulate_abc_bot.py --barrel-bluff.
+BARREL_BLUFF_VS_TIGHT = False  # flip True to A/B-test against the baseline (no turn/river scare-card bluff)
+
 VALUE_3BET_TIGHT = {"AA", "KK", "QQ", "AKs", "AKo"}
 VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
 # A/B-test switch: Tier 2 found this population barely 3-bets (2-5% of raise
@@ -1128,6 +1144,23 @@ def _is_wet_board(board: list[str]) -> bool:
     return bool(t["board_two_tone"] or t["board_monotone"] or t["board_connectedness"] >= 2)
 
 
+def _is_scare_card(hand: Hand) -> bool:
+    """A "scare card" arrived on THIS street (turn or river): either the
+    new card outranks every card that was already on the board (a fresh
+    overcard -- e.g. an Ace turning after a low flop), or it just made the
+    board two-tone/monotone (a flush card arriving) when it wasn't before.
+    A simple, disclosed heuristic -- doesn't try to detect e.g. a card that
+    completes a gutshot or pairs a scary rank the way a full range-vs-range
+    read would; gates BARREL_BLUFF_VS_TIGHT below."""
+    board = hand.board
+    if hand.street not in ("turn", "river") or len(board) < 4:
+        return False
+    board_before, new_card = board[:-1], board[-1]
+    if _RANK_ORDER.index(new_card[0]) > max(_RANK_ORDER.index(c[0]) for c in board_before):
+        return True
+    return _is_wet_board(board) and not _is_wet_board(board_before)
+
+
 def choose_abc_action(
     hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
 ) -> tuple[str, float | None]:
@@ -1287,7 +1320,25 @@ def choose_abc_action(
             if len(donk_live_opponents) == 1:
                 if opponent_archetypes.get(donk_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
                     donk_bluff_with_air = True
-        should_bet = made or cbet_with_air or donk_bluff_with_air
+        # v25 (see BARREL_BLUFF_VS_TIGHT above): continue bluffing a scare
+        # card on the turn/river against a known tight opponent, if hero
+        # had preflop initiative (a real story to tell) and got checked to
+        # again with no hand. Heads-up only, same reasoning as the donk
+        # bluff above.
+        barrel_bluff_with_air = False
+        if (
+            BARREL_BLUFF_VS_TIGHT
+            and had_initiative
+            and n_bets == 0
+            and hand.street in ("turn", "river")
+            and opponent_archetypes
+            and _is_scare_card(hand)
+        ):
+            barrel_live_opponents = _live_opponent_seats(hand, seat)
+            if len(barrel_live_opponents) == 1:
+                if opponent_archetypes.get(barrel_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                    barrel_bluff_with_air = True
+        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air
         if should_bet and n_bets == 0:
             # v14, A2 (see SIZING_TARGET_ARCHETYPES above): size up specifically
             # against a known Nit/TAG, where a bigger bet measurably buys extra

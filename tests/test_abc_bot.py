@@ -168,6 +168,83 @@ def _reach_turn_with_initiative(hero_hole):
     return hand
 
 
+def _reach_turn_with_initiative_air_and_scare_card():
+    # Same shape as _reach_turn_with_initiative, but hero's hand never
+    # pairs anything (air the whole way) and the turn card (Ah) is a fresh
+    # overcard to the 9-5-2 flop -- a real scare card by _is_scare_card.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")
+    assert hand.street == "flop"
+    hand.board = ["9c", "5d", "2h"]
+    hand.apply_action(3, "check")
+    hand.players[4].hole_cards = ["Kc", "Qd"]  # king/queen high -- no pair anywhere on this run-out
+    action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
+    assert action == "bet"  # flop cbet with air
+    hand.apply_action(4, "bet", amount=amount)
+    hand.apply_action(3, "call")
+    assert hand.street == "turn"
+    hand.board = ["9c", "5d", "2h", "Ah"]  # fresh overcard -- a real scare card
+    hand.apply_action(3, "check")
+    return hand
+
+
+def test_barrel_bluffs_a_scare_card_vs_a_known_nit_when_flag_on():
+    hand = _reach_turn_with_initiative_air_and_scare_card()
+    abc_bot.BARREL_BLUFF_VS_TIGHT = True
+    try:
+        action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
+    finally:
+        abc_bot.BARREL_BLUFF_VS_TIGHT = False
+    assert action == "bet"
+    assert amount > 0
+
+
+def test_does_not_barrel_bluff_vs_a_known_loose_opponent_even_when_flag_on():
+    hand = _reach_turn_with_initiative_air_and_scare_card()
+    abc_bot.BARREL_BLUFF_VS_TIGHT = True
+    try:
+        # Station is not in TIGHT_ARCHETYPES_FOR_DONK_BLUFF -- no story to
+        # tell against a player who doesn't fold more to continued
+        # aggression, so hero just gives up with air.
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={3: "Station"})
+    finally:
+        abc_bot.BARREL_BLUFF_VS_TIGHT = False
+    assert action == "check"
+
+
+def test_barrel_bluff_flag_off_by_default_checks_back_air_vs_nit():
+    hand = _reach_turn_with_initiative_air_and_scare_card()
+    # BARREL_BLUFF_VS_TIGHT defaults False -- baseline behavior (check back
+    # with air) even facing a known Nit and a real scare card.
+    action, _ = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
+    assert action == "check"
+
+
+def test_is_scare_card_detects_a_fresh_overcard_and_a_new_flush_possibility():
+    hand = Hand(make_players(2), button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.street_idx = 2  # "turn"
+    hand.board = ["9c", "5d", "2h", "Ah"]
+    assert abc_bot._is_scare_card(hand)  # Ace outranks everything on the flop
+
+    hand.board = ["9c", "5d", "2h", "8s"]  # 4th suit -- no card repeats a flop suit
+    assert not abc_bot._is_scare_card(hand)  # 8 isn't an overcard, and no suit reaches count 2
+
+    hand.board = ["9c", "5d", "2h", "8c"]  # rainbow flop, turn brings a SECOND club
+    assert abc_bot._is_scare_card(hand)  # board just became two-tone -- a real new flush draw
+
+    hand.street_idx = 3  # "river"
+    # Board already two-tone (two clubs) before the river; the river card
+    # (3h) doesn't outrank anything (9 is still the board's high card) and
+    # doesn't cross into a NEW texture category (still just two-tone).
+    hand.board = ["9c", "5d", "2c", "8h", "3h"]
+    assert not abc_bot._is_scare_card(hand)
+
+
 def test_cbets_flop_then_keeps_betting_the_turn_for_value_with_a_strong_hand():
     hand = _reach_turn_with_initiative(["Kc", "Kd"])  # overpair to this board -- still top-pair-or-better
     action, amount = choose_abc_action(hand, 4)
