@@ -510,6 +510,8 @@ strategy card, not just inferred from code):
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 ANALYSIS_ROOT = Path(__file__).resolve().parents[3] / "PokerDom_Microlimits_Analysis"
 sys.path.insert(0, str(ANALYSIS_ROOT))
@@ -598,6 +600,26 @@ STANDARD_SIZING_POT_FRACTION = 0.525
 # POT_FRACTION's 0.75 never crosses the pot itself.
 RIVER_OVERBET_NUTS_VS_LOOSE = False  # flip True to A/B-test against the baseline (flat sizing tiers only)
 RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
+
+# v28 (OPTIMAL_VALUE_SIZING_PER_ARCHETYPE): A2 above hardcodes "big sizing
+# for Nit/TAG only, standard for everyone else" -- a real finding, but only
+# checked for those two archetypes; Maniac/Station/Loose-passive/LAG never
+# got the same treatment. Real strategy: compute which of the two sizes
+# actually maximizes EV for the SPECIFIC archetype involved, using each
+# one's own real fold rate (_facing_bet_stats, archetype_facing_bet.csv --
+# same table A2 already reads, now looked up live instead of hand-picked
+# from two rows of it). Known real limit, not glossed over: that table
+# only has 3 pot-size buckets (small<0.4, medium<0.7, large>=0.7 pot
+# fraction) -- it can tell "medium vs large" apart but NOT distinguish
+# within "large" (a 75%-pot bet and RIVER_OVERBET_POT_FRACTION's 150%-pot
+# bet share the same fold-rate row), so this can only choose between the
+# two sizes that already exist (STANDARD/BIG), not calibrate a continuous
+# optimum -- see _expected_value_of_bet_size's docstring for the rest of
+# the disclosed approximation (a single assumed made-hand equity constant,
+# not a real per-hand equity read, which this bot deliberately doesn't
+# compute anywhere else either).
+OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = False  # flip True to A/B-test against the baseline (SIZING_TARGET_ARCHETYPES' hardcoded Nit/TAG-only rule)
+ASSUMED_VALUE_HAND_EQUITY = 0.75  # disclosed, single-number approximation of "how often a should_bet hand is still best when called" -- not a real per-hand equity computation
 
 # monster-pot fix, hero side -- see choose_abc_action's
 # HERO_PROGRESSIVE_POT_DAMPING comment. Same shape/rationale as behavior_
@@ -1190,6 +1212,71 @@ def _is_scare_card(hand: Hand) -> bool:
     return _is_wet_board(board) and not _is_wet_board(board_before)
 
 
+_facing_bet_table_cache: pd.DataFrame | None = None
+
+
+def _facing_bet_fold_pct(street: str, pot_fraction: float, archetype: str) -> float | None:
+    """Independent copy of backend/ev/live_ev.py's opponent_facing_bet_stats
+    -- can't import that module directly (live_ev.py imports choose_abc_
+    action from THIS module, so the reverse import would be circular).
+    Same bucket logic (small<0.4, medium<0.7, large>=0.7 pot fraction),
+    same source table (PokerDom_Microlimits_Analysis/data/reference/
+    archetype_facing_bet.csv, already what A2/SIZING_TARGET_ARCHETYPES was
+    hand-read from). Returns None (not a default) when there's no row for
+    this exact (archetype, street, bucket) -- callers should fall back to
+    the existing hardcoded behavior rather than guess a population number,
+    since that's a different question (a specific archetype's real
+    tendency) than this file has ever tried to answer with a blend."""
+    global _facing_bet_table_cache
+    if _facing_bet_table_cache is None:
+        _facing_bet_table_cache = pd.read_csv(ANALYSIS_ROOT / "data" / "reference" / "archetype_facing_bet.csv")
+    bucket = "small" if pot_fraction < 0.4 else ("medium" if pot_fraction < 0.7 else "large")
+    row = _facing_bet_table_cache[
+        (_facing_bet_table_cache.archetype == archetype)
+        & (_facing_bet_table_cache.street == street)
+        & (_facing_bet_table_cache.pot_bucket == bucket)
+    ]
+    if row.empty:
+        return None
+    return float(row.iloc[0]["fold_pct"])
+
+
+def _optimal_value_sizing(hand: Hand, archetype: str) -> float | None:
+    """v28: which of the two existing value-bet sizes (STANDARD_SIZING_
+    POT_FRACTION / BIG_VALUE_SIZING_POT_FRACTION) actually maximizes EV
+    against THIS specific archetype, using its real fold rate at each size
+    (see _facing_bet_fold_pct) -- rather than A2's hardcoded "big sizing
+    for Nit/TAG only" rule, which never checked the other four archetypes.
+
+    EV(size) ~= fold_pct(size) * pot_before + (1 - fold_pct(size)) *
+    (ASSUMED_VALUE_HAND_EQUITY * (pot_before + bet_size) - bet_size),
+    the standard "bet EV vs a range that either folds or calls" formula
+    (same shape as gto_wizard_like.py's raise EV fix) with ONE disclosed
+    approximation this bot doesn't try to avoid: a single assumed equity
+    number for "how often hero's hand is still best when called," not a
+    real per-hand equity read (this bot has no numeric equity computation
+    anywhere else either -- that's what backend/ev/live_ev.py's solvers
+    are for, not this hand-coded strategy). Returns None if there's no
+    real data for this archetype at either size, so the caller can fall
+    back to the existing hardcoded default instead of guessing."""
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    if pot_before <= 0:
+        return None
+    fold_medium = _facing_bet_fold_pct(hand.street, STANDARD_SIZING_POT_FRACTION, archetype)
+    fold_large = _facing_bet_fold_pct(hand.street, BIG_VALUE_SIZING_POT_FRACTION, archetype)
+    if fold_medium is None or fold_large is None:
+        return None
+
+    def _ev(fold_pct: float, fraction: float) -> float:
+        bet_size = pot_before * fraction
+        ev_if_called = ASSUMED_VALUE_HAND_EQUITY * (pot_before + bet_size) - bet_size
+        return fold_pct * pot_before + (1 - fold_pct) * ev_if_called
+
+    ev_medium = _ev(fold_medium, STANDARD_SIZING_POT_FRACTION)
+    ev_large = _ev(fold_large, BIG_VALUE_SIZING_POT_FRACTION)
+    return BIG_VALUE_SIZING_POT_FRACTION if ev_large >= ev_medium else STANDARD_SIZING_POT_FRACTION
+
+
 def choose_abc_action(
     hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
 ) -> tuple[str, float | None]:
@@ -1396,6 +1483,18 @@ def choose_abc_action(
             if opponent_archetypes and len(live_opponents) == 1:
                 if opponent_archetypes.get(live_opponents[0]) in SIZING_TARGET_ARCHETYPES:
                     sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # v28 (see OPTIMAL_VALUE_SIZING_PER_ARCHETYPE above): overrides
+            # A2's hardcoded Nit/TAG-only choice with a real EV comparison
+            # for WHATEVER archetype is actually known, using that
+            # archetype's own real fold rate at each size -- falls back to
+            # A2's choice (leaves `sizing` unchanged) when there's no real
+            # data for this exact archetype/street/bucket combination.
+            if OPTIMAL_VALUE_SIZING_PER_ARCHETYPE and opponent_archetypes and len(live_opponents) == 1:
+                archetype = opponent_archetypes.get(live_opponents[0])
+                if archetype:
+                    optimal = _optimal_value_sizing(hand, archetype)
+                    if optimal is not None:
+                        sizing = optimal
             # v15, B2 (see SIZE_UP_ON_TURN above): small turn bets don't buy
             # extra folds here regardless of opponent -- size up unconditionally.
             if SIZE_UP_ON_TURN and hand.street == "turn":

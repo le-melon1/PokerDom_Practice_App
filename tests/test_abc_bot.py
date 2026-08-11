@@ -1,3 +1,5 @@
+import pytest
+
 import backend.bots.abc_bot as abc_bot
 from backend.bots.abc_bot import (
     _is_wet_board,
@@ -377,6 +379,79 @@ def test_is_scare_card_detects_a_fresh_overcard_and_a_new_flush_possibility():
     # doesn't cross into a NEW texture category (still just two-tone).
     hand.board = ["9c", "5d", "2c", "8h", "3h"]
     assert not abc_bot._is_scare_card(hand)
+
+
+def _hand_with_pot(pot_bb: float) -> Hand:
+    hand = Hand(make_players(2), button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.players[1].total_contributed = pot_bb / 2
+    hand.players[2].total_contributed = pot_bb / 2
+    hand.street_idx = 3  # river -- arbitrary, _optimal_value_sizing doesn't gate on street itself
+    return hand
+
+
+def test_optimal_value_sizing_picks_the_bigger_size_when_fold_pct_rises_with_size(monkeypatch):
+    hand = _hand_with_pot(10.0)
+
+    def fake_fold_pct(street, pot_fraction, archetype):
+        return 0.6 if pot_fraction >= abc_bot.BIG_VALUE_SIZING_POT_FRACTION else 0.3
+
+    monkeypatch.setattr(abc_bot, "_facing_bet_fold_pct", fake_fold_pct)
+    assert abc_bot._optimal_value_sizing(hand, "TestArchetype") == abc_bot.BIG_VALUE_SIZING_POT_FRACTION
+
+
+def test_optimal_value_sizing_picks_the_smaller_size_when_fold_pct_falls_with_size(monkeypatch):
+    hand = _hand_with_pot(10.0)
+
+    def fake_fold_pct(street, pot_fraction, archetype):
+        return 0.3 if pot_fraction >= abc_bot.BIG_VALUE_SIZING_POT_FRACTION else 0.6
+
+    monkeypatch.setattr(abc_bot, "_facing_bet_fold_pct", fake_fold_pct)
+    assert abc_bot._optimal_value_sizing(hand, "TestArchetype") == abc_bot.STANDARD_SIZING_POT_FRACTION
+
+
+def test_optimal_value_sizing_returns_none_without_real_data(monkeypatch):
+    hand = _hand_with_pot(10.0)
+    monkeypatch.setattr(abc_bot, "_facing_bet_fold_pct", lambda street, pot_fraction, archetype: None)
+    assert abc_bot._optimal_value_sizing(hand, "NoDataArchetype") is None
+
+
+def test_facing_bet_fold_pct_loads_real_data_for_a_known_archetype():
+    # Sanity check against the real reference table (not mocked) -- Nit is
+    # a known-tight archetype with a large real sample at every street/
+    # bucket, per this file's own v14 changelog notes.
+    fold_pct = abc_bot._facing_bet_fold_pct("river", 0.9, "Nit")
+    assert fold_pct is not None
+    assert 0.0 < fold_pct < 1.0
+
+
+def test_optimal_value_sizing_overrides_the_hardcoded_a2_choice_when_flag_on(monkeypatch):
+    hand = _reach_river_checked_to_with_trips()  # small pot, made hand (trips), checked to
+
+    def fake_fold_pct(street, pot_fraction, archetype):
+        # Maniac isn't in SIZING_TARGET_ARCHETYPES (A2 would leave it at
+        # STANDARD_SIZING_POT_FRACTION) -- but real fold data here says
+        # bigger buys real extra folds for THIS specific Maniac, so v28
+        # should override A2's hardcoded miss and size up anyway.
+        return 0.6 if pot_fraction >= abc_bot.BIG_VALUE_SIZING_POT_FRACTION else 0.3
+
+    monkeypatch.setattr(abc_bot, "_facing_bet_fold_pct", fake_fold_pct)
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    abc_bot.OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = True
+    # Disabled just so the expected amount below is an exact, readable
+    # formula -- HERO_PROGRESSIVE_POT_DAMPING is a real, separate, already-
+    # tested mechanism (not what this test is checking) that would
+    # otherwise shave a few percent off the raw sizing here too (pot_bb
+    # ends up just above HERO_POT_DAMPING_START_BB once the folded SB's
+    # dead blind is counted).
+    old_damping = abc_bot.HERO_PROGRESSIVE_POT_DAMPING
+    abc_bot.HERO_PROGRESSIVE_POT_DAMPING = False
+    try:
+        action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Maniac"})
+    finally:
+        abc_bot.OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = False
+        abc_bot.HERO_PROGRESSIVE_POT_DAMPING = old_damping
+    assert action == "bet"
+    assert amount == pytest.approx(pot_before * abc_bot.BIG_VALUE_SIZING_POT_FRACTION)
 
 
 def test_cbets_flop_then_keeps_betting_the_turn_for_value_with_a_strong_hand():
