@@ -136,6 +136,78 @@ def test_only_premium_continues_vs_a_3bet():
     assert action == "call"
 
 
+def _facing_a_near_shove_4bet(stack=40.0):
+    players = make_players(6, stack=stack)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG opens to 5bb
+    hand.apply_action(5, "raise", amount=35.0)  # 3-bet to 35bb -- most of a 40bb stack
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    return hand  # hero (seat 4) faces to_call=30 out of a 35bb remaining stack (~86%)
+
+
+def test_folds_qq_to_an_extreme_4bet_from_a_known_nit_when_flag_on():
+    hand = _facing_a_near_shove_4bet()
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
+    try:
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    finally:
+        abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
+    assert action == "fold"
+
+
+def test_never_folds_aa_even_to_an_extreme_4bet_from_a_known_nit():
+    hand = _facing_a_near_shove_4bet()
+    hand.players[4].hole_cards = ["As", "Ah"]
+    abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
+    try:
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    finally:
+        abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
+    assert action == "call"
+
+
+def test_does_not_fold_qq_to_an_extreme_4bet_from_a_known_loose_raiser():
+    hand = _facing_a_near_shove_4bet()
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
+    try:
+        # Maniac isn't in TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD -- a Maniac's
+        # shove range is nowhere near pure premium, so QQ keeps calling.
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Maniac"})
+    finally:
+        abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
+    assert action == "call"
+
+
+def test_extreme_4bet_fold_flag_off_by_default_still_calls_qq():
+    hand = _facing_a_near_shove_4bet()
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+    # FOLD_PREMIUM_VS_EXTREME_AGGRO defaults False -- baseline behavior.
+    action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    assert action == "call"
+
+
+def test_does_not_fold_qq_to_a_modest_sized_3bet_even_vs_a_known_nit():
+    # Same opponent, same hand, but the 3-bet is a normal ~3x size, not an
+    # extreme one -- to_call is nowhere near 50% of hero's stack, so the
+    # extreme-aggression gate never engages even with the flag on.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "raise", amount=15.0)  # a normal 3-bet, not a shove
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
+    try:
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    finally:
+        abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
+    assert action == "call"
+
+
 def test_top_pair_or_better_detection():
     assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair aces
     assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "Kd", "2s"])  # two pair (dup card ignored in this synthetic test)

@@ -530,6 +530,7 @@ PRESET_FLAG_GROUPS = {
     "v16-iso-limpers": (["ISO_RAISE_OVER_LIMPERS"], "v16 C1"),
     "v17-donk-bluff": (["DONK_BLUFF_VS_TIGHT"], "v17 C2"),
     "v25-barrel-bluff": (["BARREL_BLUFF_VS_TIGHT"], "v25 barrel bluff"),
+    "v26-fold-premium-extreme": (["FOLD_PREMIUM_VS_EXTREME_AGGRO"], "v26 fold premium vs extreme aggro"),
 }
 
 
@@ -539,6 +540,11 @@ def main():
         remaining = [a for a in args if a != "--barrel-bluff"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_flag_confirmation(["BARREL_BLUFF_VS_TIGHT"], n_hands, "v25 barrel bluff")
+        return
+    if "--fold-premium-extreme" in args:
+        remaining = [a for a in args if a != "--fold-premium-extreme"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_flag_confirmation(["FOLD_PREMIUM_VS_EXTREME_AGGRO"], n_hands, "v26 fold premium vs extreme aggro")
         return
     if "--flag-confirm" in args:
         idx = args.index("--flag-confirm")

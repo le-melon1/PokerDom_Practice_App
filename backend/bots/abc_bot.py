@@ -452,7 +452,10 @@ strategy card, not just inferred from code):
     - {AA, KK, QQ, AKs, AKo}: raise (value) to 3x the previous bet if this is
       the first raise faced, or just call that same set if already 3-bet or
       deeper (going a 5th/6th bet deep on a static hand-strength bot isn't
-      worth the added complexity).
+      worth the added complexity) -- EXCEPT (v26, FOLD_PREMIUM_VS_EXTREME_
+      AGGRO, untested): facing 2+ raises, if the current to_call is already
+      >=50% of hero's remaining stack AND the raiser is a known Nit/TAG,
+      fold QQ/AKs/AKo (never AA/KK -- see NEVER_FOLD_PREFLOP).
     - Else, if facing exactly one raise AND the raiser is a known Nit/TAG/
       LAG (high real fold-to-raise, see TIGHT_ARCHETYPES_FOR_DONK_BLUFF)
       AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT, untested
@@ -681,6 +684,26 @@ VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
 USE_WIDE_VALUE_3BET = True
 VALUE_3BET = VALUE_3BET_WIDE if USE_WIDE_VALUE_3BET else VALUE_3BET_TIGHT
 PREMIUM_VS_3BET = VALUE_3BET_TIGHT  # facing a 3-bet+, stay tight regardless -- going deeper with JJ/TT/AQ vs real aggression isn't worth it
+
+# v26 (FOLD_PREMIUM_VS_EXTREME_AGGRO): PREMIUM_VS_3BET always continues
+# facing 2+ raises, regardless of size or opponent -- even a near-shove
+# 4-bet from a known Nit. Real strategy: AA/KK essentially never fold
+# preflop (NEVER_FOLD_PREFLOP), but QQ/AKs/AKo are close enough (badly
+# dominated by AA/KK, a coinflip at best against a genuinely premium-only
+# continuing range) that published exploitative strategy (BlackRain79)
+# explicitly recommends folding them to EXTREME aggression from a known
+# tight opponent: "fold premium hands to nit aggression." "Extreme" here
+# is a simple, standard-theory proxy -- to_call already at least half of
+# hero's remaining stack -- not fit to a measured breakeven point. Uses a
+# NARROWER archetype set than TIGHT_ARCHETYPES_FOR_DONK_BLUFF (excludes
+# LAG): a LAG's 4-bet range is less purely premium than Nit/TAG's, so
+# folding QQ to a LAG shove is a materially different, riskier bet than
+# folding it to a Nit shove -- untested, not conflated with the donk-bluff
+# gate's own archetype set.
+FOLD_PREMIUM_VS_EXTREME_AGGRO = False  # flip True to A/B-test against the baseline (always continue with PREMIUM_VS_3BET)
+NEVER_FOLD_PREFLOP = {"AA", "KK"}
+EXTREME_AGGRO_STACK_FRACTION = 0.5  # to_call >= this fraction of hero's remaining stack counts as "extreme"
+TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 
 # v15, B1: archetype_vs_raise.csv / archetype_facing_bet.csv show Maniac and
 # Station continue/call facing aggression far more than the population
@@ -1210,6 +1233,21 @@ def choose_abc_action(
 
         if n_raises >= 2:
             if notation in PREMIUM_VS_3BET:
+                # v26 (see FOLD_PREMIUM_VS_EXTREME_AGGRO above): even a
+                # premium hand can fold to an extreme-sized re-raise from a
+                # known tight opponent -- AA/KK are the one exception that
+                # never folds regardless.
+                if (
+                    FOLD_PREMIUM_VS_EXTREME_AGGRO
+                    and notation not in NEVER_FOLD_PREFLOP
+                    and opponent_archetypes
+                    and player.stack > 0
+                    and to_call >= EXTREME_AGGRO_STACK_FRACTION * player.stack
+                ):
+                    raiser_seat = _last_preflop_raiser_seat(hand)
+                    raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
+                    if raiser_archetype in TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD:
+                        return ("fold", None)
                 return ("call", None)
             return ("fold", None)
 
