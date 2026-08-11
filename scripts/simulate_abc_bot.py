@@ -413,8 +413,46 @@ def run_sizing_theory_comparison(n_hands: int):
         print(f"Delta ({label} vs baseline): {r['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
 
 
+def run_bluff_3bet_comparison(n_hands: int):
+    """v24 A/B test: does BLUFF_3BET_VS_TIGHT (3-bet a speculative hand
+    instead of calling/folding, specifically against a known Nit/TAG/LAG
+    raiser -- see abc_bot.py's changelog, sourced from published
+    exploitative micro-stakes strategy) actually help, or does giving up
+    the pot-odds-favorable call range for a bluff cost more than the extra
+    folds are worth? Both runs use real rake and ground-truth archetypes,
+    same seed -- the flag is the only thing that varies."""
+    print(f"\n[1/2] {n_hands} hands, BLUFF_3BET_VS_TIGHT=False (baseline, call-or-fold)...")
+    abc_bot.BLUFF_3BET_VS_TIGHT = False
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/2] {n_hands} hands, BLUFF_3BET_VS_TIGHT=True (v24, bluff 3-bet vs known Nit/TAG/LAG)...")
+    abc_bot.BLUFF_3BET_VS_TIGHT = True
+    t0 = time.time()
+    with_bluff_3bet = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+    abc_bot.BLUFF_3BET_VS_TIGHT = False  # reset module state
+
+    print("\n" + "=" * 60)
+    print("BLUFF-3-BET-VS-TIGHT A/B TEST (both WITH real rake)")
+    print("=" * 60)
+    for label, r in (("Baseline (call-or-fold)", baseline), ("v24 (bluff 3-bet vs Nit/TAG/LAG)", with_bluff_3bet)):
+        print(f"\n{label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    delta = with_bluff_3bet["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
+    print(f"\nBluff-3-bet delta: {delta:+.2f} bb/100")
+
+
 def main():
     args = sys.argv[1:]
+    if "--bluff-3bet" in args:
+        remaining = [a for a in args if a != "--bluff-3bet"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_bluff_3bet_comparison(n_hands)
+        return
     if "--overbet-fold" in args:
         remaining = [a for a in args if a != "--overbet-fold"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000

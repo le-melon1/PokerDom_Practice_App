@@ -453,6 +453,12 @@ strategy card, not just inferred from code):
       the first raise faced, or just call that same set if already 3-bet or
       deeper (going a 5th/6th bet deep on a static hand-strength bot isn't
       worth the added complexity).
+    - Else, if facing exactly one raise AND the raiser is a known Nit/TAG/
+      LAG (high real fold-to-raise, see TIGHT_ARCHETYPES_FOR_DONK_BLUFF)
+      AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT, untested
+      -- see the constant's comment above): bluff-raise (3-bet) instead of
+      just calling, on the theory that these opponents fold enough for a
+      3-bet with no real hand to show a profit.
     - Else, if facing exactly one raise: call with a hand in your position's
       CALL range (half the open VPIP, e.g. UTG ~7% / BTN ~13.3% -- the
       tighter, stronger half of what you'd open).
@@ -798,6 +804,44 @@ VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
 # Shipped False, same standing policy as this file's other unproven flags.
 FOLD_TOP_PAIR_VS_OVERBET = False
 OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" threshold, not fit to a measured breakeven point
+
+# v24: see the BLUFF_3BET_VS_TIGHT comment in choose_abc_action's
+# facing-a-raise branch. Sourced from published exploitative micro-stakes
+# strategy (BlackRain79), not read off a real-data table -- a standard-
+# theory hand set (blocker-heavy suited aces + suited connectors/one-
+# gappers + a couple offsuit broadways), disjoint from VALUE_3BET_WIDE, not
+# fit to a specific measured breakeven point.
+#
+# MOTIVATION, real data: PokerDom_Microlimits_Analysis/scripts/characterize_
+# winning_players.py correlated real per-player stats against real bb_per_100
+# across 686 players with >=5000 hands -- 3bet% was the SECOND-strongest
+# predictor of winning (rho=+0.4678, almost as strong as PFR's +0.4749),
+# and real winners' top decile 3-bets more than double the rate of the
+# bottom decile (5.4% vs 2.4%) against a population Tier 2's own finding
+# says barely 3-bets at all. That's a real, large, population-level signal
+# that more 3-betting associates with winning.
+#
+# RESULT, this specific implementation: does NOT clear the bar, despite the
+# population correlation above. scripts/simulate_abc_bot.py --bluff-3bet,
+# real rake, ground-truth archetypes, same seed:
+#   80k hands/arm:  baseline +57.90 (CI +/-3.92) vs v24 +62.19 (CI +/-3.96),
+#                   delta +4.29 -- leaning positive, inside the ~5.6 combined
+#                   noise band.
+#   300k hands/arm: baseline +57.12 (CI +/-2.03) vs v24 +59.67 (CI +/-2.04),
+#                   delta +2.56 -- STILL inside the ~2.9 combined noise band
+#                   (barely), same pattern SQUEEZE_WIDER_RANGE's own 80k->
+#                   300k retest showed (an 80k lean that shrinks toward the
+#                   noise floor at real power, not a suppressed real effect).
+# Interpretation: the real-data correlation is almost certainly genuine, but
+# most likely reflects that players who 3-bet more ALSO tend to be better
+# overall (postflop play, hand reading, etc.), not that bolting this one
+# narrow bluff-3-bet rule onto an otherwise-unchanged bot captures that same
+# edge. Shipped False, same standing policy as this file's other unproven
+# flags -- "a real correlation exists in the population" and "this specific
+# rule is a demonstrated fix" are different claims, and only the first one
+# is established here.
+BLUFF_3BET_VS_TIGHT = False  # flip True to A/B-test against the baseline (call-or-fold with these hands, no bluff 3-bet)
+BLUFF_3BET_RANGE = {"A9o", "A8o", "A5s", "A4s", "KQo", "KJs", "QJs", "JTs", "T9s", "98s"}
 
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
@@ -1159,6 +1203,29 @@ def choose_abc_action(
                 amount += hand.big_blind * SQUEEZE_SIZING_PER_CALLER_BB * n_callers_in
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("raise", amount)
+        # v24 (BLUFF_3BET_VS_TIGHT): this bot has never had a bluff 3-bet --
+        # VALUE_3BET(_WIDE) is the only 3-betting range that exists, so every
+        # non-premium hand just calls or folds facing a raise. Published
+        # exploitative micro-stakes strategy (BlackRain79's "How to Beat
+        # Micro Stakes Poker") explicitly recommends 3-betting speculative
+        # hands (their examples: A9o, JTo-type) against a specific regular
+        # with an 80%+ fold-to-3-bet rate -- and archetype_vs_raise.csv
+        # (PokerDom_Microlimits_Analysis) shows Nit folds to a raise 90-93%
+        # and TAG 82-90% at every position with a real sample except UTG,
+        # both clearing that bar -- reuses TIGHT_ARCHETYPES_FOR_DONK_BLUFF
+        # (Nit/TAG/LAG) rather than defining a second similar-but-different
+        # tight-archetype set. Checked before the call range below: 3-betting
+        # here is specifically +EV BECAUSE these opponents fold so much, not
+        # because the hand is strong enough to profitably call with, so it
+        # should win over just calling when both would otherwise apply.
+        if BLUFF_3BET_VS_TIGHT and opponent_archetypes:
+            raiser_seat = _last_preflop_raiser_seat(hand)
+            raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
+            if raiser_archetype in TIGHT_ARCHETYPES_FOR_DONK_BLUFF and notation in BLUFF_3BET_RANGE:
+                amount = hand.current_bet * THREEBET_MULTIPLIER
+                amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+                return ("raise", amount)
+
         # ALLOW_CALLING_RAISES: earlier versions found calling a raise (with
         # ANY range) under a fit-or-fold postflop plan (no draws, no value
         # betting without initiative) cost -74 bb/100 -- a free roll for

@@ -67,6 +67,49 @@ def test_calls_a_raise_with_a_hand_in_the_narrow_call_range_but_not_premium():
     assert action == "call"
 
 
+def test_bluff_3bets_a_speculative_hand_vs_a_known_nit_raiser_when_flag_on():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- in BLUFF_3BET_RANGE, not VALUE_3BET
+    abc_bot.BLUFF_3BET_VS_TIGHT = True
+    try:
+        action, amount = choose_abc_action(hand, actor, opponent_archetypes={4: "Nit"})
+    finally:
+        abc_bot.BLUFF_3BET_VS_TIGHT = False
+    assert action == "raise"
+    assert amount == 15.0  # 3x the 5bb open, same sizing as a value 3-bet
+
+
+def test_does_not_bluff_3bet_vs_a_known_loose_raiser_even_when_flag_on():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- same hand
+    abc_bot.BLUFF_3BET_VS_TIGHT = True
+    try:
+        # Station is not in TIGHT_ARCHETYPES_FOR_DONK_BLUFF -- falls through
+        # to the normal call range instead of bluff-3-betting.
+        action, amount = choose_abc_action(hand, actor, opponent_archetypes={4: "Station"})
+    finally:
+        abc_bot.BLUFF_3BET_VS_TIGHT = False
+    assert action == "call"
+
+
+def test_bluff_3bet_flag_off_by_default_falls_back_to_call_vs_nit():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]
+    # BLUFF_3BET_VS_TIGHT defaults False -- baseline behavior (call) even
+    # facing a known Nit, until this flag is A/B-tested and shipped.
+    action, amount = choose_abc_action(hand, actor, opponent_archetypes={4: "Nit"})
+    assert action == "call"
+
+
 def test_value_3bets_a_premium_hand_facing_a_single_raise_instead_of_flatting():
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
