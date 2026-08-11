@@ -12,6 +12,21 @@ Opponent seat still turns over through the population-weighted archetype mix
 via TableTurnover, same as every other simulate_*.py script -- "against
 players," not against one fixed static bot.
 
+RESULT (2026-08-11, 1500 hands/arm, population-weighted archetype mix):
+does the live EV panel's actual recommendation win money end to end when
+every postflop decision goes through the real CFR solver? Yes, clearly --
+this is the first result in the project's whole recommend_gto_action
+investigation where the CI excludes zero outright, not just "leans
+positive." WITH real rake: +51.06 bb/100 excl. monster pots (95% CI
++/-14.47 -- lower bound +36.6, comfortably above zero). WITHOUT rake:
++69.83 bb/100 (CI +/-16.31). Monster-pot rate 6.7-6.9%, notably lower
+than the 6-max version's ~11-12% (fewer multiway pot-inflation dynamics
+heads-up). 665-668 of the postflop decisions in each run actually went
+through the CFR solver (confirmed via gto_equilibrium["flop_subgame"]),
+not the multiway heuristic. Answers the project's original "would a bot
+that only follows our live recommendations actually win?" question for
+the heads-up-postflop case specifically: yes.
+
 Usage: python3 scripts/simulate_recommendation_bot_headsup.py [n_hands]
 """
 
