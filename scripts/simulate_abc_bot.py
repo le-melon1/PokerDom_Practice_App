@@ -533,6 +533,7 @@ PRESET_FLAG_GROUPS = {
     "v26-fold-premium-extreme": (["FOLD_PREMIUM_VS_EXTREME_AGGRO"], "v26 fold premium vs extreme aggro"),
     "v27-river-overbet": (["RIVER_OVERBET_NUTS_VS_LOOSE"], "v27 river overbet nuts vs loose"),
     "v28-optimal-sizing": (["OPTIMAL_VALUE_SIZING_PER_ARCHETYPE"], "v28 optimal value sizing per archetype"),
+    "v29-iso-wider-range": (["ISO_WIDER_RANGE_OVER_LIMPERS"], "v29 isolate limpers with a wider range"),
 }
 
 
@@ -557,6 +558,11 @@ def main():
         remaining = [a for a in args if a != "--optimal-sizing"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_flag_confirmation(["OPTIMAL_VALUE_SIZING_PER_ARCHETYPE"], n_hands, "v28 optimal value sizing per archetype")
+        return
+    if "--iso-wider-range" in args:
+        remaining = [a for a in args if a != "--iso-wider-range"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_flag_confirmation(["ISO_WIDER_RANGE_OVER_LIMPERS"], n_hands, "v29 isolate limpers with a wider range")
         return
     if "--flag-confirm" in args:
         idx = args.index("--flag-confirm")

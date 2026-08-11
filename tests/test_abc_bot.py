@@ -17,6 +17,75 @@ def make_players(n, stack=200.0):
     return [Player(seat=i + 1, name=f"P{i+1}", stack=stack) for i in range(n)]
 
 
+def _cards_from_notation(notation: str) -> list[str]:
+    if len(notation) == 2:  # pocket pair, e.g. "99"
+        r = notation[0]
+        return [f"{r}c", f"{r}d"]
+    r1, r2, suited = notation[0], notation[1], notation[2] == "s"
+    return [f"{r1}c", f"{r2}c"] if suited else [f"{r1}c", f"{r2}d"]
+
+
+def test_isolates_a_limper_with_a_wider_range_when_flag_on():
+    open_ranges, _, steal_ranges = abc_bot._ranges()
+    position = "BTN"
+    extra_hands = steal_ranges[position] - open_ranges[position]
+    assert extra_hands, "expected the widened range to be strictly bigger than the plain open range for BTN"
+    test_hand = next(iter(extra_hands))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")  # UTG limps
+    for s in (5, 6):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    actor = hand.current_actor()  # seat 1, BTN
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = False
+    assert action == "raise"
+
+
+def test_does_not_isolate_a_limper_wider_when_flag_off():
+    open_ranges, _, steal_ranges = abc_bot._ranges()
+    position = "BTN"
+    extra_hands = steal_ranges[position] - open_ranges[position]
+    test_hand = next(iter(extra_hands))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")  # UTG limps
+    for s in (5, 6):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    # ISO_WIDER_RANGE_OVER_LIMPERS defaults False -- a hand outside the
+    # plain open range still folds even facing a limper.
+    action, _ = choose_abc_action(hand, actor)
+    assert action == "fold"
+
+
+def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
+    open_ranges, _, steal_ranges = abc_bot._ranges()
+    position = "UTG"
+    extra_hands = steal_ranges[position] - open_ranges[position]
+    test_hand = next(iter(extra_hands))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    actor = hand.current_actor()  # UTG, first to act -- no limpers yet
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = False
+    assert action == "fold"
+
+
 def test_utg_opens_a_premium_hand():
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)

@@ -665,6 +665,12 @@ SIZE_UP_ON_WET_BOARD = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of sta
 ISO_RAISE_OVER_LIMPERS = True  # flip False to A/B-test against the flat OPEN_SIZING_BB baseline
 ISO_SIZING_PER_LIMPER_BB = 1.0
 
+# v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
+# (n_raises==0 branch). Standard live-poker convention (isolate limpers
+# wider, not just bigger) -- not fit to a measured breakeven point, same
+# disclosure as C1 itself.
+ISO_WIDER_RANGE_OVER_LIMPERS = False  # flip True to A/B-test against the baseline (same range as a plain open, regardless of limpers)
+
 # v19: open bigger with a premium hand (reuses VALUE_3BET_TIGHT below as the
 # "premium" set), stacking with the C1 per-limper bonus above -- i.e. a
 # premium hand opened over 2 limpers gets BOTH bonuses. User's hypothesis,
@@ -1304,7 +1310,19 @@ def choose_abc_action(
             # every live opponent is a known Nit (90-93% fold to a raise at
             # every position -- see the constant's comment above).
             use_steal = STEAL_WIDER_VS_NIT and _all_live_opponents_are_tight(hand, seat, opponent_archetypes)
-            open_range = steal_ranges.get(position) if use_steal else open_ranges.get(position)
+            # v29 (ISO_WIDER_RANGE_OVER_LIMPERS): C1 (ISO_RAISE_OVER_LIMPERS)
+            # already isolates limpers for MORE money but with the SAME
+            # range as a plain open -- real strategy also isolates them
+            # with a WIDER range, since a limper has already shown a weak/
+            # speculative hand and doesn't represent the fold equity a
+            # normal opener behind them would need to respect. Reuses
+            # steal_ranges (the same "+15pp VPIP" widened range
+            # STEAL_WIDER_VS_NIT already computes) rather than a third
+            # precomputed range tier -- conceptually the same move (widen
+            # against a shown weakness), just a different trigger. If
+            # BOTH conditions apply, either one is enough to widen.
+            use_iso_wide = ISO_WIDER_RANGE_OVER_LIMPERS and _n_limpers_preflop(hand) >= 1
+            open_range = steal_ranges.get(position) if (use_steal or use_iso_wide) else open_ranges.get(position)
             if open_range and notation in open_range:
                 # v16, C1 (see ISO_RAISE_OVER_LIMPERS above): size up over
                 # already-limped-in callers instead of the flat open size.
