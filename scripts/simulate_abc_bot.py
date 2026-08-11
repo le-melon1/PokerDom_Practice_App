@@ -413,6 +413,83 @@ def run_sizing_theory_comparison(n_hands: int):
         print(f"Delta ({label} vs baseline): {r['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
 
 
+def _sync_value_3bet(is_wide: bool) -> None:
+    """USE_WIDE_VALUE_3BET isn't read directly by choose_abc_action -- VALUE_
+    3BET is computed from it ONCE at module import time (`VALUE_3BET =
+    VALUE_3BET_WIDE if USE_WIDE_VALUE_3BET else VALUE_3BET_TIGHT`), so
+    toggling the USE_WIDE_VALUE_3BET name alone at runtime has no effect.
+    Any A/B test that includes it must also re-sync VALUE_3BET by hand."""
+    abc_bot.VALUE_3BET = abc_bot.VALUE_3BET_WIDE if is_wide else abc_bot.VALUE_3BET_TIGHT
+
+
+# SIZING_TARGET_ARCHETYPES (v14, A2) isn't a boolean flag -- it's the actual
+# archetype set choose_abc_action checks membership against ({"Nit", "TAG"}),
+# with no separate on/off gate. Toggling it "off" for a baseline arm means
+# an empty set (membership always False), not literal False (which would
+# crash -- `in False` isn't iterable, see the traceback this constant fixes).
+_NON_BOOLEAN_FLAG_ON_VALUES = {"SIZING_TARGET_ARCHETYPES": {"Nit", "TAG"}}
+_NON_BOOLEAN_FLAG_OFF_VALUES = {"SIZING_TARGET_ARCHETYPES": set()}
+
+
+def run_flag_confirmation(flag_names: list[str], n_hands: int, label: str):
+    """2026-08-11: generic re-confirmation for any flag(s) shipped True on
+    theory/a "doesn't measurably hurt" call rather than a demonstrated with-
+    rake win, all still active in the live bot right now:
+      v9  USE_WIDE_VALUE_3BET       -1.57 bb/100 with rake at 80k, noise
+      v14 STEAL_WIDER_VS_NIT +
+          SIZING_TARGET_ARCHETYPES  +0.63 bb/100 with rake at 80k, noise
+      v15 WIDER_3BET_VS_LOOSE +
+          SIZE_UP_ON_TURN           -0.27 bb/100 with rake at 80k, clean null
+      v16 ISO_RAISE_OVER_LIMPERS    +2.14 bb/100 with rake at 80k, inside CI
+      v17 DONK_BLUFF_VS_TIGHT       +2.33 bb/100 with rake at 80k, inside CI
+    None of these were ever re-tested at real statistical power the way
+    SQUEEZE_WIDER_RANGE (v21) was -- this closes that gap. Sets every flag
+    in flag_names to False for the baseline arm and True for the treatment
+    arm (leaving every OTHER flag at its current shipped value, same
+    same-seed-only-this-toggles discipline as every A/B test in this file),
+    real rake, ground-truth archetypes."""
+    original = {name: getattr(abc_bot, name) for name in flag_names}
+
+    def _apply(value: bool) -> None:
+        for name in flag_names:
+            if name in _NON_BOOLEAN_FLAG_ON_VALUES:
+                real_value = _NON_BOOLEAN_FLAG_ON_VALUES[name] if value else _NON_BOOLEAN_FLAG_OFF_VALUES[name]
+            else:
+                real_value = value
+            setattr(abc_bot, name, real_value)
+        if "USE_WIDE_VALUE_3BET" in flag_names:
+            _sync_value_3bet(value)
+
+    flags_str = "+".join(flag_names)
+    print(f"\n[1/2] {n_hands} hands, {flags_str}=False (baseline)...")
+    _apply(False)
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/2] {n_hands} hands, {flags_str}=True...")
+    _apply(True)
+    t0 = time.time()
+    treatment = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    for name, val in original.items():
+        setattr(abc_bot, name, val)
+    if "USE_WIDE_VALUE_3BET" in flag_names:
+        _sync_value_3bet(original["USE_WIDE_VALUE_3BET"])
+
+    print("\n" + "=" * 60)
+    print(f"RE-CONFIRMATION: {label} ({flags_str}) (both WITH real rake)")
+    print("=" * 60)
+    for arm_label, r in (("Baseline (False)", baseline), ("Treatment (True)", treatment)):
+        print(f"\n{arm_label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    delta = treatment["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
+    print(f"\n{label} delta: {delta:+.2f} bb/100")
+
+
 def run_bluff_3bet_comparison(n_hands: int):
     """v24 A/B test: does BLUFF_3BET_VS_TIGHT (3-bet a speculative hand
     instead of calling/folding, specifically against a known Nit/TAG/LAG
@@ -446,8 +523,31 @@ def run_bluff_3bet_comparison(n_hands: int):
     print(f"\nBluff-3-bet delta: {delta:+.2f} bb/100")
 
 
+PRESET_FLAG_GROUPS = {
+    "v9-wide-3bet": (["USE_WIDE_VALUE_3BET"], "v9 USE_WIDE_VALUE_3BET"),
+    "v14-steal-sizing": (["STEAL_WIDER_VS_NIT", "SIZING_TARGET_ARCHETYPES"], "v14 A1+A2"),
+    "v15-loose-3bet-turn": (["WIDER_3BET_VS_LOOSE", "SIZE_UP_ON_TURN"], "v15 B1+B2"),
+    "v16-iso-limpers": (["ISO_RAISE_OVER_LIMPERS"], "v16 C1"),
+    "v17-donk-bluff": (["DONK_BLUFF_VS_TIGHT"], "v17 C2"),
+}
+
+
 def main():
     args = sys.argv[1:]
+    if "--flag-confirm" in args:
+        idx = args.index("--flag-confirm")
+        preset = args[idx + 1]
+        remaining = args[idx + 2 :]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        if preset == "all":
+            for key, (flag_names, label) in PRESET_FLAG_GROUPS.items():
+                run_flag_confirmation(flag_names, n_hands, label)
+        elif preset in PRESET_FLAG_GROUPS:
+            flag_names, label = PRESET_FLAG_GROUPS[preset]
+            run_flag_confirmation(flag_names, n_hands, label)
+        else:
+            print(f"Unknown preset '{preset}'. Options: all, {', '.join(PRESET_FLAG_GROUPS)}")
+        return
     if "--bluff-3bet" in args:
         remaining = [a for a in args if a != "--bluff-3bet"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
