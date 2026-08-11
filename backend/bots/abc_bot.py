@@ -526,6 +526,23 @@ from backend.engine.hand import Hand
 OPEN_VPIP_BY_POSITION = {"UTG": 0.139, "MP": 0.165, "CO": 0.216, "BTN": 0.266, "SB": 0.245}
 CALL_VPIP_BY_POSITION = {pos: vpip * 0.5 for pos, vpip in OPEN_VPIP_BY_POSITION.items()}
 
+# v30 (SIZE_SCALED_CALL_RANGE): CALL_VPIP_BY_POSITION implicitly assumes
+# every raise is OPEN_SIZING_BB (2.5bb) -- a min-raise to 2bb offers a much
+# better price than a raise to 5bb, but the call range doesn't currently
+# adjust either way (the fixed hand-strength range is the same regardless
+# of the actual pot odds on offer). Real strategy calls wider against a
+# smaller raise and narrower against a bigger one (worse price, and
+# usually a stronger range behind it too). Three discrete tiers (narrow/
+# standard/wide) rather than a continuous per-hand computation, same
+# reasoning as every other precomputed range tier in this file (steal_
+# ranges, etc.) -- picked by comparing the actual raise-to size (in bb)
+# against two thresholds, not a continuous function of size.
+SIZE_SCALED_CALL_RANGE = False  # flip True to A/B-test against the baseline (one fixed call range regardless of raise size)
+SMALL_RAISE_BB_THRESHOLD = 2.0  # raise-to at or below this many bb -- wider call range
+BIG_RAISE_BB_THRESHOLD = 4.0  # raise-to at or above this many bb -- narrower call range
+CALL_VPIP_WIDE_MULTIPLIER = 1.3
+CALL_VPIP_NARROW_MULTIPLIER = 0.7
+
 # v14, part 1 (STEAL_WIDER_VS_NIT): PokerDom_Microlimits_Analysis's
 # archetype_vs_raise.csv shows Nit folds to a preflop raise 90-93% of the
 # time at EVERY position (BB 90.3%, BTN 92.7%, CO 93.1%, MP 91.6%, SB 92.7%)
@@ -920,10 +937,13 @@ _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
 _call_range_cache: dict[str, set] = {}
 _steal_range_cache: dict[str, set] = {}
+_call_range_wide_cache: dict[str, set] = {}
+_call_range_narrow_cache: dict[str, set] = {}
 
 
 def _ranges():
     global _rankings_cache, _open_range_cache, _call_range_cache, _steal_range_cache
+    global _call_range_wide_cache, _call_range_narrow_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
         _open_range_cache = {
@@ -938,7 +958,27 @@ def _ranges():
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in STEAL_VPIP_BY_POSITION.items()
         }
-    return _open_range_cache, _call_range_cache, _steal_range_cache
+        # v30 (SIZE_SCALED_CALL_RANGE): two more tiers around the existing
+        # call range, +/- CALL_VPIP_WIDE_MULTIPLIER/CALL_VPIP_NARROW_
+        # MULTIPLIER, so the call range can scale with how big the actual
+        # raise is (see the constant's comment below) -- same technique as
+        # steal_ranges, a precomputed alternate tier rather than a fresh
+        # per-decision computation.
+        _call_range_wide_cache = {
+            pos: set(implied_range(vpip * CALL_VPIP_WIDE_MULTIPLIER, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            for pos, vpip in CALL_VPIP_BY_POSITION.items()
+        }
+        _call_range_narrow_cache = {
+            pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache))
+            for pos, vpip in CALL_VPIP_BY_POSITION.items()
+        }
+    return (
+        _open_range_cache,
+        _call_range_cache,
+        _steal_range_cache,
+        _call_range_wide_cache,
+        _call_range_narrow_cache,
+    )
 
 
 def _hand_notation(hole: list[str]) -> str:
@@ -1293,7 +1333,7 @@ def choose_abc_action(
     from each seat's session dossier (`dossier.style`, an estimate); the
     simulation script can also pass the ground-truth archetype to measure the
     ceiling of what opponent-awareness is worth before dossier noise."""
-    open_ranges, call_ranges, steal_ranges = _ranges()
+    open_ranges, call_ranges, steal_ranges, call_ranges_wide, call_ranges_narrow = _ranges()
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     to_call = legal["call_amount"]
@@ -1419,7 +1459,17 @@ def choose_abc_action(
         # so only the wide call range applies heads-up (no callers yet).
         already_multiway = MULTIWAY_NARROW_CALL_RANGE and _n_callers_since_last_raise_preflop(hand) > 0
         if ALLOW_CALLING_RAISES and not already_multiway:
+            # v30 (see SIZE_SCALED_CALL_RANGE above): scale which call-range
+            # tier applies by the ACTUAL raise-to size instead of always
+            # using the one fixed range. hand.current_bet is the raise-to
+            # amount at this point (facing exactly one raise).
             call_range = call_ranges.get(position)
+            if SIZE_SCALED_CALL_RANGE:
+                raise_bb = hand.current_bet / hand.big_blind if hand.big_blind else 0.0
+                if raise_bb <= SMALL_RAISE_BB_THRESHOLD:
+                    call_range = call_ranges_wide.get(position)
+                elif raise_bb >= BIG_RAISE_BB_THRESHOLD:
+                    call_range = call_ranges_narrow.get(position)
             if call_range and notation in call_range:
                 return ("call", None)
         return ("fold", None)

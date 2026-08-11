@@ -26,7 +26,7 @@ def _cards_from_notation(notation: str) -> list[str]:
 
 
 def test_isolates_a_limper_with_a_wider_range_when_flag_on():
-    open_ranges, _, steal_ranges = abc_bot._ranges()
+    open_ranges, _, steal_ranges, *_ = abc_bot._ranges()
     position = "BTN"
     extra_hands = steal_ranges[position] - open_ranges[position]
     assert extra_hands, "expected the widened range to be strictly bigger than the plain open range for BTN"
@@ -49,7 +49,7 @@ def test_isolates_a_limper_with_a_wider_range_when_flag_on():
 
 
 def test_does_not_isolate_a_limper_wider_when_flag_off():
-    open_ranges, _, steal_ranges = abc_bot._ranges()
+    open_ranges, _, steal_ranges, *_ = abc_bot._ranges()
     position = "BTN"
     extra_hands = steal_ranges[position] - open_ranges[position]
     test_hand = next(iter(extra_hands))
@@ -69,7 +69,7 @@ def test_does_not_isolate_a_limper_wider_when_flag_off():
 
 
 def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
-    open_ranges, _, steal_ranges = abc_bot._ranges()
+    open_ranges, _, steal_ranges, *_ = abc_bot._ranges()
     position = "UTG"
     extra_hands = steal_ranges[position] - open_ranges[position]
     test_hand = next(iter(extra_hands))
@@ -135,6 +135,79 @@ def test_calls_a_raise_with_a_hand_in_the_narrow_call_range_but_not_premium():
     actor = hand.current_actor()
     hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- in the call range, not in VALUE_3BET -- calls
     action, amount = choose_abc_action(hand, actor)
+    assert action == "call"
+
+
+def test_calls_wider_vs_a_min_raise_when_flag_on():
+    _, call_ranges, _, call_ranges_wide, _ = abc_bot._ranges()
+    position = "MP"
+    wide_only = call_ranges_wide[position] - call_ranges[position]
+    assert wide_only, "expected the wide call tier to be strictly bigger than the standard one for MP"
+    test_hand = next(iter(wide_only))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=4.0)  # UTG min-raises to 2bb -- a "small" raise
+    actor = hand.current_actor()  # MP
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.SIZE_SCALED_CALL_RANGE = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.SIZE_SCALED_CALL_RANGE = False
+    assert action == "call"
+
+
+def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
+    _, call_ranges, _, call_ranges_wide, _ = abc_bot._ranges()
+    position = "MP"
+    wide_only = call_ranges_wide[position] - call_ranges[position]
+    test_hand = next(iter(wide_only))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=4.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    # SIZE_SCALED_CALL_RANGE defaults False -- the standard range applies
+    # regardless of how small the raise actually was.
+    action, _ = choose_abc_action(hand, actor)
+    assert action == "fold"
+
+
+def test_folds_a_standard_call_range_hand_to_a_big_raise_when_flag_on():
+    _, call_ranges, _, _, call_ranges_narrow = abc_bot._ranges()
+    position = "MP"
+    narrowed_out = call_ranges[position] - call_ranges_narrow[position]
+    assert narrowed_out, "expected the narrow call tier to exclude some hands the standard one includes, for MP"
+    test_hand = next(iter(narrowed_out))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=10.0)  # UTG raises big -- 5bb, a "big" raise
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.SIZE_SCALED_CALL_RANGE = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.SIZE_SCALED_CALL_RANGE = False
+    assert action == "fold"
+
+
+def test_still_calls_a_standard_sized_raise_with_the_standard_range_when_flag_on():
+    # A raise between the two thresholds (SMALL/BIG_RAISE_BB_THRESHOLD)
+    # uses the plain standard call range, same as the flag being off.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # a normal, standard-sized open
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- in the standard call range
+    abc_bot.SIZE_SCALED_CALL_RANGE = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.SIZE_SCALED_CALL_RANGE = False
     assert action == "call"
 
 

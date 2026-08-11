@@ -534,6 +534,7 @@ PRESET_FLAG_GROUPS = {
     "v27-river-overbet": (["RIVER_OVERBET_NUTS_VS_LOOSE"], "v27 river overbet nuts vs loose"),
     "v28-optimal-sizing": (["OPTIMAL_VALUE_SIZING_PER_ARCHETYPE"], "v28 optimal value sizing per archetype"),
     "v29-iso-wider-range": (["ISO_WIDER_RANGE_OVER_LIMPERS"], "v29 isolate limpers with a wider range"),
+    "v30-size-scaled-call": (["SIZE_SCALED_CALL_RANGE"], "v30 size-scaled call range"),
 }
 
 
@@ -563,6 +564,11 @@ def main():
         remaining = [a for a in args if a != "--iso-wider-range"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_flag_confirmation(["ISO_WIDER_RANGE_OVER_LIMPERS"], n_hands, "v29 isolate limpers with a wider range")
+        return
+    if "--size-scaled-call" in args:
+        remaining = [a for a in args if a != "--size-scaled-call"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_flag_confirmation(["SIZE_SCALED_CALL_RANGE"], n_hands, "v30 size-scaled call range")
         return
     if "--flag-confirm" in args:
         idx = args.index("--flag-confirm")
