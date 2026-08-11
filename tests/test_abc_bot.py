@@ -1,5 +1,6 @@
 import backend.bots.abc_bot as abc_bot
 from backend.bots.abc_bot import (
+    _is_wet_board,
     choose_abc_action,
     has_top_pair_or_better,
     has_trips_or_better,
@@ -364,3 +365,80 @@ def test_never_value_raises_as_a_bluff_with_a_weak_hand_even_with_flag_on(monkey
     hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair -- not very strong, rule doesn't apply even with the flag on
     action, _ = choose_abc_action(hand, 4)
     assert action == "fold"
+
+
+def test_is_wet_board_detection():
+    assert _is_wet_board(["9d", "8d", "2d"])  # monotone -- made flush possible
+    assert _is_wet_board(["9d", "8h", "2d"])  # two-tone -- flush draw possible
+    assert _is_wet_board(["9c", "8h", "7s"])  # highly connected -- straight-drawy
+    assert not _is_wet_board(["Kd", "7c", "2s"])  # dry rainbow, disconnected
+    assert not _is_wet_board(["Kd", "7c"])  # incomplete board -- never "wet" (not enough cards yet)
+
+
+def test_sizes_up_with_very_strong_hand_when_flag_is_on(monkeypatch):
+    monkeypatch.setattr(abc_bot, "SIZE_UP_WITH_VERY_STRONG_HAND", True)
+    hand, bb_seat = _bb_free_flop()
+    hand.board = ["9c", "9d", "2h"]
+    hand.players[bb_seat].hole_cards = ["9s", "2d"]  # trips + a board pair -- two-pair-or-better, very_strong
+    _, amount_sized_up = choose_abc_action(hand, bb_seat)
+
+    monkeypatch.setattr(abc_bot, "SIZE_UP_WITH_VERY_STRONG_HAND", False)
+    hand2, bb_seat2 = _bb_free_flop()
+    hand2.board = ["9c", "9d", "2h"]
+    hand2.players[bb_seat2].hole_cards = ["9s", "2d"]
+    _, amount_baseline = choose_abc_action(hand2, bb_seat2)
+
+    assert amount_sized_up > amount_baseline
+
+
+def test_sizes_up_on_wet_board_when_flag_is_on(monkeypatch):
+    monkeypatch.setattr(abc_bot, "SIZE_UP_ON_WET_BOARD", True)
+    hand, bb_seat = _bb_free_flop()
+    hand.board = ["9d", "8d", "2d"]  # monotone -- wet
+    hand.players[bb_seat].hole_cards = ["9s", "Kd"]  # top pair, plain -- made but not very_strong
+    _, amount_sized_up = choose_abc_action(hand, bb_seat)
+
+    monkeypatch.setattr(abc_bot, "SIZE_UP_ON_WET_BOARD", False)
+    hand2, bb_seat2 = _bb_free_flop()
+    hand2.board = ["9d", "8d", "2d"]
+    hand2.players[bb_seat2].hole_cards = ["9s", "Kd"]
+    _, amount_baseline = choose_abc_action(hand2, bb_seat2)
+
+    assert amount_sized_up > amount_baseline
+
+
+def _heads_up_flop_cbet_spot():
+    # UTG opens, BB calls, flop checked to UTG (who has initiative) -- the
+    # unconditional-flop-cbet-with-air spot, same shape as
+    # _reach_turn_with_initiative's setup but stopping BEFORE the cbet so
+    # the amount can be inspected directly.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens, will have initiative
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")  # BB calls
+    assert hand.street == "flop"
+    hand.board = ["9c", "6d", "2h"]
+    hand.apply_action(3, "check")
+    assert hand.current_actor() == 4
+    return hand
+
+
+def test_does_not_size_up_a_bluff_cbet_with_the_strength_flag(monkeypatch):
+    # should_bet can also fire from cbet_with_air (no made hand at all) --
+    # SIZE_UP_WITH_VERY_STRONG_HAND must stay a no-op there (`made and
+    # very_strong` correctly requires a REAL made hand, which air never has).
+    monkeypatch.setattr(abc_bot, "SIZE_UP_WITH_VERY_STRONG_HAND", True)
+    hand = _heads_up_flop_cbet_spot()
+    hand.players[4].hole_cards = ["Ac", "Qd"]  # total air on this board
+    action, amount_flagged = choose_abc_action(hand, 4)
+    assert action == "bet"  # unconditional flop cbet with initiative, heads-up
+
+    monkeypatch.setattr(abc_bot, "SIZE_UP_WITH_VERY_STRONG_HAND", False)
+    hand2 = _heads_up_flop_cbet_spot()
+    hand2.players[4].hole_cards = ["Ac", "Qd"]
+    _, amount_baseline = choose_abc_action(hand2, 4)
+
+    assert amount_flagged == amount_baseline  # air never triggers the size-up, flag or not

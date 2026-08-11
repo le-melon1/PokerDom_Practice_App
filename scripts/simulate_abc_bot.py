@@ -328,8 +328,98 @@ def run_value_raise_tier_comparison(n_hands: int):
     print(f"Delta (trips+ only vs baseline): {trips_plus['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
 
 
+def run_overbet_fold_comparison(n_hands: int):
+    """v23 A/B test: does folding a plain top-pair-tier `made` hand to a
+    bet bigger than the pot (FOLD_TOP_PAIR_VS_OVERBET, abc_bot.py) actually
+    help, or does giving up live pots on a size-only signal cost more than
+    it saves? Both runs use real rake and ground-truth archetypes, same
+    seed -- the flag is the only thing that varies."""
+    print(f"\n[1/2] {n_hands} hands, FOLD_TOP_PAIR_VS_OVERBET=False (baseline, always call with made)...")
+    abc_bot.FOLD_TOP_PAIR_VS_OVERBET = False
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/2] {n_hands} hands, FOLD_TOP_PAIR_VS_OVERBET=True (v23, fold top pair to a >pot-sized bet)...")
+    abc_bot.FOLD_TOP_PAIR_VS_OVERBET = True
+    t0 = time.time()
+    with_fold = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+    abc_bot.FOLD_TOP_PAIR_VS_OVERBET = False  # reset module state
+
+    print("\n" + "=" * 60)
+    print("FOLD-TOP-PAIR-VS-OVERBET A/B TEST (both WITH real rake)")
+    print("=" * 60)
+    for label, r in (("Baseline (always call with made)", baseline), ("v23 (fold top pair to overbet)", with_fold)):
+        print(f"\n{label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    delta = with_fold["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
+    print(f"\nOverbet-fold delta: {delta:+.2f} bb/100")
+
+
+def run_sizing_theory_comparison(n_hands: int):
+    """v23 A/B test, sourced from published exploitative-sizing theory (see
+    abc_bot.py's SIZE_UP_WITH_VERY_STRONG_HAND / SIZE_UP_ON_WET_BOARD
+    comments): size value bets bigger with two-pair-or-better, and bigger on
+    a wet/drawy board -- both untested until now, both independently
+    toggled to isolate which (if either) actually helps. 4 arms, same seed:
+    baseline (flat sizing), strength-only, wet-board-only, both combined."""
+    print(f"\n[1/4] {n_hands} hands, baseline (flat sizing)...")
+    abc_bot.SIZE_UP_WITH_VERY_STRONG_HAND = False
+    abc_bot.SIZE_UP_ON_WET_BOARD = False
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/4] {n_hands} hands, size up with very-strong-hand only...")
+    abc_bot.SIZE_UP_WITH_VERY_STRONG_HAND = True
+    abc_bot.SIZE_UP_ON_WET_BOARD = False
+    t0 = time.time()
+    strength_only = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[3/4] {n_hands} hands, size up on wet board only...")
+    abc_bot.SIZE_UP_WITH_VERY_STRONG_HAND = False
+    abc_bot.SIZE_UP_ON_WET_BOARD = True
+    t0 = time.time()
+    wet_board_only = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[4/4] {n_hands} hands, both combined...")
+    abc_bot.SIZE_UP_WITH_VERY_STRONG_HAND = True
+    abc_bot.SIZE_UP_ON_WET_BOARD = True
+    t0 = time.time()
+    both = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+    abc_bot.SIZE_UP_WITH_VERY_STRONG_HAND = False
+    abc_bot.SIZE_UP_ON_WET_BOARD = False  # reset module state
+
+    print("\n" + "=" * 60)
+    print("SIZING-BY-CONTEXT THEORY A/B TEST (all WITH real rake)")
+    print("=" * 60)
+    for label, r in (
+        ("Baseline (flat sizing)", baseline),
+        ("Size up with very-strong-hand", strength_only),
+        ("Size up on wet board", wet_board_only),
+        ("Both combined", both),
+    ):
+        print(f"\n{label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    for label, r in (("strength-only", strength_only), ("wet-board-only", wet_board_only), ("both", both)):
+        print(f"Delta ({label} vs baseline): {r['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
+
+
 def main():
     args = sys.argv[1:]
+    if "--overbet-fold" in args:
+        remaining = [a for a in args if a != "--overbet-fold"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_overbet_fold_comparison(n_hands)
+        return
     if "--value-raise" in args:
         remaining = [a for a in args if a != "--value-raise"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
@@ -339,6 +429,11 @@ def main():
         remaining = [a for a in args if a != "--value-raise-tiers"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_value_raise_tier_comparison(n_hands)
+        return
+    if "--sizing-theory" in args:
+        remaining = [a for a in args if a != "--sizing-theory"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_sizing_theory_comparison(n_hands)
         return
     if "--dossier-realism" in args:
         remaining = [a for a in args if a != "--dossier-realism"]

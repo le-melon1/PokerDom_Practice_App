@@ -507,6 +507,7 @@ sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from src.analysis.hand_rankings import RANKS, compute_hand_rankings
 from src.analysis.implied_range import implied_range
+from src.pipeline.board_texture import texture_features
 
 from backend.bots.behavior_clone import _seat_position
 from backend.engine.hand import Hand
@@ -600,6 +601,22 @@ HERO_POT_DAMPING_FLOOR_FRAC = 0.05
 # BIG_VALUE_SIZING_POT_FRACTION tier on the turn regardless of opponent
 # archetype, rather than adding a third sizing number to keep this simple.
 SIZE_UP_ON_TURN = True  # flip False to A/B-test against the flat standard-fraction baseline
+
+# v23, two more sizing-by-context theories (2026-08-11, sourced from
+# published exploitative-sizing strategy, not read off a real-data table --
+# untested hypotheses, standard-theory numbers): value-bet sizing here has
+# always been a flat STANDARD_SIZING_POT_FRACTION regardless of (a) how
+# strong the made hand actually is, or (b) how draw-heavy the board is --
+# explicitly disclosed as a known gap in this file's "Known, disclosed
+# simplifications" section ("no polarization"). Exploitative-sizing theory
+# says: against opponents who don't adjust to bet size (confirmed true of
+# this population's ML bots outside the two narrow hero-adaptation features
+# in behavior_clone.py), size UP with genuinely strong hands to extract more,
+# and size UP on wet/drawy boards to charge draws properly instead of giving
+# a cheap price. Both independently toggleable, same lesson as v15 B1/B2:
+# a bundled test can't tell you which part helped.
+SIZE_UP_WITH_VERY_STRONG_HAND = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard with two-pair-or-better (has_very_strong_hand)
+SIZE_UP_ON_WET_BOARD = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard on a two-tone/monotone/well-connected board
 
 # v16, C1: the bot currently treats "someone already limped" identically to
 # "unopened pot" -- always OPEN_SIZING_BB flat. Standard live convention is
@@ -763,6 +780,15 @@ VALUE_RAISE_MULTIPLIER = 3.0  # standard "raise 3x the bet" sizing, mirrors THRE
 # come from a plain-two-pair-tier hand is probably still too high, even
 # though the tier that includes the nuts looks fine to recommend.
 VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
+
+# v23: see the FOLD_TOP_PAIR_VS_OVERBET comment in choose_abc_action's
+# facing-a-bet branch. A/B-test switch: flip True to fold a plain top-pair-
+# tier `made` hand (not very_strong -- two pair+ always calls/raises
+# regardless of size) when facing a bet bigger than OVERBET_POT_FRACTION of
+# the pot. False is the baseline (always call with `made`, this file's
+# behavior since v5).
+FOLD_TOP_PAIR_VS_OVERBET = False
+OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" threshold, not fit to a measured breakeven point
 
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
@@ -1036,6 +1062,19 @@ def should_call_with_draw(hole: list[str], board: list[str], street: str, to_cal
     return pot_odds_needed <= DRAW_EQUITY_BY_STREET[street]
 
 
+def _is_wet_board(board: list[str]) -> bool:
+    """Reuses the ML bots' own board_texture.py feature extraction (same
+    module behavior_clone.py already relies on) rather than redefining
+    "wet" a second way. "Wet" = a real flush possibility (two_tone or
+    monotone) or a well-connected straight-drawy board (connectedness>=2,
+    i.e. at least two small rank-gaps among the board cards) -- gates
+    SIZE_UP_ON_WET_BOARD above."""
+    if len(board) < 3:
+        return False
+    t = texture_features(board)
+    return bool(t["board_two_tone"] or t["board_monotone"] or t["board_connectedness"] >= 2)
+
+
 def choose_abc_action(
     hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
 ) -> tuple[str, float | None]:
@@ -1190,6 +1229,17 @@ def choose_abc_action(
             # extra folds here regardless of opponent -- size up unconditionally.
             if SIZE_UP_ON_TURN and hand.street == "turn":
                 sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # v23 (see SIZE_UP_WITH_VERY_STRONG_HAND/SIZE_UP_ON_WET_BOARD
+            # above): two more untested sizing-by-context theories, each its
+            # own flag. `made` here can also be air-cbet/donk-bluff-triggered
+            # (should_bet's other two terms) -- both new rules are correctly
+            # no-ops in that case since a bluff has no real hand strength to
+            # size up with, and a wet board arguably wants a SMALLER bluff
+            # size instead, a separate untested question not conflated here.
+            if SIZE_UP_WITH_VERY_STRONG_HAND and made and very_strong:
+                sizing = BIG_VALUE_SIZING_POT_FRACTION
+            if SIZE_UP_ON_WET_BOARD and made and _is_wet_board(hand.board):
+                sizing = BIG_VALUE_SIZING_POT_FRACTION
             # monster-pot fix, hero side (2026-08-07): the earlier fix only
             # touched the ML bots' sizing (backend/bots/behavior_clone.py) --
             # confirmed via a fresh hand-log pull that hero's OWN sizing here
@@ -1225,7 +1275,30 @@ def choose_abc_action(
         amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
         return ("raise", amount)
 
+    # v23 (FOLD_TOP_PAIR_VS_OVERBET): `made` accepts ANY bet size, including
+    # a bet bigger than the pot itself -- unlike should_call_with_draw below,
+    # which already gates on pot odds. Real strategy folds a marginal top
+    # pair to a genuine overbet; a real monster (very_strong, i.e. two
+    # pair+) still calls (or raises, if VALUE_RAISE_FACING_BET is on)
+    # regardless of size -- only the weaker, non-very_strong portion of
+    # `made` (plain top pair / overpair) is gated here. Untested theory, not
+    # read off a real-data table (check_bet_size_reveals_strength.py found a
+    # real but modest bet-size/hand-strength correlation, not precise enough
+    # to derive a specific threshold from) -- testing a standard-theory
+    # number (pot-sized bet) rather than assuming either way.
     if made:
+        if (
+            FOLD_TOP_PAIR_VS_OVERBET
+            and not very_strong
+            and pot_before > 0
+            and (to_call / pot_before) > OVERBET_POT_FRACTION
+        ):
+            # Falls straight to fold -- deliberately bypasses the
+            # loose-archetype any-pair-or-better call below too, so this
+            # A/B test isolates one thing (does a plain top pair fold to an
+            # overbet) instead of being silently reclaimed by that other
+            # rule for loose bettors specifically.
+            return ("fold", None)
         return ("call", None)
 
     if opponent_archetypes and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):

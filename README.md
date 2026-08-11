@@ -34,7 +34,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium   # only needed for scripts/browser_check.py
 
-pytest tests/ -q               # 91 tests, should be all green
+pytest tests/ -q               # 116 tests, should be all green
 python3 run_app.py
 ```
 
@@ -57,7 +57,7 @@ outside the project directory.
 | `backend/api.py` | FastAPI routes + JSON state serialization. |
 | `frontend/` | Vanilla JS/HTML UI — circular table, live EV panel, hand history, dossier view. |
 | `scripts/` | One-off tools: `simulate_abc_bot.py` (80k-hand A/B testing harness with 95% CI), `diagnose_monster_pots.py` (classifies pot-inflation mechanism), `check_donk_bluff_reaction.py` (confirms ML bots can't learn within a hand), `browser_check.py`/`smoke_test_table.py` (Playwright visual checks), `generate_strategy_pdf.py`/`generate_cheatsheet_pdf.py` (produce the two PDFs at repo root). |
-| `tests/` | 91 tests, pytest. |
+| `tests/` | 116 tests, pytest. |
 
 ## Data/model pipeline (why some files are shipped and some aren't)
 
