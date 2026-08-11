@@ -437,6 +437,43 @@ script's docstring). Revision history, each one a real measured finding:
   rose 11.14%/11.09% -> 12.68%/12.72% (real, disclosed tradeoff for a real
   realism improvement), bb/100 excl. monster pots unchanged within noise.
 
+  2026-08-11: v9, v14 (A1+A2), and v15 (B1+B2) were all shipped True back
+  when they were first tested, on "theoretically sound, doesn't measurably
+  hurt" reasoning rather than a demonstrated with-rake win (unlike v19/
+  v21+, which were properly shipped False when unconfirmed) -- never
+  re-tested at real power the way SQUEEZE_WIDER_RANGE (v21) was, despite
+  being live in the bot the whole time. Closed that gap: re-ran all five
+  of that era's flags (v9, v14, v15, v16 C1, v17 C2) at 500k hands/arm
+  (scripts/simulate_abc_bot.py --flag-confirm all), same real-rake/ground-
+  truth-archetype discipline as every other test in this file. Real result:
+    v9  USE_WIDE_VALUE_3BET:  delta +0.80 (CI +/-1.57/+1.57, combined ~2.22)
+    v14 A1+A2:                delta +0.67 (CI +/-1.57/+1.56, combined ~2.21)
+    v15 B1+B2:                delta +1.62 (CI +/-1.57/+1.56, combined ~2.21)
+    v16 C1:                   delta +4.88 (CI +/-1.53/+1.57, combined ~2.19)
+    v17 C2:                   delta +3.40 (CI +/-1.56/+1.57, combined ~2.21)
+  v16 and v17 NOW CLEAR the combined CI at real power -- genuinely
+  confirmed, not just "kept on faith." v9/v14/v15 still don't, even at 6x
+  the original sample size. Sanity-checked against their own original 80k
+  numbers for a sign-consistency read (not a rigorous test, just a cheap
+  extra signal): v9 flipped sign (-1.57 -> +0.80) and v15 flipped sign
+  (-0.27 -> +1.62) between independent runs -- the signature of bouncing
+  around a true zero, not a small real effect. v14 did NOT flip (+0.63 ->
+  +0.67, same sign, similar magnitude across two independent samples) --
+  the one candidate that might reward an even bigger re-test someday, if
+  revisited (deferred, not run).
+
+  This closes the loop on the v15 pattern-hunting note above (and the C1/
+  C2 follow-up on it): of these five, the two that confirmed as REAL
+  (C1 -- a sizing convention, and C2 -- a genuinely new bluffing behavior)
+  are exactly the two that note already flagged as the stronger pattern;
+  the three archetype-frequency-table-derived RANGE-WIDENING theories
+  (A1+A2, B1+B2, and now v9's value-3bet widening too) failed a THIRD
+  time, even at 6x the sample size. Three theory generations of "just
+  widen a range because a population table says so" have now measured as
+  noise-or-worse; "change what the bot DOES, not just how wide a range
+  it plays" is the more consistently productive direction this file's own
+  history points to.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
