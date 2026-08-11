@@ -2,6 +2,7 @@ import backend.bots.abc_bot as abc_bot
 from backend.bots.abc_bot import (
     choose_abc_action,
     has_top_pair_or_better,
+    has_trips_or_better,
     has_very_strong_hand,
     should_call_with_draw,
 )
@@ -302,6 +303,16 @@ def test_very_strong_hand_detection():
     # plain top pair / overpair are NOT very strong -- call-only, not raise
     assert not has_very_strong_hand(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair aces
     assert not has_very_strong_hand(["9h", "9d"], ["8c", "7d", "2s"])  # overpair, not two pair+
+
+
+def test_trips_or_better_detection_excludes_plain_two_pair():
+    assert has_trips_or_better(["9h", "9d"], ["9c", "6h", "2s"])  # trips
+    assert has_trips_or_better(["Kh", "Kd"], ["Kc", "6h", "6s"])  # full house (trip kings + board pair)
+    assert has_trips_or_better(["Jd", "Td"], ["9d", "8d", "2d"])  # made flush
+    assert has_trips_or_better(["9c", "8c"], ["7d", "6h", "5s", "2c"])  # made straight
+    # plain two pair is excluded from this narrower tier (unlike has_very_strong_hand)
+    assert not has_trips_or_better(["9h", "6d"], ["9c", "6h", "2s"])
+    assert not has_trips_or_better(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair, not this tier at all
     assert not has_very_strong_hand(["Kc", "Qh"], ["9d", "6h", "2s"])  # no made hand at all
 
 

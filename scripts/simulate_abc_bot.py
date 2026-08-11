@@ -283,12 +283,62 @@ def run_value_raise_comparison(n_hands: int):
     print(f"\nValue-raise delta: {delta:+.2f} bb/100")
 
 
+def run_value_raise_tier_comparison(n_hands: int):
+    """2026-08-11 follow-up to v22 (-9.66 bb/100 for raising two-pair-or-
+    better facing a bet): was that driven by the whole tier, or specifically
+    by the weaker end of it (plain two pair, which loses to a lot of what
+    calls a raise)? Three arms, same seed: never raise (baseline), raise
+    two-pair-or-better (v22, known), raise ONLY trips-or-better (excludes
+    plain two pair -- see has_trips_or_better)."""
+    print(f"\n[1/3] {n_hands} hands, call-only baseline...")
+    abc_bot.VALUE_RAISE_FACING_BET = False
+    abc_bot.VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
+    t0 = time.time()
+    baseline = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[2/3] {n_hands} hands, raise two-pair-or-better (v22)...")
+    abc_bot.VALUE_RAISE_FACING_BET = True
+    abc_bot.VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
+    t0 = time.time()
+    two_pair_plus = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+
+    print(f"\n[3/3] {n_hands} hands, raise trips-or-better ONLY...")
+    abc_bot.VALUE_RAISE_FACING_BET = True
+    abc_bot.VALUE_RAISE_TRIPS_OR_BETTER_ONLY = True
+    t0 = time.time()
+    trips_plus = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42, opponent_aware=True)
+    print(f"  done in {time.time()-t0:.1f}s")
+    abc_bot.VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False  # reset module state
+
+    print("\n" + "=" * 60)
+    print("VALUE-RAISE TIER A/B TEST (all WITH real rake)")
+    print("=" * 60)
+    for label, r in (
+        ("Baseline (call-only)", baseline),
+        ("Raise two-pair-or-better (v22)", two_pair_plus),
+        ("Raise trips-or-better ONLY", trips_plus),
+    ):
+        print(f"\n{label}:")
+        print(f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})")
+        print(f"  monster pots: {r['monster_pot_rate']*100:.2f}%   hero VPIP/PFR: {r['hero_vpip']*100:.1f}%/{r['hero_pfr']*100:.1f}%")
+
+    print(f"\nDelta (two-pair+ vs baseline):  {two_pair_plus['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
+    print(f"Delta (trips+ only vs baseline): {trips_plus['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
+
+
 def main():
     args = sys.argv[1:]
     if "--value-raise" in args:
         remaining = [a for a in args if a != "--value-raise"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_value_raise_comparison(n_hands)
+        return
+    if "--value-raise-tiers" in args:
+        remaining = [a for a in args if a != "--value-raise-tiers"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_value_raise_tier_comparison(n_hands)
         return
     if "--dossier-realism" in args:
         remaining = [a for a in args if a != "--dossier-realism"]

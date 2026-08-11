@@ -738,6 +738,32 @@ MULTIWAY_AWARE = MULTIWAY_NARROW_CALL_RANGE or MULTIWAY_DISABLE_AIR_CBET or MULT
 VALUE_RAISE_FACING_BET = False  # tested WORSE (-9.66 bb/100, see above) -- kept in code/tests for reference, matches this file's policy for other measured-negative features (MULTIWAY_AWARE etc.)
 VALUE_RAISE_MULTIPLIER = 3.0  # standard "raise 3x the bet" sizing, mirrors THREEBET_MULTIPLIER's preflop convention -- only matters if VALUE_RAISE_FACING_BET is flipped on
 
+# 2026-08-11: follow-up to v22's -9.66 bb/100 result -- was that driven by
+# the whole two-pair-or-better tier, or specifically by the weaker end of
+# it (plain two pair, which loses to a lot of what would call a raise)?
+# When True (and VALUE_RAISE_FACING_BET is also True), narrows the trigger
+# from has_very_strong_hand to has_trips_or_better -- see that function's
+# docstring. Only matters if VALUE_RAISE_FACING_BET is on.
+#
+# RESULT (scripts/simulate_abc_bot.py --value-raise-tiers, 80k hands/arm,
+# real rake, ground-truth archetypes, same seed): confirmed the hypothesis.
+# Baseline (call-only) +57.24 bb/100 (CI +/-3.88); raise two-pair-or-better
+# (v22) +48.78 (CI +/-3.75, delta -8.46 -- clearly worse, consistent with
+# the original v22 finding); raise trips-or-better ONLY +55.46 (CI +/-3.83,
+# delta -1.77 -- inside the ~5.4 combined noise band, i.e. NOT a
+# demonstrated effect either direction). So: plain two pair was indeed
+# driving essentially all of v22's loss -- raising with a genuine near-nut
+# hand (trips+) is roughly neutral against this population, not clearly
+# harmful. Still shipped False by this file's standing policy of not
+# carrying unproven complexity (same call as SIZE_UP_PREMIUM_OPENS above) --
+# "not demonstrated harmful" isn't "demonstrated helpful." Real, useful
+# takeaway for solve_gto_wizard_like_strategy's multiway raise recommendation
+# (live_ev.py) though: it doesn't distinguish hand-strength tiers at all, so
+# whatever fraction of its ~39% multiway facing-bet raise recommendations
+# come from a plain-two-pair-tier hand is probably still too high, even
+# though the tier that includes the nuts looks fine to recommend.
+VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
+
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
 _call_range_cache: dict[str, set] = {}
@@ -928,6 +954,23 @@ def has_very_strong_hand(hole: list[str], board: list[str]) -> bool:
     return bool(pair_ranks) and counts[pair_ranks[0]] >= 3  # trips+
 
 
+def has_trips_or_better(hole: list[str], board: list[str]) -> bool:
+    """A narrower tier than has_very_strong_hand: EXCLUDES plain two pair,
+    keeps trips, full houses, quads, and made straights/flushes. Added to
+    test whether v22's -9.66 bb/100 result (VALUE_RAISE_FACING_BET raising
+    with two-pair-or-better) was driven specifically by the weaker end of
+    that tier -- plain two pair is a real hand but still loses to a lot of
+    what calls a raise (trips, straights, better two pairs), unlike this
+    narrower near-nut tier. See VALUE_RAISE_TRIPS_OR_BETTER_ONLY."""
+    if not board:
+        return False
+    if _has_made_flush(hole, board) or _has_made_straight(hole, board):
+        return True
+    counts = _rank_counts(hole + board)
+    pair_ranks = [r for r, n in counts.items() if n >= 2]
+    return any(counts[r] >= 3 for r in pair_ranks)  # trips, full house, or quads -- never plain two pair
+
+
 def has_any_pair_or_better(hole: list[str], board: list[str]) -> bool:
     """Weaker than has_top_pair_or_better: ANY pair (including bottom pair),
     not just top-pair-or-an-overpair. Used only when the specific opponent
@@ -1088,7 +1131,10 @@ def choose_abc_action(
     had_initiative = _had_preflop_initiative(hand, seat)
     n_bets = _n_bets_or_raises_this_street(hand)
     made = has_top_pair_or_better(player.hole_cards, hand.board)
-    very_strong = has_very_strong_hand(player.hole_cards, hand.board)
+    if VALUE_RAISE_TRIPS_OR_BETTER_ONLY:
+        very_strong = has_trips_or_better(player.hole_cards, hand.board)
+    else:
+        very_strong = has_very_strong_hand(player.hole_cards, hand.board)
     pot_before = sum(p.total_contributed for p in hand.players.values())
     n_live_opps_2plus = _n_live_opponents(hand, seat) >= 2
     is_multiway = MULTIWAY_AWARE and n_live_opps_2plus  # combined flag; specific sub-rules below use their own flag
