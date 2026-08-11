@@ -531,6 +531,7 @@ PRESET_FLAG_GROUPS = {
     "v17-donk-bluff": (["DONK_BLUFF_VS_TIGHT"], "v17 C2"),
     "v25-barrel-bluff": (["BARREL_BLUFF_VS_TIGHT"], "v25 barrel bluff"),
     "v26-fold-premium-extreme": (["FOLD_PREMIUM_VS_EXTREME_AGGRO"], "v26 fold premium vs extreme aggro"),
+    "v27-river-overbet": (["RIVER_OVERBET_NUTS_VS_LOOSE"], "v27 river overbet nuts vs loose"),
 }
 
 
@@ -545,6 +546,11 @@ def main():
         remaining = [a for a in args if a != "--fold-premium-extreme"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
         run_flag_confirmation(["FOLD_PREMIUM_VS_EXTREME_AGGRO"], n_hands, "v26 fold premium vs extreme aggro")
+        return
+    if "--river-overbet" in args:
+        remaining = [a for a in args if a != "--river-overbet"]
+        n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000
+        run_flag_confirmation(["RIVER_OVERBET_NUTS_VS_LOOSE"], n_hands, "v27 river overbet nuts vs loose")
         return
     if "--flag-confirm" in args:
         idx = args.index("--flag-confirm")

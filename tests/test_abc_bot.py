@@ -208,6 +208,68 @@ def test_does_not_fold_qq_to_a_modest_sized_3bet_even_vs_a_known_nit():
     assert action == "call"
 
 
+def _reach_river_checked_to_with_trips():
+    # Jumps straight to a small-pot river spot with trips instead of
+    # replaying a full flop/turn action sequence -- choose_abc_action only
+    # reads street/board/hole_cards/contributed amounts for this decision,
+    # not the intervening action history. Keeps the pot at preflop-only
+    # size (10, i.e. pot_bb=5.0, right at HERO_POT_DAMPING_START_BB), so
+    # hero_damp ~ 0 and the overbet sizing isn't swamped by the monster-pot
+    # damping mechanism -- a real, disclosed interaction (see RIVER_
+    # OVERBET_NUTS_VS_LOOSE's comment) that DOES neuter this in a bigger
+    # pot, and initially did before this helper was rewritten.
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")  # BB calls -- pot is now 10 (5+5)
+    assert hand.street == "flop"
+    hand.street_idx = 3  # jump straight to river
+    hand.current_bet = 0.0
+    for p in hand.players.values():
+        p.street_contributed = 0.0
+    hand.board = ["9c", "9d", "2h", "5c", "7d"]  # board pair of 9s
+    hand.players[4].hole_cards = ["9s", "Kd"]  # hero's third 9 -- trips
+    return hand
+
+
+def test_overbets_river_trips_vs_a_known_station_when_flag_on():
+    hand = _reach_river_checked_to_with_trips()
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    abc_bot.RIVER_OVERBET_NUTS_VS_LOOSE = True
+    try:
+        action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Station"})
+    finally:
+        abc_bot.RIVER_OVERBET_NUTS_VS_LOOSE = False
+    assert action == "bet"
+    assert amount >= pot_before  # a genuine overbet, not just a bigger-than-standard bet
+
+
+def test_does_not_overbet_river_vs_a_known_tight_opponent_even_when_flag_on():
+    hand = _reach_river_checked_to_with_trips()
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    abc_bot.RIVER_OVERBET_NUTS_VS_LOOSE = True
+    try:
+        # Nit isn't in LOOSE_ARCHETYPES -- no reason to think a Nit pays off
+        # an overbet any better than a standard one, so no special sizing.
+        action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
+    finally:
+        abc_bot.RIVER_OVERBET_NUTS_VS_LOOSE = False
+    assert action == "bet"
+    assert amount < pot_before
+
+
+def test_river_overbet_flag_off_by_default_uses_standard_sizing():
+    hand = _reach_river_checked_to_with_trips()
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    # RIVER_OVERBET_NUTS_VS_LOOSE defaults False -- baseline sizing tiers.
+    action, amount = choose_abc_action(hand, 4, opponent_archetypes={3: "Station"})
+    assert action == "bet"
+    assert amount < pot_before
+
+
 def test_top_pair_or_better_detection():
     assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "7d", "2s"])  # top pair aces
     assert has_top_pair_or_better(["Ah", "Kd"], ["Ac", "Kd", "2s"])  # two pair (dup card ignored in this synthetic test)

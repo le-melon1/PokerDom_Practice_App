@@ -593,6 +593,12 @@ SIZING_TARGET_ARCHETYPES = {"Nit", "TAG"}
 BIG_VALUE_SIZING_POT_FRACTION = 0.75
 STANDARD_SIZING_POT_FRACTION = 0.525
 
+# v27: see the RIVER_OVERBET_NUTS_VS_LOOSE comment in choose_abc_action's
+# checked-to branch. A genuine overbet (>100% pot) -- BIG_VALUE_SIZING_
+# POT_FRACTION's 0.75 never crosses the pot itself.
+RIVER_OVERBET_NUTS_VS_LOOSE = False  # flip True to A/B-test against the baseline (flat sizing tiers only)
+RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
+
 # monster-pot fix, hero side -- see choose_abc_action's
 # HERO_PROGRESSIVE_POT_DAMPING comment. Same shape/rationale as behavior_
 # clone.py's PROGRESSIVE_POT_DAMPING, applied to hero's own value-bet sizing.
@@ -1405,6 +1411,35 @@ def choose_abc_action(
                 sizing = BIG_VALUE_SIZING_POT_FRACTION
             if SIZE_UP_ON_WET_BOARD and made and _is_wet_board(hand.board):
                 sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # v27 (RIVER_OVERBET_NUTS_VS_LOOSE): a genuine overbet (>100%
+            # pot), not just BIG_VALUE_SIZING_POT_FRACTION's 75%, on the
+            # river specifically with a real near-nut hand (has_trips_or_
+            # better -- the stronger bar, since v22 found plain two pair
+            # specifically was the problem tier for extra aggression)
+            # against a known loose/weak archetype who's shown they pay off
+            # big bets. Published micro-stakes strategy (BlackRain79): "a
+            # massive overbet strategy with the nuts on river action cards"
+            # is one of the biggest keys to beating micro stakes. Heads-up
+            # only, same opponent-identity-ambiguity reasoning as
+            # SIZING_TARGET_ARCHETYPES above. Known, disclosed interaction:
+            # HERO_PROGRESSIVE_POT_DAMPING below still applies uniformly to
+            # whatever `sizing` ends up as, so a genuine overbet in an
+            # already-large pot (exactly where overbetting the river with
+            # the nuts matters most) may get partially neutered by the
+            # monster-pot fix -- not special-cased around, since that fix's
+            # whole point was capping runaway sizing regardless of the
+            # reason, and the A/B result below measures the NET effect
+            # either way.
+            if (
+                RIVER_OVERBET_NUTS_VS_LOOSE
+                and made
+                and has_trips_or_better(player.hole_cards, hand.board)
+                and hand.street == "river"
+                and opponent_archetypes
+                and len(live_opponents) == 1
+                and opponent_archetypes.get(live_opponents[0]) in LOOSE_ARCHETYPES
+            ):
+                sizing = RIVER_OVERBET_POT_FRACTION
             # monster-pot fix, hero side (2026-08-07): the earlier fix only
             # touched the ML bots' sizing (backend/bots/behavior_clone.py) --
             # confirmed via a fresh hand-log pull that hero's OWN sizing here
