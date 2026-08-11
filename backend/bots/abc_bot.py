@@ -787,6 +787,15 @@ VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
 # regardless of size) when facing a bet bigger than OVERBET_POT_FRACTION of
 # the pot. False is the baseline (always call with `made`, this file's
 # behavior since v5).
+#
+# RESULT (scripts/simulate_abc_bot.py --overbet-fold, 30k hands/arm, real
+# rake, ground-truth archetypes, same seed): +0.86 bb/100 (58.22 vs 57.35,
+# CI +/-6.39 / +/-6.45) -- well inside the ~9.0 combined noise band, NOT a
+# demonstrated effect either direction. Made-hand calls being bet-size-
+# blind (unlike wizard_like/the CFR solver, which both DO use bet size --
+# see live_ev.py) turned out not to be costing this bot anything measurable
+# against this population at the one threshold tested (pot-sized bet).
+# Shipped False, same standing policy as this file's other unproven flags.
 FOLD_TOP_PAIR_VS_OVERBET = False
 OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" threshold, not fit to a measured breakeven point
 

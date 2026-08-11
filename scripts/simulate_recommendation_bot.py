@@ -208,33 +208,44 @@ def run_batch(n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int) 
     }
 
 
+def _print_result(label: str, r: dict) -> None:
+    # Printed immediately after each arm finishes, not batched to the end --
+    # a killed/interrupted run (real risk on a shared, resource-constrained
+    # machine) still leaves whatever arms DID finish actually readable in
+    # the captured output instead of silently lost (a real incident: the
+    # first "WITH rake" arm here once fully completed in 3606s but the
+    # result was never printed because the process got killed partway
+    # through the second arm, before the old end-of-script print block ran).
+    print(f"\n{label}:")
+    print(f"  hands played:      {r['hands']}")
+    print(f"  net result:        {r['hero_net_bb']:+.2f}bb")
+    print(f"  winrate:           {r['bb_per_100']:+.2f} bb/100  (95% CI +/- {r['bb_per_100_ci95']:.2f})")
+    print(f"  monster pots >50bb: {r['monster_pot_rate']*100:.2f}% of hands")
+    print(
+        f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}"
+        f"  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})"
+    )
+    print(f"  hero VPIP/PFR:     {r['hero_vpip']*100:.1f}% / {r['hero_pfr']*100:.1f}%")
+
+
 def main():
     n_hands = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
 
-    print(f"[run 1/2] {n_hands} hands WITH real PokerDom rake...")
+    print("=" * 60)
+    print("RESULTS -- a bot that plays ONLY the live EV panel's recommendation")
+    print("=" * 60)
+
+    print(f"\n[run 1/2] {n_hands} hands WITH real PokerDom rake...")
     t0 = time.time()
     with_rake = run_batch(n_hands, RAKE_PERCENT, RAKE_CAP_BB, seed=42)
     print(f"  done in {time.time()-t0:.1f}s")
+    _print_result("WITH rake (realistic)", with_rake)
 
     print(f"\n[run 2/2] {n_hands} hands WITHOUT rake...")
     t0 = time.time()
     without_rake = run_batch(n_hands, 0.0, 0.0, seed=42)
     print(f"  done in {time.time()-t0:.1f}s")
-
-    print("\n" + "=" * 60)
-    print("RESULTS -- a bot that plays ONLY the live EV panel's recommendation")
-    print("=" * 60)
-    for label, r in (("WITH rake (realistic)", with_rake), ("WITHOUT rake", without_rake)):
-        print(f"\n{label}:")
-        print(f"  hands played:      {r['hands']}")
-        print(f"  net result:        {r['hero_net_bb']:+.2f}bb")
-        print(f"  winrate:           {r['bb_per_100']:+.2f} bb/100  (95% CI +/- {r['bb_per_100_ci95']:.2f})")
-        print(f"  monster pots >50bb: {r['monster_pot_rate']*100:.2f}% of hands")
-        print(
-            f"  bb/100 excl. monster pots: {r['bb_per_100_excl_monsters']:+.2f}"
-            f"  (95% CI +/- {r['bb_per_100_excl_monsters_ci95']:.2f})"
-        )
-        print(f"  hero VPIP/PFR:     {r['hero_vpip']*100:.1f}% / {r['hero_pfr']*100:.1f}%")
+    _print_result("WITHOUT rake", without_rake)
 
 
 if __name__ == "__main__":
