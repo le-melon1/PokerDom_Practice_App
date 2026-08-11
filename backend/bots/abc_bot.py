@@ -445,8 +445,12 @@ strategy card, not just inferred from code):
     - Otherwise: raise to 2.5bb with a hand in your position's OPEN range
       (UTG 13.9% / MP 16.5% / CO 21.6% / BTN 26.6% / SB 24.5%, by VPIP-implied
       percentile -- the technique from the guide -- UNION real-showdown-data
-      additions, see REAL_DATA_RANGE_ADDITIONS and the v7 note above). Else
-      fold.
+      additions, see REAL_DATA_RANGE_ADDITIONS and the v7 note above), OR
+      (v29, ISO_WIDER_RANGE_OVER_LIMPERS, untested) the same widened range
+      STEAL_WIDER_VS_NIT uses if at least one player has already limped in
+      -- a limper has shown a weak/speculative hand, isolate them wider,
+      not just for more money (see ISO_RAISE_OVER_LIMPERS just below).
+      Else fold.
 
   PREFLOP, facing a raise (any number of raises deep):
     - {AA, KK, QQ, AKs, AKo}: raise (value) to 3x the previous bet if this is
@@ -464,15 +468,31 @@ strategy card, not just inferred from code):
       3-bet with no real hand to show a profit.
     - Else, if facing exactly one raise: call with a hand in your position's
       CALL range (half the open VPIP, e.g. UTG ~7% / BTN ~13.3% -- the
-      tighter, stronger half of what you'd open).
+      tighter, stronger half of what you'd open) -- (v30, SIZE_SCALED_
+      CALL_RANGE, untested) widened by 30% VPIP if the raise-to is <=2bb
+      (a cheap price), or narrowed by 30% VPIP if it's >=4bb (a worse
+      price, usually a stronger range behind it), instead of one fixed
+      range regardless of how big the actual raise was.
     - Else: fold.
 
   POSTFLOP, checked to (to_call <= 0), any street:
     - Bet ~55% pot if your hand is top-pair-or-better (value bet) --
-      regardless of whether you had preflop initiative.
+      regardless of whether you had preflop initiative. Sizing tiers on
+      top of that base, each independently untested: (v28, OPTIMAL_VALUE_
+      SIZING_PER_ARCHETYPE) a real EV comparison between the standard and
+      big sizing for whatever archetype is actually known, using that
+      archetype's own real fold rate at each size -- overrides A2's
+      Nit/TAG-only shortcut when it fires; (v27, RIVER_OVERBET_NUTS_VS_
+      LOOSE) a genuine overbet (150% pot) on the river specifically with
+      a near-nut hand (trips+) against a known loose/weak archetype.
     - Flop ONLY, additionally: bet ~55% pot with ANY hand if you had preflop
       initiative and haven't bet yet this street (the one Tier-1 fold-equity
       cbet -- confirmed by A/B test to be worth keeping).
+    - Turn/river ONLY, additionally (v25, BARREL_BLUFF_VS_TIGHT, untested):
+      bet with no hand at all if you had preflop initiative, haven't bet
+      yet this street, a real scare card just arrived (a fresh overcard or
+      a new flush possibility -- see _is_scare_card), and the single live
+      opponent is a known Nit/TAG/LAG.
     - Otherwise: check. "Don't auto-barrel" means don't fire without a hand
       on the turn/river -- it does not mean never bet a strong hand.
 
