@@ -514,6 +514,30 @@ or building true card-conditioning for the opponent's realistic archetype-
 specific reraising range instead of a flat VALUE_3BET_WIDE) before
 shipping, but no longer a total unknown.
 
+**r18v-shove-qq-plus/qq-ak and v26, extended measurement (500,000 hands)**:
+QQ+ (AA/KK/QQ): 0.1206% of hands. QQ+/AK (AA/KK/QQ/AKs/AKo): 0.2298% of
+hands. Neither has a forced-sample magnitude run yet (only r13's AA/KK
+variant was actually measured with `--force-opponent-reraise`) -- the
+incidence rate alone is ready whenever that's done.
+
+**v26's FULL compound condition -- ZERO occurrences in 500,000 hands.**
+Tracked precisely: hero holds a `FOLDABLE_PREMIUM_VS_EXTREME_AGGRO` hand
+(QQ/AKs/AKo) AND faces a bet >= `EXTREME_AGGRO_STACK_FRACTION` (50%) of
+hero's remaining stack AND the raiser is a known Nit/TAG. Given the
+QQ+/AK hand-holding rate alone is already only 0.23%, and this adds TWO
+more independent rare conditions (a genuinely stack-threatening bet size,
+AND a specifically tight raiser identity) on top, true incidence is
+almost certainly under 1-in-500,000 -- likely needs tens of millions of
+hands to observe even a handful of real occurrences via self-play. **Real
+conclusion, not just "needs a bigger sample": whatever v26's rule does in
+this exact spot, its contribution to overall population bb/100 is
+necessarily tiny given how rarely the spot itself occurs** -- even a huge
+per-occurrence EV swing can only move the population average by a
+fraction of a bb/100 when the spot itself is this rare. Not worth further
+testing investment relative to its plausible ceiling impact; the
+plain-language strategy card's existing v26 entry can stay untested/off
+without real cost.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
