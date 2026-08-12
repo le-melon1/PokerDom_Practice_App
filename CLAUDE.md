@@ -255,6 +255,20 @@ set from the table above). Results, historical comparison unless noted
 | v30-size-scaled-call | `0 divergent / 50k hands` | see finding below |
 | r13-shove-aa-kk-vs-3bet-plus | `0 divergent / 50k hands, even with hero forced to AA/KK` | `untestable_by_self_play`, see below |
 
+**⚠️ SUPERSEDED, don't trust this table** -- every row above except r13
+(which used `--comparison ablation`, unaffected) was run with
+`--comparison historical`, which had a major bug: `HISTORICAL_PRIOR_ON_
+FLAGS`'s v21-squeeze-wide entry (aliased by v22-v30) was missing
+`ALLOW_CALLING_RAISES` (v3) and `UNCONDITIONAL_FLOP_CBET` (v6) -- both
+foundational rules shipped True long before v21. This meant hero could
+never call a facing raise (fold-or-3bet-only) and never c-bet the flop
+with air in EVERY one of these runs -- a severely crippled baseline, not
+"today's actual strategy." Found while root-causing v30's zero-divergent
+result (a specific hand, JTo/SB/facing 3.25bb, confirmed in the standard
+call range, folded in BOTH arms instead of calling in baseline as
+expected). Fixed in commit `f416e84`. **Corrected re-run results are in
+the next section below -- read that instead of this table.**
+
 **New tool: `--hero-hand-filter`** (`scripts/probe_chance_enumeration.py`,
 commit `58f1870`). Rules gated on a specific hero hand (v26/r15v-fold-*:
 QQ+/AK is ~1.8% of hands; r13/r18v-shove-*: AA/KK) were burning their whole
@@ -347,6 +361,44 @@ fall in the differential region often enough at this sample size (same
 class of explanation as the r16v caveat above, in which case a bigger
 sample or hero-hand-filter would resolve it, not a real bug). Left open,
 flagged for whoever picks this up next.
+
+**v30's mystery, actually resolved**: root cause was the historical-
+baseline bug above, not a code-reachability issue -- SIZE_SCALED_CALL_RANGE
+does reach its branch correctly (confirmed by direct instrumentation
+before the fix was even applied: JTo/SB/facing-3.25bb-raise showed IDENTICAL
+"fold" in both arms because ALLOW_CALLING_RAISES=False made the whole
+call-range branch unreachable regardless of the flag under test).
+
+### CORRECTED results after fixing the historical-baseline bug (2026-08-12)
+
+Re-ran every bug-affected preset (`scripts/refixed_historical_confirm.sh`,
+log: `/tmp/refixed_historical_20260812_212932.log`). **These numbers
+supersede the table above -- use these:**
+
+| Preset | Enum delta bb/100 | Stop/status | Changed from before? |
+| --- | ---: | --- | --- |
+| **v29-iso-wider-range** | **`+22.10 +/- 5.18`** | **`confirmed_positive`** | still confirmed, even bigger (was +18.25) -- headline result holds, keep enabled |
+| **v30-size-scaled-call** | **`-6.46 +/- 3.45`** | **`confirmed_negative`** | was "0 divergent, mystery" -- now a real, clear NEGATIVE result. Keep disabled. |
+| v25-barrel-bluff | `+1.99 +/- 0.99` | `confirmed_positive` | was inconclusive (+0.97) -- now clears the bar |
+| v27-river-overbet | `+0.25 +/- 0.55` | `inconclusive_small_effect` | unchanged conclusion, near zero |
+| v28-optimal-sizing | `+2.25 +/- 1.12` | `confirmed_positive` | was inconclusive and leaning NEGATIVE (-0.55) -- full reversal |
+| v23-overbet-fold | `0 divergent / 50k hands` | still zero | NOT the same bug (this rule is postflop facing-a-bet, unrelated to ALLOW_CALLING_RAISES) -- separately confirmed real bet-bigger-than-pot incidence is genuinely low (~0.78% of postflop facing-bet spots, direct measurement), so this needs a bigger `max_hands` budget, not another bug hunt |
+| v23-size-strong | `-0.29 +/- 0.98` | `inconclusive_small_effect` | consistent with before, genuinely null |
+| v23-size-wet | `-0.44 +/- 0.99` | `inconclusive_small_effect` | consistent with before, genuinely null |
+| v23-size-both | `-0.58 +/- 0.99` | `inconclusive_small_effect` | consistent with before, genuinely null |
+
+**Practical takeaway**: v29 (isolate limpers with a wider range) is the
+one clean, large, doubly-confirmed win from tonight's whole batch --
+ship it. v30 (scale call range by raise size) should stay OFF, now for
+a real evidenced reason (hurts) rather than "couldn't test it." v25 and
+v28 are new real candidates worth enabling (v25 barrel bluff, v28
+per-archetype EV sizing) pending the same statistical-standard bar this
+file uses everywhere (`|delta| > sqrt(CI_a^2+CI_b^2)` against a second,
+independent sample before calling anything permanently confirmed -- these
+are each currently confirmed by ONE run, not yet cross-checked against a
+second independent seed the way v16/v17 were). v23's sizing-by-context
+theories (strength/wet-board) are genuinely null against this population
+-- don't ship, don't keep re-testing without a new idea.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
