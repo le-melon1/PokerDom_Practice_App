@@ -627,6 +627,41 @@ def _hero_opponent_archetypes(hand, turnover: TableTurnover, flag_state: dict[st
     return {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
 
 
+def _should_force_opponent_reraise(hand, seat: int) -> bool:
+    """True when `seat` (a non-hero seat) is facing exactly hero's own
+    preflop raise -- i.e. this is the decision point where "does the
+    opponent re-raise (3-bet/4-bet+) hero" would happen. Used by
+    force_opponent_reraise to condition rules like r13/v26/r15v-fold-*/
+    r18v-shove-* that only fire once hero is FACING a re-raise, a spot
+    this population reaches too rarely on its own (barely 3-bets at all --
+    see BLUFF_3BET_VS_TIGHT's own motivation) for natural incidence to
+    ever surface enough observations, even across hundreds of thousands
+    of hands.
+
+    Fires AT MOST ONCE per hand (only when hero's raise is the exact
+    FIRST preflop raise) -- without this guard, a forced reraise puts
+    "hero's raise" back on top again after hero's own next action (a
+    3-bet/shove response), which would keep matching this same condition
+    and cascade into an unbounded, unrealistic raise war (confirmed: an
+    early version of this function reached 7 preflop raises in one hand
+    before the guard was added)."""
+    if hand.street != "preflop" or hand.finished:
+        return False
+    preflop = [a for a in hand.actions if a.street == "preflop"]
+    if not preflop or preflop[-1].action != "raises" or preflop[-1].seat != HERO_SEAT:
+        return False
+    n_raises = sum(1 for a in preflop if a.action == "raises")
+    if n_raises != 1:
+        return False
+    return hand.current_actor() == seat
+
+
+def _force_reraise_action(hand, seat: int) -> tuple[str, float | None]:
+    legal = hand.legal_actions(seat)
+    amount = legal["min_raise_to"]
+    return "raise", amount
+
+
 def _choose_and_apply(
     hand,
     seat: int,
@@ -635,11 +670,14 @@ def _choose_and_apply(
     turnover: TableTurnover,
     flag_state: dict[str, object],
     base_seed: int = 42,
+    force_opponent_reraise: bool = False,
 ) -> tuple[str, float | None]:
     if seat == HERO_SEAT:
         _apply_flag_state(flag_state)
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
+    elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
+        action, amount = _force_reraise_action(hand, seat)
     else:
         archetype = turnover.archetype_for(seat)
         bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
@@ -705,6 +743,7 @@ def _run_probe_chunk(
     branch_counts: list[int],
     hero_hand_filter: set[str] | None = None,
     base_seed: int = 42,
+    force_opponent_reraise: bool = False,
 ) -> int:
     divergent = 0
     for hand_index in range(start_hand_index, start_hand_index + n_hands):
@@ -739,8 +778,8 @@ def _run_probe_chunk(
 
             base_before = copy.deepcopy(base_hand)
             treat_before = copy.deepcopy(treat_hand)
-            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, baseline_state, base_seed)
-            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, treatment_state, base_seed)
+            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, baseline_state, base_seed, force_opponent_reraise)
+            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, treatment_state, base_seed, force_opponent_reraise)
 
             same_action = base_action[0] == treat_action[0] and (base_action[1] == treat_action[1])
             if not same_action and base_seat == HERO_SEAT:
@@ -860,6 +899,7 @@ def run_probe(
     allowed_archetypes: list[str] | None,
     hero_hand_filter: set[str] | None = None,
     base_seed: int = 42,
+    force_opponent_reraise: bool = False,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
@@ -887,6 +927,7 @@ def run_probe(
             branch_counts,
             hero_hand_filter,
             base_seed,
+            force_opponent_reraise,
         )
     finally:
         _restore_flags(original)
@@ -946,6 +987,7 @@ def run_adaptive_probe(
     allowed_archetypes: list[str] | None,
     hero_hand_filter: set[str] | None = None,
     base_seed: int = 42,
+    force_opponent_reraise: bool = False,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
@@ -966,6 +1008,7 @@ def run_adaptive_probe(
         f"comparison={comparison.label}, "
         f"archetypes={archetype_label}, "
         f"hero_hand_filter={hero_hand_label}, base_seed={base_seed}, "
+        f"force_opponent_reraise={force_opponent_reraise}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
         f"max_zero_divergent_hands={max_zero_divergent_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
@@ -988,6 +1031,7 @@ def run_adaptive_probe(
                 branch_counts,
                 hero_hand_filter,
                 base_seed,
+                force_opponent_reraise,
             )
             n_hands += this_chunk
             random_delta, random_ci = _stats(random_deltas)
@@ -1067,6 +1111,27 @@ def main() -> None:
             "this project's own standard requires before calling something permanently confirmed"
         ),
     )
+    parser.add_argument(
+        "--force-opponent-reraise",
+        action="store_true",
+        help=(
+            "force the opponent facing hero's own preflop raise to re-raise (min-legal size) "
+            "instead of using their trained model -- for rules gated on hero FACING a re-raise "
+            "(r13/v26/r15v-fold-*/r18v-shove-*), which this population's real 3-bet/4-bet "
+            "frequency is too low to naturally surface even across hundreds of thousands of "
+            "hands (confirmed via r13: 0 divergent over 50k even with hero's cards forced to "
+            "AA/KK). Applied identically to both baseline and treatment for a valid paired "
+            "comparison, same principle as --hero-hand-filter. KNOWN LIMITATION, unlike --hero-"
+            "hand-filter: the forced reraise isn't conditioned on the opponent actually holding "
+            "a real 4-betting-worthy hand (that would need forcing THEIR cards too, not built), "
+            "so it creates an artificially wide/weak reraising range -- a 2026-08-12 smoke test "
+            "measured deltas in the THOUSANDS of bb/100 (clearly not real), because hero's forced "
+            "premium hand crushes a random-strength forced range far harder than it would crush a "
+            "real, hand-selected 3-bet/4-bet range. Useful for confirming the DECISION POINT is "
+            "reachable and the rule's branch fires correctly -- NOT yet reliable for an actual "
+            "bb/100 magnitude claim. Don't report a number from this flag without noting the caveat."
+        ),
+    )
     args = parser.parse_args()
     preset = args.preset
     groups = _all_test_groups()
@@ -1095,9 +1160,13 @@ def main() -> None:
                 allowed_archetypes=allowed_archetypes,
                 hero_hand_filter=hero_hand_filter,
                 base_seed=args.base_seed,
+                force_opponent_reraise=args.force_opponent_reraise,
             )
         else:
-            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes, hero_hand_filter, args.base_seed)
+            run_probe(
+                preset, args.n_hands, args.comparison, allowed_archetypes,
+                hero_hand_filter, args.base_seed, args.force_opponent_reraise,
+            )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
