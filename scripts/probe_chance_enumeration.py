@@ -58,10 +58,18 @@ from scripts.simulate_abc_bot import (
 )
 
 EXTRA_TEST_GROUPS = {
+    "v3-calling-raises": (["ALLOW_CALLING_RAISES"], "v3 allow calling raises"),
+    "v6-unconditional-cbet": (["UNCONDITIONAL_FLOP_CBET"], "v6 unconditional flop cbet"),
+    "v10-opponent-aware": (["OPPONENT_AWARE_ARCHETYPES"], "v10 opponent-aware loose calls"),
     "v11-multiway-aware": (
         ["MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL"],
         "v11 multiway aware",
     ),
+    "v14-steal-wide": (["STEAL_WIDER_VS_NIT"], "v14 steal wider vs nit"),
+    "v14-size-target": (["SIZING_TARGET_ARCHETYPES"], "v14 value size target archetypes"),
+    "v15-loose-3bet": (["WIDER_3BET_VS_LOOSE"], "v15 wider 3bet vs loose"),
+    "v15-turn-size": (["SIZE_UP_ON_TURN"], "v15 size up on turn"),
+    "v19-hero-pot-damping": (["HERO_PROGRESSIVE_POT_DAMPING"], "v19 hero pot damping"),
     "v21-squeeze-wide": (["SQUEEZE_WIDER_RANGE"], "v21 squeeze wider range"),
     "v21-squeeze-size": (["SQUEEZE_SIZE_UP_PER_CALLER"], "v21 squeeze size up per caller"),
     "v21-squeeze-both": (["SQUEEZE_WIDER_RANGE", "SQUEEZE_SIZE_UP_PER_CALLER"], "v21 squeeze wider+size"),
@@ -82,9 +90,13 @@ def _all_test_groups() -> dict[str, tuple[list[str], str]]:
     return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS}
 
 
+PSEUDO_OPPONENT_AWARE = "OPPONENT_AWARE_ARCHETYPES"
+PSEUDO_FLAGS = {PSEUDO_OPPONENT_AWARE}
 MULTIWAY_SUBFLAGS = {"MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL"}
 
 ALL_COMPARISON_FLAGS = [
+    "ALLOW_CALLING_RAISES",
+    "UNCONDITIONAL_FLOP_CBET",
     "USE_WIDE_VALUE_3BET",
     "STEAL_WIDER_VS_NIT",
     "SIZING_TARGET_ARCHETYPES",
@@ -172,6 +184,8 @@ class ProbeComparison:
 
 
 def _real_flag_value(name: str, value: bool) -> object:
+    if name in PSEUDO_FLAGS:
+        return value
     if name in _NON_BOOLEAN_FLAG_ON_VALUES:
         return _NON_BOOLEAN_FLAG_ON_VALUES[name] if value else _NON_BOOLEAN_FLAG_OFF_VALUES[name]
     return value
@@ -179,6 +193,17 @@ def _real_flag_value(name: str, value: bool) -> object:
 
 def _state_for_flags(flag_names: list[str], value: bool) -> dict[str, object]:
     return {name: _real_flag_value(name, value) for name in flag_names}
+
+
+def _current_state_for_flags(flag_names: list[str]) -> dict[str, object]:
+    state = {}
+    for name in flag_names:
+        if name == PSEUDO_OPPONENT_AWARE:
+            state[name] = True
+        else:
+            value = getattr(abc_bot, name)
+            state[name] = set(value) if name in _NON_BOOLEAN_FLAG_ON_VALUES else value
+    return state
 
 
 def _historical_baseline_state(preset: str) -> dict[str, object]:
@@ -195,7 +220,7 @@ def _historical_baseline_state(preset: str) -> dict[str, object]:
     return state
 
 
-def _build_comparison(preset: str, comparison: Literal["current", "historical"]) -> ProbeComparison:
+def _build_comparison(preset: str, comparison: Literal["current", "historical", "ablation"]) -> ProbeComparison:
     flag_names, _ = _all_test_groups()[preset]
     if comparison == "current":
         return ProbeComparison(
@@ -203,6 +228,10 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical"])
             _state_for_flags(flag_names, False),
             _state_for_flags(flag_names, True),
         )
+    if comparison == "ablation":
+        baseline = _current_state_for_flags(flag_names)
+        treatment = baseline | _state_for_flags(flag_names, False)
+        return ProbeComparison("current full-model ablation (without rule - full)", baseline, treatment)
     baseline = _historical_baseline_state(preset)
     treatment = baseline | _state_for_flags(flag_names, True)
     return ProbeComparison("historical at-introduction flags", baseline, treatment)
@@ -210,6 +239,8 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical"])
 
 def _apply_flag_state(state: dict[str, object]) -> None:
     for name, real_value in state.items():
+        if name in PSEUDO_FLAGS:
+            continue
         if name in _NON_BOOLEAN_FLAG_ON_VALUES:
             real_value = set(real_value)
         setattr(abc_bot, name, real_value)
@@ -221,6 +252,8 @@ def _apply_flag_state(state: dict[str, object]) -> None:
 
 def _restore_flags(original: dict[str, object]) -> None:
     for name, value in original.items():
+        if name in PSEUDO_FLAGS:
+            continue
         setattr(abc_bot, name, value)
     if "USE_WIDE_VALUE_3BET" in original:
         _sync_value_3bet(original["USE_WIDE_VALUE_3BET"])
@@ -271,6 +304,13 @@ def _available_next_cards(*hands) -> list[str]:
     return []
 
 
+def _hero_opponent_archetypes(hand, turnover: TableTurnover, flag_state: dict[str, object]) -> dict[int, str] | None:
+    if flag_state.get(PSEUDO_OPPONENT_AWARE, True) is False:
+        return None
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    return {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
+
+
 def _choose_and_apply(
     hand,
     seat: int,
@@ -279,10 +319,9 @@ def _choose_and_apply(
     turnover: TableTurnover,
     flag_state: dict[str, object],
 ) -> tuple[str, float | None]:
-    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     if seat == HERO_SEAT:
         _apply_flag_state(flag_state)
-        opponent_archetypes = {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
+        opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
     else:
         archetype = turnover.archetype_for(seat)
@@ -311,8 +350,7 @@ def _continue_to_finish(
             break
         if seat == HERO_SEAT:
             _apply_flag_state(flag_state)
-            bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
-            opponent_archetypes = {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
+            opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
             action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
         else:
             archetype = turnover.archetype_for(seat)
@@ -450,7 +488,7 @@ def _original_state_for(comparison: ProbeComparison) -> dict[str, object]:
     return {name: getattr(abc_bot, name) for name in names if hasattr(abc_bot, name)}
 
 
-def run_probe(preset: str, n_hands: int, comparison_mode: Literal["current", "historical"]) -> None:
+def run_probe(preset: str, n_hands: int, comparison_mode: Literal["current", "historical", "ablation"]) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
@@ -513,7 +551,7 @@ def _adaptive_stop_reason(
 def run_adaptive_probe(
     preset: str,
     *,
-    comparison_mode: Literal["current", "historical"],
+    comparison_mode: Literal["current", "historical", "ablation"],
     target_ci: float,
     effect_ratio: float,
     min_hands: int,
@@ -593,11 +631,12 @@ def main() -> None:
     parser.add_argument("n_hands", nargs="?", type=int, default=1000)
     parser.add_argument(
         "--comparison",
-        choices=("current", "historical"),
+        choices=("current", "historical", "ablation"),
         default="current",
         help=(
             "current overlays only the tested flags on today's defaults; "
-            "historical resets known A/B flags to the preset's at-introduction context"
+            "historical resets known A/B flags to the preset's at-introduction context; "
+            "ablation compares today's full model against full model with the tested flags disabled"
         ),
     )
     parser.add_argument("--adaptive", action="store_true", help="run chunks until precision/effect or hard-cap stop criteria are met")

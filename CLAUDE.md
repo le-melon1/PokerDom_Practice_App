@@ -155,7 +155,11 @@ tool, not a full session simulator replacement: it starts each hand from fresh
 stacks and enumerates only the next chance card. Be explicit about comparison
 mode: `--comparison current` overlays only the tested flags on today's
 defaults; `--comparison historical` resets known A/B flags to the preset's
-at-introduction context before applying treatment.
+at-introduction context before applying treatment; `--comparison ablation`
+uses today's full model as baseline and disables one rule in treatment, so
+its delta is `without_rule - full_model` (negative means the removed rule was
+helping). Use `scripts/adaptive_chance_enumeration_ablation_presets.sh` for
+the full-model-minus-one-rule batch.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 

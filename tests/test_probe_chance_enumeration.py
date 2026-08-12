@@ -56,6 +56,21 @@ def test_v9_historical_probe_is_rejected_because_opponent_awareness_is_always_on
         probe._build_comparison("v9-wide-3bet", "historical")
 
 
+def test_ablation_compares_current_full_model_to_rule_removed():
+    comparison = probe._build_comparison("v16-iso-limpers", "ablation")
+
+    assert comparison.baseline["ISO_RAISE_OVER_LIMPERS"] is True
+    assert comparison.treatment["ISO_RAISE_OVER_LIMPERS"] is False
+    assert "without rule - full" in comparison.label
+
+
+def test_ablation_can_disable_the_v10_opponent_awareness_pseudo_rule():
+    comparison = probe._build_comparison("v10-opponent-aware", "ablation")
+
+    assert comparison.baseline["OPPONENT_AWARE_ARCHETYPES"] is True
+    assert comparison.treatment["OPPONENT_AWARE_ARCHETYPES"] is False
+
+
 def test_squeeze_wider_range_default_matches_unconfirmed_v21_result():
     assert abc_bot.SQUEEZE_WIDER_RANGE is False
 
