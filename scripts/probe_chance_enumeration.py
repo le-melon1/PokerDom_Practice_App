@@ -126,9 +126,152 @@ TIGHT_ISO_VARIANT_GROUPS = {
     for name, (mult, base, per) in TIGHT_ISO_VARIANTS.items()
 }
 
+PARAMETER_VARIANTS: dict[str, tuple[list[str], dict[str, object], str]] = {
+    "r14v-bluff-3bet-nit-only": (
+        ["BLUFF_3BET_VS_TIGHT", "BLUFF_3BET_TARGET_ARCHETYPES"],
+        {"BLUFF_3BET_VS_TIGHT": True, "BLUFF_3BET_TARGET_ARCHETYPES": {"Nit"}},
+        "r14v bluff 3bet vs Nit only",
+    ),
+    "r14v-bluff-3bet-tag-only": (
+        ["BLUFF_3BET_VS_TIGHT", "BLUFF_3BET_TARGET_ARCHETYPES"],
+        {"BLUFF_3BET_VS_TIGHT": True, "BLUFF_3BET_TARGET_ARCHETYPES": {"TAG"}},
+        "r14v bluff 3bet vs TAG only",
+    ),
+    "r14v-bluff-3bet-nit-tag": (
+        ["BLUFF_3BET_VS_TIGHT", "BLUFF_3BET_TARGET_ARCHETYPES"],
+        {"BLUFF_3BET_VS_TIGHT": True, "BLUFF_3BET_TARGET_ARCHETYPES": {"Nit", "TAG"}},
+        "r14v bluff 3bet vs Nit+TAG",
+    ),
+    "r14v-bluff-3bet-lag-only": (
+        ["BLUFF_3BET_VS_TIGHT", "BLUFF_3BET_TARGET_ARCHETYPES"],
+        {"BLUFF_3BET_VS_TIGHT": True, "BLUFF_3BET_TARGET_ARCHETYPES": {"LAG"}},
+        "r14v bluff 3bet vs LAG only",
+    ),
+    "r15v-fold-qq-vs-nit-tag-50": (
+        [
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO",
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
+            "EXTREME_AGGRO_STACK_FRACTION",
+        ],
+        {
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO": True,
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": {"QQ"},
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": {"Nit", "TAG"},
+            "EXTREME_AGGRO_STACK_FRACTION": 0.50,
+        },
+        "r15v fold QQ vs Nit/TAG extreme 50% stack",
+    ),
+    "r15v-fold-ak-vs-nit-tag-50": (
+        [
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO",
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
+            "EXTREME_AGGRO_STACK_FRACTION",
+        ],
+        {
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO": True,
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": {"AKs", "AKo"},
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": {"Nit", "TAG"},
+            "EXTREME_AGGRO_STACK_FRACTION": 0.50,
+        },
+        "r15v fold AK vs Nit/TAG extreme 50% stack",
+    ),
+    "r15v-fold-qq-ak-vs-nit-50": (
+        [
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO",
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
+            "EXTREME_AGGRO_STACK_FRACTION",
+        ],
+        {
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO": True,
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": {"QQ", "AKs", "AKo"},
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": {"Nit"},
+            "EXTREME_AGGRO_STACK_FRACTION": 0.50,
+        },
+        "r15v fold QQ/AK vs Nit extreme 50% stack",
+    ),
+    "r15v-fold-qq-ak-vs-nit-tag-75": (
+        [
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO",
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
+            "EXTREME_AGGRO_STACK_FRACTION",
+        ],
+        {
+            "FOLD_PREMIUM_VS_EXTREME_AGGRO": True,
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": {"QQ", "AKs", "AKo"},
+            "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": {"Nit", "TAG"},
+            "EXTREME_AGGRO_STACK_FRACTION": 0.75,
+        },
+        "r15v fold QQ/AK vs Nit/TAG extreme 75% stack",
+    ),
+    "r16v-limp-behind-tight": (
+        ["LIMP_BEHIND_OVER_LIMPERS", "LIMP_BEHIND_VPIP_MULTIPLIER"],
+        {"LIMP_BEHIND_OVER_LIMPERS": True, "LIMP_BEHIND_VPIP_MULTIPLIER": 0.45},
+        "r16v limp behind tight range",
+    ),
+    "r16v-limp-behind-medium": (
+        ["LIMP_BEHIND_OVER_LIMPERS", "LIMP_BEHIND_VPIP_MULTIPLIER"],
+        {"LIMP_BEHIND_OVER_LIMPERS": True, "LIMP_BEHIND_VPIP_MULTIPLIER": 0.55},
+        "r16v limp behind medium range",
+    ),
+    "r16v-limp-behind-wide": (
+        ["LIMP_BEHIND_OVER_LIMPERS", "LIMP_BEHIND_VPIP_MULTIPLIER"],
+        {"LIMP_BEHIND_OVER_LIMPERS": True, "LIMP_BEHIND_VPIP_MULTIPLIER": 0.75},
+        "r16v limp behind wide range",
+    ),
+    "r17v-call-by-raiser-position": (
+        ["CALL_RANGE_BY_RAISER_POSITION"],
+        {"CALL_RANGE_BY_RAISER_POSITION": True},
+        "r17v call range by raiser position",
+    ),
+    "r18v-shove-aa-kk": (
+        ["SHOVE_AA_KK_VS_3BET_PLUS", "SHOVE_VS_3BET_PLUS_RANGE"],
+        {"SHOVE_AA_KK_VS_3BET_PLUS": True, "SHOVE_VS_3BET_PLUS_RANGE": {"AA", "KK"}},
+        "r18v shove AA/KK vs 3bet+",
+    ),
+    "r18v-shove-qq-plus": (
+        ["SHOVE_AA_KK_VS_3BET_PLUS", "SHOVE_VS_3BET_PLUS_RANGE"],
+        {"SHOVE_AA_KK_VS_3BET_PLUS": True, "SHOVE_VS_3BET_PLUS_RANGE": {"AA", "KK", "QQ"}},
+        "r18v shove QQ+ vs 3bet+",
+    ),
+    "r18v-shove-qq-ak": (
+        ["SHOVE_AA_KK_VS_3BET_PLUS", "SHOVE_VS_3BET_PLUS_RANGE"],
+        {"SHOVE_AA_KK_VS_3BET_PLUS": True, "SHOVE_VS_3BET_PLUS_RANGE": {"AA", "KK", "QQ", "AKs", "AKo"}},
+        "r18v shove QQ+/AK vs 3bet+",
+    ),
+    "r19v-bb-defend-minraise-tight": (
+        ["BB_DEFEND_VS_STEAL_MINRAISE", "BB_DEFEND_MAX_RAISE_BB", "BB_DEFEND_VPIP_MULTIPLIER"],
+        {"BB_DEFEND_VS_STEAL_MINRAISE": True, "BB_DEFEND_MAX_RAISE_BB": 2.0, "BB_DEFEND_VPIP_MULTIPLIER": 1.3},
+        "r19v BB defend vs minraise tight",
+    ),
+    "r19v-bb-defend-steal-medium": (
+        ["BB_DEFEND_VS_STEAL_MINRAISE", "BB_DEFEND_MAX_RAISE_BB", "BB_DEFEND_VPIP_MULTIPLIER"],
+        {"BB_DEFEND_VS_STEAL_MINRAISE": True, "BB_DEFEND_MAX_RAISE_BB": 2.5, "BB_DEFEND_VPIP_MULTIPLIER": 1.6},
+        "r19v BB defend vs steal medium",
+    ),
+    "r19v-bb-defend-steal-wide": (
+        ["BB_DEFEND_VS_STEAL_MINRAISE", "BB_DEFEND_MAX_RAISE_BB", "BB_DEFEND_VPIP_MULTIPLIER"],
+        {"BB_DEFEND_VS_STEAL_MINRAISE": True, "BB_DEFEND_MAX_RAISE_BB": 2.5, "BB_DEFEND_VPIP_MULTIPLIER": 2.0},
+        "r19v BB defend vs steal wide",
+    ),
+}
+
+PARAMETER_VARIANT_GROUPS = {
+    name: (flags, label) for name, (flags, _treatment, label) in PARAMETER_VARIANTS.items()
+}
+
 
 def _all_test_groups() -> dict[str, tuple[list[str], str]]:
-    return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS, **RULE_TEST_GROUPS, **TIGHT_ISO_VARIANT_GROUPS}
+    return {
+        **PRESET_FLAG_GROUPS,
+        **EXTRA_TEST_GROUPS,
+        **RULE_TEST_GROUPS,
+        **TIGHT_ISO_VARIANT_GROUPS,
+        **PARAMETER_VARIANT_GROUPS,
+    }
 
 
 PSEUDO_OPPONENT_AWARE = "OPPONENT_AWARE_ARCHETYPES"
@@ -158,13 +301,24 @@ ALL_COMPARISON_FLAGS = [
     "SIZE_UP_WITH_VERY_STRONG_HAND",
     "SIZE_UP_ON_WET_BOARD",
     "BLUFF_3BET_VS_TIGHT",
+    "BLUFF_3BET_TARGET_ARCHETYPES",
     "BARREL_BLUFF_VS_TIGHT",
     "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+    "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO",
+    "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
+    "EXTREME_AGGRO_STACK_FRACTION",
     "RIVER_OVERBET_NUTS_VS_LOOSE",
     "OPTIMAL_VALUE_SIZING_PER_ARCHETYPE",
     "ISO_WIDER_RANGE_OVER_LIMPERS",
     "SIZE_SCALED_CALL_RANGE",
     "SHOVE_AA_KK_VS_3BET_PLUS",
+    "SHOVE_VS_3BET_PLUS_RANGE",
+    "LIMP_BEHIND_OVER_LIMPERS",
+    "LIMP_BEHIND_VPIP_MULTIPLIER",
+    "CALL_RANGE_BY_RAISER_POSITION",
+    "BB_DEFEND_VS_STEAL_MINRAISE",
+    "BB_DEFEND_MAX_RAISE_BB",
+    "BB_DEFEND_VPIP_MULTIPLIER",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
@@ -281,6 +435,13 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical", 
             "TIGHT_ISO_SIZING_PER_LIMPER_BB": per_limper,
         }
         return ProbeComparison("tight iso parameter variant - current r12", baseline, treatment)
+    if preset in PARAMETER_VARIANTS:
+        if comparison != "current":
+            raise ValueError("parameter variants only support --comparison current")
+        flags, treatment_overlay, _label = PARAMETER_VARIANTS[preset]
+        baseline = _current_state_for_flags(flags)
+        treatment = baseline | treatment_overlay
+        return ProbeComparison("parameter variant - current defaults", baseline, treatment)
     if comparison == "current":
         return ProbeComparison(
             "current defaults overlay",
@@ -299,6 +460,10 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical", 
 def _invalidate_cached_ranges_if_needed(state: dict[str, object]) -> None:
     if "TIGHT_ISO_VPIP_MULTIPLIER" in state:
         abc_bot._tight_iso_range_cache = {}
+    if "LIMP_BEHIND_VPIP_MULTIPLIER" in state:
+        abc_bot._limp_behind_range_cache = {}
+    if "BB_DEFEND_VPIP_MULTIPLIER" in state:
+        abc_bot._bb_defend_range_cache = {}
 
 
 def _apply_flag_state(state: dict[str, object]) -> None:
@@ -738,7 +903,7 @@ def main() -> None:
     parser.add_argument("--archetypes", help="comma-separated opponent archetypes to seat; omitted means the real population mix")
     parser.add_argument("--target-ci", type=float, default=1.0)
     parser.add_argument("--effect-ratio", type=float, default=0.5, help="positive effect is confirmed when CI <= abs(delta) * this ratio")
-    parser.add_argument("--min-hands", type=int, default=10_000)
+    parser.add_argument("--min-hands", type=int, default=5_000)
     parser.add_argument("--max-hands", type=int, default=500_000)
     parser.add_argument("--max-zero-divergent-hands", type=int, default=50_000)
     parser.add_argument("--chunk-size", type=int, default=2_000)

@@ -525,8 +525,9 @@ strategy card, not just inferred from code):
       current to_call is already >=50% of hero's remaining stack AND the
       raiser is a known Nit/TAG, fold QQ/AKs/AKo (never AA/KK -- see
       NEVER_FOLD_PREFLOP).
-    - Else, if facing exactly one raise AND the raiser is a known Nit/TAG/
-      LAG (high real fold-to-raise, see TIGHT_ARCHETYPES_FOR_DONK_BLUFF)
+    - Else, if facing exactly one raise AND the raiser is in
+      BLUFF_3BET_TARGET_ARCHETYPES (currently Nit/TAG/LAG, split from the
+      donk-bluff target set so LAG can be tested independently here)
       AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT):
       bluff-raise (3-bet) instead of just calling; confirmed +1.80 bb/100
       at 2M hands/arm.
@@ -626,6 +627,13 @@ SMALL_RAISE_BB_THRESHOLD = 2.0  # raise-to at or below this many bb -- wider cal
 BIG_RAISE_BB_THRESHOLD = 4.0  # raise-to at or above this many bb -- narrower call range
 CALL_VPIP_WIDE_MULTIPLIER = 1.3
 CALL_VPIP_NARROW_MULTIPLIER = 0.7
+
+# Candidate: make cold-call ranges depend on the raiser's position, not only
+# hero's seat. An UTG/MP open represents a stronger range than a CO/BTN/SB
+# steal, so the same hero hand should not be treated identically in both spots.
+CALL_RANGE_BY_RAISER_POSITION = False
+EARLY_RAISER_POSITIONS = {"UTG", "MP"}
+LATE_STEAL_RAISER_POSITIONS = {"CO", "BTN", "SB"}
 
 # v14, part 1 (STEAL_WIDER_VS_NIT): PokerDom_Microlimits_Analysis's
 # archetype_vs_raise.csv shows Nit folds to a preflop raise 90-93% of the
@@ -776,6 +784,17 @@ TIGHT_ISO_VPIP_MULTIPLIER = 0.85
 TIGHT_ISO_BASE_SIZING_BB = 5.5
 TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 
+# Candidate: limp behind instead of iso/fold with hands that play well
+# multiway and are too weak for the tight-big-iso range. This is deliberately
+# off until tested because open-limping/over-limping can be rake-sensitive.
+LIMP_BEHIND_OVER_LIMPERS = False
+LIMP_BEHIND_VPIP_MULTIPLIER = 0.55
+LIMP_BEHIND_EXTRA_HANDS = {
+    "22", "33", "44", "55", "66",
+    "54s", "65s", "76s", "87s", "98s", "T9s",
+    "A2s", "A3s", "A4s", "A5s",
+}
+
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
 # wider, not just bigger) -- not fit to a measured breakeven point, same
@@ -847,6 +866,7 @@ PREMIUM_VS_3BET = VALUE_3BET_TIGHT  # facing a 3-bet+, stay tight regardless -- 
 # gate's own archetype set.
 FOLD_PREMIUM_VS_EXTREME_AGGRO = False  # flip True to A/B-test against the baseline (always continue with PREMIUM_VS_3BET)
 NEVER_FOLD_PREFLOP = {"AA", "KK"}
+FOLDABLE_PREMIUM_VS_EXTREME_AGGRO = {"QQ", "AKs", "AKo"}
 EXTREME_AGGRO_STACK_FRACTION = 0.5  # to_call >= this fraction of hero's remaining stack counts as "extreme"
 TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 
@@ -856,6 +876,7 @@ TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 # hands realize equity cheaply. QQ/AK stay in the older call/fold branch until
 # separately tested.
 SHOVE_AA_KK_VS_3BET_PLUS = False
+SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK"}
 
 # v15, B1: archetype_vs_raise.csv / archetype_facing_bet.csv show Maniac and
 # Station continue/call facing aggression far more than the population
@@ -1024,7 +1045,15 @@ OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" thresh
 #   2M hands/arm:   baseline +57.89 (CI +/-0.78) vs v24 +59.70 (CI +/-0.79),
 #                   delta +1.80, clearing the ~1.11 combined CI.
 BLUFF_3BET_VS_TIGHT = True
+BLUFF_3BET_TARGET_ARCHETYPES = {"Nit", "TAG", "LAG"}
 BLUFF_3BET_RANGE = {"A9o", "A8o", "A5s", "A4s", "KQo", "KJs", "QJs", "JTs", "T9s", "98s"}
+
+# Candidate: defend the BB more specifically against cheap late-position
+# steals. This is separate from SIZE_SCALED_CALL_RANGE because a BTN minraise
+# into BB is a narrower tactical spot than "any small raise anywhere".
+BB_DEFEND_VS_STEAL_MINRAISE = False
+BB_DEFEND_MAX_RAISE_BB = 2.5
+BB_DEFEND_VPIP_MULTIPLIER = 1.6
 
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
@@ -1033,11 +1062,14 @@ _steal_range_cache: dict[str, set] = {}
 _tight_iso_range_cache: dict[str, set] = {}
 _call_range_wide_cache: dict[str, set] = {}
 _call_range_narrow_cache: dict[str, set] = {}
+_limp_behind_range_cache: dict[str, set] = {}
+_bb_defend_range_cache: dict[str, set] = {}
 
 
 def _ranges():
     global _rankings_cache, _open_range_cache, _call_range_cache, _steal_range_cache
     global _tight_iso_range_cache, _call_range_wide_cache, _call_range_narrow_cache
+    global _limp_behind_range_cache, _bb_defend_range_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
     if not _open_range_cache:
@@ -1076,6 +1108,22 @@ def _ranges():
             pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache))
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
+    if not _limp_behind_range_cache:
+        _limp_behind_range_cache = {
+            pos: set(implied_range(vpip * LIMP_BEHIND_VPIP_MULTIPLIER, _rankings_cache))
+            | LIMP_BEHIND_EXTRA_HANDS
+            for pos, vpip in OPEN_VPIP_BY_POSITION.items()
+        }
+    if not _bb_defend_range_cache:
+        _bb_defend_range_cache = {
+            pos: set(implied_range(vpip * BB_DEFEND_VPIP_MULTIPLIER, _rankings_cache))
+            | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            for pos, vpip in CALL_VPIP_BY_POSITION.items()
+        }
+        _bb_defend_range_cache["BB"] = (
+            set(implied_range(CALL_VPIP_BY_POSITION["BTN"] * BB_DEFEND_VPIP_MULTIPLIER, _rankings_cache))
+            | REAL_DATA_CALL_RANGE_ADDITIONS["BTN"]
+        )
     return (
         _open_range_cache,
         _call_range_cache,
@@ -1083,6 +1131,8 @@ def _ranges():
         _tight_iso_range_cache,
         _call_range_wide_cache,
         _call_range_narrow_cache,
+        _limp_behind_range_cache,
+        _bb_defend_range_cache,
     )
 
 
@@ -1112,6 +1162,11 @@ def _had_preflop_initiative(hand: Hand, seat: int) -> bool:
 def _last_preflop_raiser_seat(hand: Hand) -> int | None:
     preflop_raises = [a for a in hand.actions if a.street == "preflop" and a.action == "raises"]
     return preflop_raises[-1].seat if preflop_raises else None
+
+
+def _last_preflop_raiser_position(hand: Hand) -> str | None:
+    raiser_seat = _last_preflop_raiser_seat(hand)
+    return _seat_position(hand, raiser_seat) if raiser_seat is not None else None
 
 
 def _n_live_opponents(hand: Hand, seat: int) -> int:
@@ -1438,7 +1493,16 @@ def choose_abc_action(
     from each seat's session dossier (`dossier.style`, an estimate); the
     simulation script can also pass the ground-truth archetype to measure the
     ceiling of what opponent-awareness is worth before dossier noise."""
-    open_ranges, call_ranges, steal_ranges, tight_iso_ranges, call_ranges_wide, call_ranges_narrow = _ranges()
+    (
+        open_ranges,
+        call_ranges,
+        steal_ranges,
+        tight_iso_ranges,
+        call_ranges_wide,
+        call_ranges_narrow,
+        limp_behind_ranges,
+        bb_defend_ranges,
+    ) = _ranges()
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     to_call = legal["call_amount"]
@@ -1492,11 +1556,15 @@ def choose_abc_action(
                 amount = hand.big_blind * sizing_bb
                 amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                 return ("raise", amount)
+            if LIMP_BEHIND_OVER_LIMPERS and n_limpers >= 1:
+                limp_behind_range = limp_behind_ranges.get(position)
+                if limp_behind_range and notation in limp_behind_range:
+                    return ("call", None)
             return ("fold" if to_call > 0 else "check", None)
 
         if n_raises >= 2:
             if notation in PREMIUM_VS_3BET:
-                if SHOVE_AA_KK_VS_3BET_PLUS and notation in NEVER_FOLD_PREFLOP:
+                if SHOVE_AA_KK_VS_3BET_PLUS and notation in SHOVE_VS_3BET_PLUS_RANGE:
                     return ("raise", legal["max_raise_to"])
                 # v26 (see FOLD_PREMIUM_VS_EXTREME_AGGRO above): even a
                 # premium hand can fold to an extreme-sized re-raise from a
@@ -1504,7 +1572,7 @@ def choose_abc_action(
                 # never folds regardless.
                 if (
                     FOLD_PREMIUM_VS_EXTREME_AGGRO
-                    and notation not in NEVER_FOLD_PREFLOP
+                    and notation in FOLDABLE_PREMIUM_VS_EXTREME_AGGRO
                     and opponent_archetypes
                     and player.stack > 0
                     and to_call >= EXTREME_AGGRO_STACK_FRACTION * player.stack
@@ -1557,7 +1625,7 @@ def choose_abc_action(
         if BLUFF_3BET_VS_TIGHT and opponent_archetypes:
             raiser_seat = _last_preflop_raiser_seat(hand)
             raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
-            if raiser_archetype in TIGHT_ARCHETYPES_FOR_DONK_BLUFF and notation in BLUFF_3BET_RANGE:
+            if raiser_archetype in BLUFF_3BET_TARGET_ARCHETYPES and notation in BLUFF_3BET_RANGE:
                 amount = hand.current_bet * THREEBET_MULTIPLIER
                 amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                 return ("raise", amount)
@@ -1584,6 +1652,17 @@ def choose_abc_action(
                     call_range = call_ranges_wide.get(position)
                 elif raise_bb >= BIG_RAISE_BB_THRESHOLD:
                     call_range = call_ranges_narrow.get(position)
+            if CALL_RANGE_BY_RAISER_POSITION:
+                raiser_position = _last_preflop_raiser_position(hand)
+                if raiser_position in EARLY_RAISER_POSITIONS:
+                    call_range = call_ranges_narrow.get(position)
+                elif raiser_position in LATE_STEAL_RAISER_POSITIONS:
+                    call_range = call_ranges_wide.get(position)
+            if BB_DEFEND_VS_STEAL_MINRAISE and position == "BB":
+                raiser_position = _last_preflop_raiser_position(hand)
+                raise_bb = hand.current_bet / hand.big_blind if hand.big_blind else 0.0
+                if raiser_position in LATE_STEAL_RAISER_POSITIONS and raise_bb <= BB_DEFEND_MAX_RAISE_BB:
+                    call_range = bb_defend_ranges.get(position)
             if call_range and notation in call_range:
                 return ("call", None)
         return ("fold", None)

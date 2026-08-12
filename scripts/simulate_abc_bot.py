@@ -492,8 +492,20 @@ def _sync_value_3bet(is_wide: bool) -> None:
 # with no separate on/off gate. Toggling it "off" for a baseline arm means
 # an empty set (membership always False), not literal False (which would
 # crash -- `in False` isn't iterable, see the traceback this constant fixes).
-_NON_BOOLEAN_FLAG_ON_VALUES = {"SIZING_TARGET_ARCHETYPES": {"Nit", "TAG"}}
-_NON_BOOLEAN_FLAG_OFF_VALUES = {"SIZING_TARGET_ARCHETYPES": set()}
+_NON_BOOLEAN_FLAG_ON_VALUES = {
+    "SIZING_TARGET_ARCHETYPES": {"Nit", "TAG"},
+    "BLUFF_3BET_TARGET_ARCHETYPES": {"Nit", "TAG", "LAG"},
+    "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": {"Nit", "TAG"},
+    "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": {"QQ", "AKs", "AKo"},
+    "SHOVE_VS_3BET_PLUS_RANGE": {"AA", "KK"},
+}
+_NON_BOOLEAN_FLAG_OFF_VALUES = {
+    "SIZING_TARGET_ARCHETYPES": set(),
+    "BLUFF_3BET_TARGET_ARCHETYPES": set(),
+    "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD": set(),
+    "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO": set(),
+    "SHOVE_VS_3BET_PLUS_RANGE": set(),
+}
 
 
 def run_flag_confirmation(flag_names: list[str], n_hands: int, label: str):

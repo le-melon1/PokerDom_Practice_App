@@ -153,6 +153,29 @@ def test_tight_iso_variants_are_current_comparison_only():
         probe._build_comparison("r12v-tight-bigger", "ablation")
 
 
+def test_parameter_variant_updates_bluff_3bet_targets_against_current_default():
+    comparison = probe._build_comparison("r14v-bluff-3bet-nit-tag", "current")
+
+    assert comparison.baseline["BLUFF_3BET_VS_TIGHT"] is abc_bot.BLUFF_3BET_VS_TIGHT
+    assert comparison.baseline["BLUFF_3BET_TARGET_ARCHETYPES"] == abc_bot.BLUFF_3BET_TARGET_ARCHETYPES
+    assert comparison.treatment["BLUFF_3BET_VS_TIGHT"] is True
+    assert comparison.treatment["BLUFF_3BET_TARGET_ARCHETYPES"] == {"Nit", "TAG"}
+
+
+def test_parameter_variant_can_add_candidate_rule_from_current_default():
+    comparison = probe._build_comparison("r19v-bb-defend-steal-medium", "current")
+
+    assert comparison.baseline["BB_DEFEND_VS_STEAL_MINRAISE"] is False
+    assert comparison.treatment["BB_DEFEND_VS_STEAL_MINRAISE"] is True
+    assert comparison.treatment["BB_DEFEND_MAX_RAISE_BB"] == 2.5
+    assert comparison.treatment["BB_DEFEND_VPIP_MULTIPLIER"] == 1.6
+
+
+def test_parameter_variants_are_current_comparison_only():
+    with pytest.raises(ValueError, match="parameter variants only support --comparison current"):
+        probe._build_comparison("r19v-bb-defend-steal-medium", "ablation")
+
+
 def test_tight_iso_range_cache_tracks_multiplier_changes():
     original = {
         "TIGHT_ISO_VPIP_MULTIPLIER": abc_bot.TIGHT_ISO_VPIP_MULTIPLIER,
@@ -169,6 +192,32 @@ def test_tight_iso_range_cache_tracks_multiplier_changes():
     finally:
         abc_bot.TIGHT_ISO_VPIP_MULTIPLIER = original["TIGHT_ISO_VPIP_MULTIPLIER"]
         abc_bot._tight_iso_range_cache = original["_tight_iso_range_cache"]
+
+
+def test_new_preflop_range_caches_track_multiplier_changes():
+    original = {
+        "LIMP_BEHIND_VPIP_MULTIPLIER": abc_bot.LIMP_BEHIND_VPIP_MULTIPLIER,
+        "BB_DEFEND_VPIP_MULTIPLIER": abc_bot.BB_DEFEND_VPIP_MULTIPLIER,
+        "_limp_behind_range_cache": dict(abc_bot._limp_behind_range_cache),
+        "_bb_defend_range_cache": dict(abc_bot._bb_defend_range_cache),
+    }
+    try:
+        abc_bot._limp_behind_range_cache = {}
+        abc_bot._bb_defend_range_cache = {}
+        probe._apply_flag_state({"LIMP_BEHIND_VPIP_MULTIPLIER": 0.45, "BB_DEFEND_VPIP_MULTIPLIER": 1.3})
+        tight_limp = len(abc_bot._ranges()[6]["BTN"])
+        tight_bb = len(abc_bot._ranges()[7]["BB"])
+        probe._apply_flag_state({"LIMP_BEHIND_VPIP_MULTIPLIER": 0.75, "BB_DEFEND_VPIP_MULTIPLIER": 2.0})
+        wide_limp = len(abc_bot._ranges()[6]["BTN"])
+        wide_bb = len(abc_bot._ranges()[7]["BB"])
+
+        assert wide_limp > tight_limp
+        assert wide_bb > tight_bb
+    finally:
+        abc_bot.LIMP_BEHIND_VPIP_MULTIPLIER = original["LIMP_BEHIND_VPIP_MULTIPLIER"]
+        abc_bot.BB_DEFEND_VPIP_MULTIPLIER = original["BB_DEFEND_VPIP_MULTIPLIER"]
+        abc_bot._limp_behind_range_cache = original["_limp_behind_range_cache"]
+        abc_bot._bb_defend_range_cache = original["_bb_defend_range_cache"]
 
 
 def test_rule_ids_match_legacy_v_aliases_for_same_flags():

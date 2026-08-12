@@ -194,7 +194,7 @@ def test_calls_a_raise_with_a_hand_in_the_narrow_call_range_but_not_premium():
 
 
 def test_calls_wider_vs_a_min_raise_when_flag_on():
-    _, call_ranges, _, _, call_ranges_wide, _ = abc_bot._ranges()
+    _, call_ranges, _, _, call_ranges_wide, _, *_ = abc_bot._ranges()
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
     assert wide_only, "expected the wide call tier to be strictly bigger than the standard one for MP"
@@ -214,7 +214,7 @@ def test_calls_wider_vs_a_min_raise_when_flag_on():
 
 
 def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
-    _, call_ranges, _, _, call_ranges_wide, _ = abc_bot._ranges()
+    _, call_ranges, _, _, call_ranges_wide, _, *_ = abc_bot._ranges()
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
     test_hand = next(iter(wide_only))
@@ -231,7 +231,7 @@ def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
 
 
 def test_folds_a_standard_call_range_hand_to_a_big_raise_when_flag_on():
-    _, call_ranges, _, _, _, call_ranges_narrow = abc_bot._ranges()
+    _, call_ranges, _, _, _, call_ranges_narrow, *_ = abc_bot._ranges()
     position = "MP"
     narrowed_out = call_ranges[position] - call_ranges_narrow[position] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
     assert narrowed_out, "expected the narrow call tier to exclude some hands the standard one includes, for MP"
@@ -296,6 +296,27 @@ def test_does_not_bluff_3bet_vs_a_known_loose_raiser_even_when_flag_on():
         action, amount = choose_abc_action(hand, actor, opponent_archetypes={4: "Station"})
     finally:
         abc_bot.BLUFF_3BET_VS_TIGHT = original
+    assert action == "call"
+
+
+def test_bluff_3bet_target_set_can_exclude_lag_without_changing_donk_bluff_targets():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = ["Jd", "Td"]
+
+    original_targets = set(abc_bot.BLUFF_3BET_TARGET_ARCHETYPES)
+    original_flag = abc_bot.BLUFF_3BET_VS_TIGHT
+    abc_bot.BLUFF_3BET_VS_TIGHT = True
+    abc_bot.BLUFF_3BET_TARGET_ARCHETYPES = {"Nit", "TAG"}
+    try:
+        action, _ = choose_abc_action(hand, actor, opponent_archetypes={4: "LAG"})
+    finally:
+        abc_bot.BLUFF_3BET_VS_TIGHT = original_flag
+        abc_bot.BLUFF_3BET_TARGET_ARCHETYPES = original_targets
+
+    assert "LAG" in abc_bot.TIGHT_ARCHETYPES_FOR_DONK_BLUFF
     assert action == "call"
 
 
@@ -378,6 +399,29 @@ def test_aa_kk_shove_flag_does_not_shove_qq():
     assert amount is None
 
 
+def test_shove_vs_3bet_plus_range_can_include_qq():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "raise", amount=15.0)
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+
+    original_flag = abc_bot.SHOVE_AA_KK_VS_3BET_PLUS
+    original_range = set(abc_bot.SHOVE_VS_3BET_PLUS_RANGE)
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
+    abc_bot.SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK", "QQ"}
+    try:
+        action, amount = choose_abc_action(hand, 4)
+    finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = original_flag
+        abc_bot.SHOVE_VS_3BET_PLUS_RANGE = original_range
+
+    assert action == "raise"
+    assert amount == hand.legal_actions(4)["max_raise_to"]
+
+
 def test_aa_kk_shove_flag_defaults_off():
     assert abc_bot.SHOVE_AA_KK_VS_3BET_PLUS is False
 
@@ -451,6 +495,106 @@ def test_does_not_fold_qq_to_a_modest_sized_3bet_even_vs_a_known_nit():
         action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
     finally:
         abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
+    assert action == "call"
+
+
+def test_limp_behind_calls_speculative_hands_when_candidate_on():
+    open_ranges = abc_bot._ranges()[0]
+    limp_ranges = abc_bot._ranges()[6]
+    tight_iso_ranges = abc_bot._ranges()[3]
+    position = "BTN"
+    limp_only = limp_ranges[position] - tight_iso_ranges[position] - open_ranges[position]
+    assert limp_only
+    test_hand = sorted(limp_only)[0]
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")
+    for s in (5, 6):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+
+    original = abc_bot.LIMP_BEHIND_OVER_LIMPERS
+    abc_bot.LIMP_BEHIND_OVER_LIMPERS = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.LIMP_BEHIND_OVER_LIMPERS = original
+
+    assert action == "call"
+
+
+def test_position_aware_call_tightens_vs_utg_open():
+    _, call_ranges, _, _, _, call_ranges_narrow, *_ = abc_bot._ranges()
+    narrowed_out = call_ranges["MP"] - call_ranges_narrow["MP"] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
+    assert narrowed_out
+    test_hand = sorted(narrowed_out)[0]
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG opens
+    actor = hand.current_actor()  # MP
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+
+    original = abc_bot.CALL_RANGE_BY_RAISER_POSITION
+    abc_bot.CALL_RANGE_BY_RAISER_POSITION = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.CALL_RANGE_BY_RAISER_POSITION = original
+
+    assert action == "fold"
+
+
+def test_position_aware_call_widens_vs_late_open():
+    _, call_ranges, _, _, call_ranges_wide, _, *_ = abc_bot._ranges()
+    wide_only = call_ranges_wide["BTN"] - call_ranges["BTN"] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
+    assert wide_only
+    test_hand = sorted(wide_only)[0]
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "fold")
+    hand.apply_action(5, "fold")
+    hand.apply_action(6, "raise", amount=5.0)  # CO opens
+    actor = hand.current_actor()  # BTN
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+
+    original = abc_bot.CALL_RANGE_BY_RAISER_POSITION
+    abc_bot.CALL_RANGE_BY_RAISER_POSITION = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.CALL_RANGE_BY_RAISER_POSITION = original
+
+    assert action == "call"
+
+
+def test_bb_defends_wider_vs_late_minraise_when_candidate_on():
+    bb_defend_ranges = abc_bot._ranges()[7]
+    defend_only = bb_defend_ranges["BB"] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
+    assert defend_only
+    test_hand = sorted(defend_only)[0]
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    for seat in (4, 5, 6):
+        hand.apply_action(seat, "fold")
+    hand.apply_action(1, "raise", amount=4.0)  # BTN min-raises to 2bb
+    hand.apply_action(2, "fold")
+    actor = hand.current_actor()
+    assert actor == 3
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+
+    original = abc_bot.BB_DEFEND_VS_STEAL_MINRAISE
+    abc_bot.BB_DEFEND_VS_STEAL_MINRAISE = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.BB_DEFEND_VS_STEAL_MINRAISE = original
+
     assert action == "call"
 
 
