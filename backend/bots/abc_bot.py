@@ -740,7 +740,7 @@ RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not 
 # the disclosed approximation (a single assumed made-hand equity constant,
 # not a real per-hand equity read, which this bot deliberately doesn't
 # compute anywhere else either).
-OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = False  # flip True to A/B-test against the baseline (SIZING_TARGET_ARCHETYPES' hardcoded Nit/TAG-only rule)
+OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = True  # 2026-08-12/13: confirmed positive across 4 independent chance-enumeration samples, all positive direction (+2.25, +0.82, +4.88, and a precise large-sample +1.45+/-0.62 @ 54k hands/2001 divergent -- the last one clears the standard confirmed_positive bar cleanly). Shipped True.
 ASSUMED_VALUE_HAND_EQUITY = 0.75  # disclosed, single-number approximation of "how often a should_bet hand is still best when called" -- not a real per-hand equity computation
 
 # monster-pot fix, hero side -- see choose_abc_action's
