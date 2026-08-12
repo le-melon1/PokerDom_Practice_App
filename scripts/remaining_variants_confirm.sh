@@ -1,10 +1,23 @@
 #!/bin/bash
-# 2026-08-12: sequential run of every not-yet-confirmed preset variant
-# (r15v-fold-*, r16v-*, r17v, r18v-*, r19v-*), one at a time, nice-d, with
-# hero-hand-filter applied where the rule only fires on a specific hero
-# hand (auto-inferred for the r15v-fold-* premium presets; explicit for
-# r18v-shove-* since those are gated by SHOVE_VS_3BET_PLUS_RANGE, a
-# different flag than FOLDABLE_PREMIUM_VS_EXTREME_AGGRO).
+# 2026-08-12: sequential run of every not-yet-confirmed preset variant,
+# one at a time, nice-d.
+#
+# SKIPPED (not attempted below): v26-fold-premium-extreme, all four
+# r15v-fold-*, and all three r18v-shove-* variants. All of them are gated
+# on `n_raises>=2` (facing a 3bet+) THE SAME WAY r13 was -- confirmed via
+# r13's own test (0 divergent over 50k hands even with hero's cards
+# force-dealt to AA/KK, see CLAUDE.md). Forcing hero's hole cards alone
+# doesn't fix this: reaching n_raises>=2 as the ACTOR needs an opponent to
+# open, hero (or someone) to 3-bet, AND then a further re-raise before it's
+# hero's turn again -- two independent rare opponent actions compounding in
+# a population that barely 3-bets (2-5%) and 4-bets less. Confirming these
+# for real needs conditioning the OPPONENT's action too (force an opener +
+# a re-raiser), not just hero's cards -- a bigger addition to
+# probe_chance_enumeration.py, not done yet. Don't re-add these to the
+# queue without that.
+#
+# r16v-*/r17v/r19v-* below are all gated on "facing exactly one raise"
+# (an open), a common spot -- no filter needed.
 set -e
 cd "$(dirname "$0")/.."
 LOG=/tmp/remaining_variants_$(date +%Y%m%d_%H%M%S).log
@@ -18,20 +31,13 @@ run() {
 
 echo "=== remaining variants run started $(date) ===" | tee -a "$LOG"
 
-run v26-fold-premium-extreme --comparison historical
-run r15v-fold-qq-vs-nit-tag-50 --comparison historical
-run r15v-fold-ak-vs-nit-tag-50 --comparison historical
-run r15v-fold-qq-ak-vs-nit-50 --comparison historical
-run r15v-fold-qq-ak-vs-nit-tag-75 --comparison historical
 run r16v-limp-behind-tight --comparison current
 run r16v-limp-behind-medium --comparison current
 run r16v-limp-behind-wide --comparison current
 run r17v-call-by-raiser-position --comparison current
-run r18v-shove-aa-kk --comparison current --hero-hand-filter AA,KK
-run r18v-shove-qq-plus --comparison current --hero-hand-filter AA,KK,QQ
-run r18v-shove-qq-ak --comparison current --hero-hand-filter AA,KK,QQ,AKs,AKo
 run r19v-bb-defend-minraise-tight --comparison current
 run r19v-bb-defend-steal-medium --comparison current
 run r19v-bb-defend-steal-wide --comparison current
+run v30-size-scaled-call --comparison historical
 
 echo "=== remaining variants run finished $(date) ===" | tee -a "$LOG"
