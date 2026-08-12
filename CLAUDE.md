@@ -458,7 +458,7 @@ make nearly unreachable by construction, not a sampling problem. Two
 real, independent bugs found and fixed on this one flag tonight; the
 final answer is a structural non-starter, not "needs more hands."
 
-### r13/v26/r15v-fold-*/r18v-shove-*: new tool built, real limitation found (still open)
+### r13/v26/r15v-fold-*/r18v-shove-*: new tool built, real scaling issue understood (still open)
 
 All of these are gated on hero FACING a re-raise (n_raises>=2) -- a spot
 this population reaches too rarely (barely 3-bets/4-bets at all) for even
@@ -472,23 +472,31 @@ model, guarded to fire at most once per hand (an earlier version without
 the guard cascaded into unbounded raise wars -- confirmed up to 7 preflop
 raises in one hand). This DOES reliably get hero to the target decision
 point (confirmed via direct instrumentation: 278/300 hands reached
-n_raises>=2 with hero holding forced AA/KK).
+n_raises>=2 with hero holding forced AA/KK). Also generalized
+`_pick_hero_hand_swap`/`_apply_hero_hand_swap` to any seat, so the
+reraiser's cards get forced too (to `VALUE_3BET_WIDE`, a real premium
+3-betting range), not just their action.
 
-**But the measured magnitude is not trustworthy**: a smoke test (r13,
---hero-hand-filter AA,KK --force-opponent-reraise, 500 hands) measured
-deltas in the THOUSANDS of bb/100 -- clearly not real. Root cause: unlike
---hero-hand-filter (which conditions BOTH players' cards identically),
-this only forces the opponent's ACTION, not their cards -- so the
-"reraising range" it creates is any random hand forced to reraise, not a
-real hand-selected 4-betting range. Hero's forced premium crushes that
-artificially wide/weak range far harder than it would crush a real
-opponent's actual 3-bet/4-bet range. Useful for confirming a rule's
-branch is reachable and firing correctly (it is) -- NOT yet useful for a
-real bb/100 number. A proper fix would need to also force the opponent's
-CARDS to a plausible reraising range (e.g. VALUE_3BET-tier) for each
-archetype, not attempted tonight -- flagged as real follow-up work, not
-done. Don't ship r13/v26/r15v-fold-*/r18v-shove-* based on any number
-produced by this flag as it stands.
+**The measured magnitude is still not directly usable, but this is now
+understood, not a mystery**: smoke tests (r13, `--hero-hand-filter AA,KK
+--force-opponent-reraise`) measured deltas in the THOUSANDS of bb/100 both
+before AND after forcing the opponent's cards too (+4052/+4061 with real
+premium opponent cards) -- looked like a bug, isn't one. `enum_delta`
+averages the per-hand delta over EVERY sampled hand (0.0 for every
+non-divergent one), and combining `--force-opponent-reraise` with
+`--hero-hand-filter` pushes a spot real self-play reaches on well under
+0.1% of hands up to 60%+ of the forced sample (see the divergent-hand
+percentage printed) -- inflating the reported bb/100 by roughly that same
+factor. The raw number this flag produces was never meant to be read as a
+population bb/100; it needs rescaling by (true incidence of the spot) /
+(this sample's forced incidence) to mean anything. True incidence of
+"hero has AA/KK AND faces a real 4-bet" isn't precisely measured yet.
+Until it is, this flag is useful for confirming a rule's branch is
+reachable and its EV sign is directionally right, not for a literal
+bb/100 magnitude. Don't ship r13/v26/r15v-fold-*/r18v-shove-* based on
+any raw number produced by this flag -- rescale first, or measure the
+true incidence rate directly (a natural-incidence, no-forcing run over
+enough hands to count real occurrences) before trusting a number.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
