@@ -189,6 +189,30 @@ This list covers the current ablation-supported active rule units. Older
 historical ideas such as early core opening/calling changes are not separate
 `rXX` checks until the probe can disable them as explicit rule units.
 
+Current full-model ablation results, 2026-08-12. Delta is
+`without_rule - full_model`, so negative means the rule helps; positive means
+removing the rule was better. Conditioned rows are target-spot EV, not
+population-weighted EV.
+
+| Rule ID | Archetypes | Enumerated delta bb/100 | Stop/status | Read |
+| --- | --- | ---: | --- | --- |
+| `r01-calling-raises` | population | `-19.78 +/- 4.39` | `confirmed_negative` | keep |
+| `r02-unconditional-cbet` | population | `-8.44 +/- 2.42` | `confirmed_negative` | keep |
+| `r03-opponent-aware-loose-call` | Loose-passive/Station/Maniac | `-77.94 +/- 10.75` | `confirmed_negative` | keep |
+| `r04-wide-value-3bet` | population | `-2.43 +/- 1.66` | `confirmed_negative` | keep, small |
+| `r05-steal-wide-vs-nit` | Nit | `-27.55 +/- 1.81` | `confirmed_negative` | keep |
+| `r06-size-up-vs-nit-tag` | Nit/TAG | `-3.33 +/- 0.94` | `confirmed_negative` | keep |
+| `r07-wider-3bet-vs-loose` | Maniac/Station | `-9.87 +/- 3.98` | `confirmed_negative` | keep |
+| `r08-size-up-turn` | population | `+0.46 +/- 0.59` | `inconclusive_small_effect` | no proven benefit |
+| `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | no proven benefit |
+| `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
+| `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | likely harmful; disabling should be tested/applied next |
+
+Logs backing the final four-row update:
+`/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows
+come from `/tmp/adaptive_chance_enumeration_ablation_20260812_095622.log` and
+`/tmp/adaptive_chance_enumeration_ablation_20260812_101746.log`.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
