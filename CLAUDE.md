@@ -498,6 +498,22 @@ any raw number produced by this flag -- rescale first, or measure the
 true incidence rate directly (a natural-incidence, no-forcing run over
 enough hands to count real occurrences) before trusting a number.
 
+**True incidence, now measured** (`scripts/measure_facing_3bet_incidence.py`,
+200,000 hands, natural self-play, no forcing): hero faces n_raises>=2 at
+all on 2.647% of hands; with a `PREMIUM_VS_3BET`-tier hand specifically,
+0.232%; with AA/KK specifically, 0.081% -- confirms the "well under 0.1%"
+estimate. Rescaling r13's earlier forced-sample result
+(`+4061.24 bb/100` @ `--hero-hand-filter AA,KK --force-opponent-reraise`,
+which forces ~100% incidence of the target spot within its own sample) by
+the true incidence: `4061.24 * 0.00081 ≈ +3.29 bb/100`. This is a rough,
+one-sample estimate (not independently cross-checked the way v25/v28/v29
+were), but it's a plausible, modest positive number in the same range as
+this file's other confirmed narrow-target rules (v17 +3.40, v24 +1.80) --
+worth a real confirmatory pass (either a proper independent-seed rescale,
+or building true card-conditioning for the opponent's realistic archetype-
+specific reraising range instead of a flat VALUE_3BET_WIDE) before
+shipping, but no longer a total unknown.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
