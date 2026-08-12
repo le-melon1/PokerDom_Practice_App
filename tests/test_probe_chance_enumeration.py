@@ -92,6 +92,52 @@ def test_ablation_can_disable_the_v10_opponent_awareness_pseudo_rule():
     assert comparison.treatment["OPPONENT_AWARE_ARCHETYPES"] is False
 
 
+def test_rule_ids_cover_current_ablation_rule_units():
+    groups = probe._all_test_groups()
+    expected = {
+        "r01-calling-raises": ["ALLOW_CALLING_RAISES"],
+        "r02-unconditional-cbet": ["UNCONDITIONAL_FLOP_CBET"],
+        "r03-opponent-aware-loose-call": ["OPPONENT_AWARE_ARCHETYPES"],
+        "r04-wide-value-3bet": ["USE_WIDE_VALUE_3BET"],
+        "r05-steal-wide-vs-nit": ["STEAL_WIDER_VS_NIT"],
+        "r06-size-up-vs-nit-tag": ["SIZING_TARGET_ARCHETYPES"],
+        "r07-wider-3bet-vs-loose": ["WIDER_3BET_VS_LOOSE"],
+        "r08-size-up-turn": ["SIZE_UP_ON_TURN"],
+        "r09-iso-raise-limpers": ["ISO_RAISE_OVER_LIMPERS"],
+        "r10-donk-bluff-vs-tight": ["DONK_BLUFF_VS_TIGHT"],
+        "r11-hero-pot-damping": ["HERO_PROGRESSIVE_POT_DAMPING"],
+    }
+
+    assert {name: groups[name][0] for name in expected} == expected
+
+
+def test_rule_ids_match_legacy_v_aliases_for_same_flags():
+    groups = probe._all_test_groups()
+    aliases = {
+        "r01-calling-raises": "v3-calling-raises",
+        "r02-unconditional-cbet": "v6-unconditional-cbet",
+        "r03-opponent-aware-loose-call": "v10-opponent-aware",
+        "r04-wide-value-3bet": "v9-wide-3bet",
+        "r05-steal-wide-vs-nit": "v14-steal-wide",
+        "r06-size-up-vs-nit-tag": "v14-size-target",
+        "r07-wider-3bet-vs-loose": "v15-loose-3bet",
+        "r08-size-up-turn": "v15-turn-size",
+        "r09-iso-raise-limpers": "v16-iso-limpers",
+        "r10-donk-bluff-vs-tight": "v17-donk-bluff",
+        "r11-hero-pot-damping": "v19-hero-pot-damping",
+    }
+
+    for rule_id, legacy_id in aliases.items():
+        assert groups[rule_id][0] == groups[legacy_id][0]
+
+
+def test_ablation_can_use_new_rule_ids():
+    comparison = probe._build_comparison("r09-iso-raise-limpers", "ablation")
+
+    assert comparison.baseline["ISO_RAISE_OVER_LIMPERS"] is True
+    assert comparison.treatment["ISO_RAISE_OVER_LIMPERS"] is False
+
+
 def test_parse_archetypes_rejects_unknown_values():
     assert probe._parse_archetypes("Nit,TAG") == ["Nit", "TAG"]
     with pytest.raises(ValueError, match="unknown archetypes"):

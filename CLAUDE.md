@@ -166,6 +166,29 @@ the full-model-minus-one-rule batch. That ablation script defaults
 for where appropriate (e.g. Nit-only for `STEAL_WIDER_VS_NIT`); read those
 results as conditional EV in the target spot, not population-weighted EV.
 
+Rule checks now have a separate `rXX-*` numbering for current full-model
+ablation units. The old `vXX-*` names are historical/version labels and remain
+as aliases where useful, but the ablation batch should use the contiguous rule
+IDs:
+
+| Rule ID | Legacy label | Unit disabled in ablation |
+| --- | --- | --- |
+| `r01-calling-raises` | `v3-calling-raises` | `ALLOW_CALLING_RAISES` |
+| `r02-unconditional-cbet` | `v6-unconditional-cbet` | `UNCONDITIONAL_FLOP_CBET` |
+| `r03-opponent-aware-loose-call` | `v10-opponent-aware` | `OPPONENT_AWARE_ARCHETYPES` |
+| `r04-wide-value-3bet` | `v9-wide-3bet` | `USE_WIDE_VALUE_3BET` |
+| `r05-steal-wide-vs-nit` | `v14-steal-wide` | `STEAL_WIDER_VS_NIT` |
+| `r06-size-up-vs-nit-tag` | `v14-size-target` | `SIZING_TARGET_ARCHETYPES` |
+| `r07-wider-3bet-vs-loose` | `v15-loose-3bet` | `WIDER_3BET_VS_LOOSE` |
+| `r08-size-up-turn` | `v15-turn-size` | `SIZE_UP_ON_TURN` |
+| `r09-iso-raise-limpers` | `v16-iso-limpers` | `ISO_RAISE_OVER_LIMPERS` |
+| `r10-donk-bluff-vs-tight` | `v17-donk-bluff` | `DONK_BLUFF_VS_TIGHT` |
+| `r11-hero-pot-damping` | `v19-hero-pot-damping` | `HERO_PROGRESSIVE_POT_DAMPING` |
+
+This list covers the current ablation-supported active rule units. Older
+historical ideas such as early core opening/calling changes are not separate
+`rXX` checks until the probe can disable them as explicit rule units.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond

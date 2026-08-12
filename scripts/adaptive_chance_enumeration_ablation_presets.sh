@@ -21,17 +21,17 @@ CONDITION_ARCHETYPES="${CONDITION_ARCHETYPES:-auto}"
 LOG=/tmp/adaptive_chance_enumeration_ablation_$(date +%Y%m%d_%H%M%S).log
 
 PRESETS=(
-  v3-calling-raises
-  v6-unconditional-cbet
-  v10-opponent-aware
-  v9-wide-3bet
-  v14-steal-wide
-  v14-size-target
-  v15-loose-3bet
-  v15-turn-size
-  v16-iso-limpers
-  v17-donk-bluff
-  v19-hero-pot-damping
+  r01-calling-raises
+  r02-unconditional-cbet
+  r03-opponent-aware-loose-call
+  r04-wide-value-3bet
+  r05-steal-wide-vs-nit
+  r06-size-up-vs-nit-tag
+  r07-wider-3bet-vs-loose
+  r08-size-up-turn
+  r09-iso-raise-limpers
+  r10-donk-bluff-vs-tight
+  r11-hero-pot-damping
 )
 if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
   read -r -a PRESETS <<< "$PRESETS_OVERRIDE"
@@ -46,19 +46,19 @@ for preset in "${PRESETS[@]}"; do
   archetypes_label="population"
   if [[ "$CONDITION_ARCHETYPES" == "auto" ]]; then
     case "$preset" in
-      v10-opponent-aware)
+      r03-opponent-aware-loose-call|v10-opponent-aware)
         archetypes_label="Loose-passive,Station,Maniac"
         ;;
-      v14-steal-wide)
+      r05-steal-wide-vs-nit|v14-steal-wide)
         archetypes_label="Nit"
         ;;
-      v14-size-target)
+      r06-size-up-vs-nit-tag|v14-size-target)
         archetypes_label="Nit,TAG"
         ;;
-      v15-loose-3bet)
+      r07-wider-3bet-vs-loose|v15-loose-3bet)
         archetypes_label="Maniac,Station"
         ;;
-      v17-donk-bluff)
+      r10-donk-bluff-vs-tight|v17-donk-bluff)
         archetypes_label="Nit,TAG,LAG"
         ;;
     esac

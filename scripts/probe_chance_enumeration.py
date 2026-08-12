@@ -85,9 +85,23 @@ EXTRA_TEST_GROUPS = {
     "v24-bluff-3bet": (["BLUFF_3BET_VS_TIGHT"], "v24 bluff 3bet vs tight"),
 }
 
+RULE_TEST_GROUPS = {
+    "r01-calling-raises": (["ALLOW_CALLING_RAISES"], "r01 calling raises"),
+    "r02-unconditional-cbet": (["UNCONDITIONAL_FLOP_CBET"], "r02 unconditional flop cbet"),
+    "r03-opponent-aware-loose-call": (["OPPONENT_AWARE_ARCHETYPES"], "r03 opponent-aware loose calls"),
+    "r04-wide-value-3bet": (["USE_WIDE_VALUE_3BET"], "r04 wide value 3bet"),
+    "r05-steal-wide-vs-nit": (["STEAL_WIDER_VS_NIT"], "r05 steal wider vs nit"),
+    "r06-size-up-vs-nit-tag": (["SIZING_TARGET_ARCHETYPES"], "r06 value size target archetypes"),
+    "r07-wider-3bet-vs-loose": (["WIDER_3BET_VS_LOOSE"], "r07 wider 3bet vs loose"),
+    "r08-size-up-turn": (["SIZE_UP_ON_TURN"], "r08 size up on turn"),
+    "r09-iso-raise-limpers": (["ISO_RAISE_OVER_LIMPERS"], "r09 iso-raise over limpers"),
+    "r10-donk-bluff-vs-tight": (["DONK_BLUFF_VS_TIGHT"], "r10 donk bluff vs tight"),
+    "r11-hero-pot-damping": (["HERO_PROGRESSIVE_POT_DAMPING"], "r11 hero progressive pot damping"),
+}
+
 
 def _all_test_groups() -> dict[str, tuple[list[str], str]]:
-    return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS}
+    return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS, **RULE_TEST_GROUPS}
 
 
 PSEUDO_OPPONENT_AWARE = "OPPONENT_AWARE_ARCHETYPES"
