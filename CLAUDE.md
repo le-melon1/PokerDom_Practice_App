@@ -458,6 +458,38 @@ make nearly unreachable by construction, not a sampling problem. Two
 real, independent bugs found and fixed on this one flag tonight; the
 final answer is a structural non-starter, not "needs more hands."
 
+### r13/v26/r15v-fold-*/r18v-shove-*: new tool built, real limitation found (still open)
+
+All of these are gated on hero FACING a re-raise (n_raises>=2) -- a spot
+this population reaches too rarely (barely 3-bets/4-bets at all) for even
+hundreds of thousands of hands to naturally surface, confirmed earlier via
+r13 (0 divergent over 50k hands even with hero's cards forced to AA/KK).
+
+Built `--force-opponent-reraise` (`probe_chance_enumeration.py`,
+`_should_force_opponent_reraise`/`_force_reraise_action`) to force the
+opponent facing hero's raise to reraise instead of using their trained
+model, guarded to fire at most once per hand (an earlier version without
+the guard cascaded into unbounded raise wars -- confirmed up to 7 preflop
+raises in one hand). This DOES reliably get hero to the target decision
+point (confirmed via direct instrumentation: 278/300 hands reached
+n_raises>=2 with hero holding forced AA/KK).
+
+**But the measured magnitude is not trustworthy**: a smoke test (r13,
+--hero-hand-filter AA,KK --force-opponent-reraise, 500 hands) measured
+deltas in the THOUSANDS of bb/100 -- clearly not real. Root cause: unlike
+--hero-hand-filter (which conditions BOTH players' cards identically),
+this only forces the opponent's ACTION, not their cards -- so the
+"reraising range" it creates is any random hand forced to reraise, not a
+real hand-selected 4-betting range. Hero's forced premium crushes that
+artificially wide/weak range far harder than it would crush a real
+opponent's actual 3-bet/4-bet range. Useful for confirming a rule's
+branch is reachable and firing correctly (it is) -- NOT yet useful for a
+real bb/100 number. A proper fix would need to also force the opponent's
+CARDS to a plausible reraising range (e.g. VALUE_3BET-tier) for each
+archetype, not attempted tonight -- flagged as real follow-up work, not
+done. Don't ship r13/v26/r15v-fold-*/r18v-shove-* based on any number
+produced by this flag as it stands.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
