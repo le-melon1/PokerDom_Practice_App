@@ -55,6 +55,7 @@ project; don't report a delta as "working" without checking it against this.
 | v17 C2 (`DONK_BLUFF_VS_TIGHT`) | +3.40 bb/100 | 500k | re-confirmed 2026-08-11 |
 | v24 (`BLUFF_3BET_VS_TIGHT`) | +1.80 bb/100 | 2,000,000 | confirmed 2026-08-11, was inside CI at 300k |
 | **v29 (`ISO_WIDER_RANGE_OVER_LIMPERS`)** | **+22.10 / +19.67 bb/100 (2 indep. seeds)** | chance-enum, ~6k divergent each | **shipped True 2026-08-12/13** -- see "Independent second-seed cross-check" section below |
+| **v25 (`BARREL_BLUFF_VS_TIGHT`)** | **+1.99 / +1.33 bb/100 (2 indep. seeds)** | chance-enum, ~60 divergent each | **shipped True 2026-08-12/13** -- smaller than v29 but doubly confirmed |
 
 **Tested, NOT demonstrated (shipped OFF, kept in code for reference):**
 v1-v9 range-only tweaks (plateaued near breakeven), v9 `USE_WIDE_VALUE_3BET`
