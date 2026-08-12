@@ -868,7 +868,7 @@ DONK_BLUFF_VS_TIGHT = True  # flip False to A/B-test against the baseline (no do
 # a story hero actually has (had preflop initiative) -- doesn't fire on a
 # random checked-to turn/river hero never bet into. Untested, standard-
 # theory hypothesis -- see scripts/simulate_abc_bot.py --barrel-bluff.
-BARREL_BLUFF_VS_TIGHT = False  # flip True to A/B-test against the baseline (no turn/river scare-card bluff)
+BARREL_BLUFF_VS_TIGHT = True  # 2026-08-12/13: doubly confirmed positive via chance-enumeration probe, two independent seeds (+1.99+/-0.99 @ seed42, +1.33+/-0.65 @ seed777, both individually confirmed_positive, cross-check consistent). Shipped True.
 
 VALUE_3BET_TIGHT = {"AA", "KK", "QQ", "AKs", "AKo"}
 VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
