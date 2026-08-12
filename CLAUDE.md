@@ -56,6 +56,7 @@ project; don't report a delta as "working" without checking it against this.
 | v24 (`BLUFF_3BET_VS_TIGHT`) | +1.80 bb/100 | 2,000,000 | confirmed 2026-08-11, was inside CI at 300k |
 | **v29 (`ISO_WIDER_RANGE_OVER_LIMPERS`)** | **+22.10 / +19.67 bb/100 (2 indep. seeds)** | chance-enum, ~6k divergent each | **shipped True 2026-08-12/13** -- see "Independent second-seed cross-check" section below |
 | **v25 (`BARREL_BLUFF_VS_TIGHT`)** | **+1.99 / +1.33 bb/100 (2 indep. seeds)** | chance-enum, ~60 divergent each | **shipped True 2026-08-12/13** -- smaller than v29 but doubly confirmed |
+| **v28 (`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE`)** | **+1.45 +/- 0.62 bb/100 (best of 4 samples)** | chance-enum, 54k hands, 2001 divergent | **shipped True 2026-08-12/13** -- 4 independent samples, all positive, largest one settles it cleanly |
 
 **Tested, NOT demonstrated (shipped OFF, kept in code for reference):**
 v1-v9 range-only tweaks (plateaued near breakeven), v9 `USE_WIDE_VALUE_3BET`
@@ -414,12 +415,13 @@ results above (log: `/tmp/independent_seed_20260812_222141.log`):
 | **v29-iso-wider-range** | `+22.10 +/- 5.18` | `+19.67 +/- 6.04` | `7.96` (delta between runs 2.43, well inside) | **DOUBLY CONFIRMED positive** -- ship it, high confidence |
 | **v30-size-scaled-call** | `-6.46 +/- 3.45` | `-5.67 +/- 4.72` | `5.85` (delta 0.79, well inside) | **DOUBLY CONFIRMED negative** -- keep disabled, high confidence |
 | v25-barrel-bluff | `+1.99 +/- 0.99` | `+1.33 +/- 0.65` | `1.18` (delta 0.66, inside) | doubly confirmed positive, smaller effect than the first run suggested (~+1.3 to +2.0, not treat +1.99 as the settled number) |
-| v28-optimal-sizing | `+2.25 +/- 1.12` | `+0.82 +/- 0.96` (`inconclusive_small_effect` on its own) | `1.47` (delta 1.43, right at the edge) | **NOT doubly confirmed** -- second run alone doesn't clear its own bar; likely a real small positive or noise around a small one, needs a bigger sample before treating as settled the way v29/v30 now are |
+| v28-optimal-sizing | `+2.25 +/- 1.12` | `+0.82 +/- 0.96` (`inconclusive_small_effect` on its own) | `1.47` (delta 1.43, right at the edge) | RESOLVED below with a 3rd and 4th sample -- see "v28, third sample" and the confirmed-real table at the top; final settled estimate `+1.45+/-0.62` @ 54k hands, shipped True |
 
-**Bottom line, in priority order**: v29 and v30 are the two results from
-tonight's whole session worth acting on with real confidence. v25 is
-probably real but smaller than it first looked. v28 needs more data
-before it's trustworthy -- don't cite the `+2.25` number on its own
+**Bottom line, in priority order**: v29, v30, v25, and v28 are all
+results from tonight's whole session now shipped/settled with real
+confidence (see the confirmed-real table at the top of this file for
+final numbers). v29 is the single biggest lever found tonight; v25/v28
+are smaller but real. Don't cite the `+2.25` number for v28 on its own
 again without the caveat above.
 
 **v28, third sample** (base_seed=314159, tighter target_ci=0.5): `+4.88
