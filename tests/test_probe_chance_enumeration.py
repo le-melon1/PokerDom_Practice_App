@@ -302,3 +302,70 @@ def test_multiway_aware_is_recomputed_from_subflags():
         assert abc_bot.MULTIWAY_AWARE is False
     finally:
         probe._restore_flags(original)
+
+
+def test_pick_hero_hand_swap_matches_target_notation_and_no_duplicates():
+    from backend.bots.abc_bot import _hand_notation
+
+    base_table, treat_table, base_turnover, treat_turnover = probe._new_probe_state(None)
+    target = {"QQ", "AKs", "AKo"}
+    for hand_index in range(50):
+        base_hand = base_table.start_new_hand(deck_seed=hand_index)
+        treat_hand = treat_table.start_new_hand(deck_seed=hand_index)
+        swap = probe._pick_hero_hand_swap(base_hand, target, hand_index)
+        assert swap is not None
+        new_cards, old_cards = swap
+        probe._apply_hero_hand_swap(base_hand, new_cards, old_cards)
+        probe._apply_hero_hand_swap(treat_hand, new_cards, old_cards)
+
+        assert _hand_notation(base_hand.players[1].hole_cards) in target
+        assert base_hand.players[1].hole_cards == treat_hand.players[1].hole_cards
+
+        all_cards = [str(c) for c in base_hand.deck.cards]
+        for player in base_hand.players.values():
+            all_cards.extend(player.hole_cards)
+        assert len(all_cards) == len(set(all_cards))
+
+
+def test_pick_hero_hand_swap_is_deterministic_given_the_same_hand_index():
+    base_table, _, _, _ = probe._new_probe_state(None)
+    target = {"QQ", "AKs", "AKo"}
+    hand = base_table.start_new_hand(deck_seed=7)
+    swap1 = probe._pick_hero_hand_swap(hand, target, hand_index=7)
+
+    base_table2, _, _, _ = probe._new_probe_state(None)
+    hand2 = base_table2.start_new_hand(deck_seed=7)
+    swap2 = probe._pick_hero_hand_swap(hand2, target, hand_index=7)
+
+    assert swap1 == swap2
+
+
+def test_run_probe_chunk_with_hero_hand_filter_only_produces_target_hands():
+    from backend.bots.abc_bot import _hand_notation
+
+    original = probe._original_state_for(probe.ProbeComparison("t", {}, {}))
+    base_table, treat_table, base_turnover, treat_turnover = probe._new_probe_state(None)
+    target = {"QQ", "AKs", "AKo"}
+    random_deltas: list = []
+    enum_deltas: list = []
+    branch_counts: list = []
+    try:
+        probe._run_probe_chunk(
+            {},
+            {},
+            base_table,
+            treat_table,
+            base_turnover,
+            treat_turnover,
+            0,
+            30,
+            random_deltas,
+            enum_deltas,
+            branch_counts,
+            target,
+        )
+    finally:
+        probe._restore_flags(original)
+    # every one of the 30 requested hands should have produced an
+    # observation (no natural-incidence rejection waste)
+    assert len(random_deltas) == 30

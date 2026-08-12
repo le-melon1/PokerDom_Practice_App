@@ -26,6 +26,7 @@ Known caveats / failure modes:
 
 import copy
 import math
+import random
 import statistics
 import sys
 import time
@@ -45,6 +46,7 @@ from backend.sessions.live_dynamics import ARCHETYPE_POOL, TableTurnover
 from scripts.simulate_abc_bot import (
     BOT_ACTION_SEED_STREAM,
     DECK_SEED_STREAM,
+    HERO_HAND_SEED_STREAM,
     HERO_SEAT,
     MAX_SEATS,
     PRESET_FLAG_GROUPS,
@@ -528,6 +530,66 @@ def _force_next_board_card(hand, card_str: str) -> bool:
     return False
 
 
+def _pick_hero_hand_swap(
+    hand, notations: set[str], hand_index: int
+) -> tuple[list[str], list[str]] | None:
+    """Finds a replacement for hero's already-dealt hole cards matching one
+    of `notations` (e.g. {"QQ","AKs","AKo"}), sourced from hand.deck.cards
+    (the remaining, undealt pool) -- same swap principle as
+    _force_next_board_card, applied to hole cards instead of the board.
+    Returns (new_hole_card_strs, old_hole_card_strs) without mutating
+    anything, so the identical swap (same exact card strings) can be applied
+    to both the baseline and treatment hand for a valid paired comparison.
+    Returns None if no card in the remaining deck can complete any of the
+    target notations (rare, but possible once enough cards are already
+    dealt to other seats). Deterministic per hand_index (own seed stream,
+    common-random-numbers discipline like every other draw in this file) --
+    NOT the bare global `random` module, which would make reruns
+    unreproducible."""
+    rng = random.Random(_common_seed(42, hand_index, HERO_HAND_SEED_STREAM))
+    remaining = hand.deck.cards
+    for notation in rng.sample(sorted(notations), len(notations)):
+        if len(notation) == 2:  # pocket pair, e.g. "QQ"
+            rank = notation[0]
+            candidates = [c for c in remaining if c.rank == rank]
+            if len(candidates) >= 2:
+                chosen = rng.sample(candidates, 2)
+                return [str(c) for c in chosen], list(hand.players[HERO_SEAT].hole_cards)
+            continue
+        r1, r2, suited = notation[0], notation[1], notation[2] == "s"
+        pairs = []
+        for c1 in remaining:
+            if c1.rank != r1:
+                continue
+            for c2 in remaining:
+                if c2.rank != r2 or c2 is c1:
+                    continue
+                if suited and c1.suit != c2.suit:
+                    continue
+                if not suited and c1.suit == c2.suit:
+                    continue
+                pairs.append((c1, c2))
+        if pairs:
+            chosen = rng.choice(pairs)
+            return [str(c) for c in chosen], list(hand.players[HERO_SEAT].hole_cards)
+    return None
+
+
+def _apply_hero_hand_swap(hand, new_cards: list[str], old_cards: list[str]) -> None:
+    """Applies an EXACT swap (by card string) computed elsewhere -- used to
+    mirror the same forced hero hand onto both the baseline and treatment
+    Hand objects, which are dealt from the same deck_seed and so have
+    identical remaining decks at this point."""
+    remaining = hand.deck.cards
+    for card_str in new_cards:
+        for i, card in enumerate(remaining):
+            if str(card) == card_str:
+                remaining.pop(i)
+                break
+    hand.players[HERO_SEAT].hole_cards = list(new_cards)
+    remaining.extend(Card(c) for c in old_cards)
+
+
 def _available_next_cards(*hands) -> list[str]:
     for hand in hands:
         if not hand.finished and len(hand.board) < 5:
@@ -616,6 +678,7 @@ def _run_probe_chunk(
     random_deltas: list[float],
     enum_deltas: list[float],
     branch_counts: list[int],
+    hero_hand_filter: set[str] | None = None,
 ) -> int:
     divergent = 0
     for hand_index in range(start_hand_index, start_hand_index + n_hands):
@@ -624,6 +687,21 @@ def _run_probe_chunk(
         deck_seed = _common_seed(42, hand_index, DECK_SEED_STREAM)
         base_hand = base_table.start_new_hand(deck_seed=deck_seed)
         treat_hand = treat_table.start_new_hand(deck_seed=deck_seed)
+
+        if hero_hand_filter:  # falsy for both None (unset) and an explicit empty set (opt-out)
+            # Force hero's dealt hand to one of the target notations instead
+            # of waiting for natural incidence (e.g. QQ+/AK is ~1.8% of
+            # hands -- a rule that only ever fires there would need >50k
+            # hands just to see a handful of real observations). Base and
+            # treatment get the IDENTICAL forced cards (both dealt from the
+            # same deck_seed, so their pre-swap decks match exactly) --
+            # otherwise this wouldn't be a valid paired comparison anymore.
+            swap = _pick_hero_hand_swap(base_hand, hero_hand_filter, hand_index)
+            if swap is None:
+                continue
+            new_cards, old_cards = swap
+            _apply_hero_hand_swap(base_hand, new_cards, old_cards)
+            _apply_hero_hand_swap(treat_hand, new_cards, old_cards)
 
         split = False
         guard = 0
@@ -730,16 +808,35 @@ def _original_state_for(comparison: ProbeComparison) -> dict[str, object]:
     return {name: getattr(abc_bot, name) for name in names if hasattr(abc_bot, name)}
 
 
+def _resolve_hero_hand_filter(
+    comparison: ProbeComparison, hero_hand_filter: set[str] | None
+) -> set[str] | None:
+    """Explicit --hero-hand-filter always wins. Otherwise, auto-infer from
+    the preset's own FOLDABLE_PREMIUM_VS_EXTREME_AGGRO value when present
+    (v26/r15v-* presets) -- these rules only ever fire with a specific,
+    narrow hero-hand set (e.g. QQ+/AK is ~1.8% of hands), so without this,
+    an adaptive run would burn its whole max_zero_divergent_hands budget on
+    hands that could never trigger the rule at all."""
+    if hero_hand_filter is not None:
+        return hero_hand_filter
+    inferred = comparison.treatment.get("FOLDABLE_PREMIUM_VS_EXTREME_AGGRO") or comparison.baseline.get(
+        "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO"
+    )
+    return set(inferred) if inferred else None
+
+
 def run_probe(
     preset: str,
     n_hands: int,
     comparison_mode: Literal["current", "historical", "ablation"],
     allowed_archetypes: list[str] | None,
+    hero_hand_filter: set[str] | None = None,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
     base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
+    hero_hand_filter = _resolve_hero_hand_filter(comparison, hero_hand_filter)
 
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
@@ -759,12 +856,14 @@ def run_probe(
             random_deltas,
             enum_deltas,
             branch_counts,
+            hero_hand_filter,
         )
     finally:
         _restore_flags(original)
 
     archetype_label = ",".join(allowed_archetypes) if allowed_archetypes else "population"
-    print(f"comparison: {comparison.label}; archetypes={archetype_label}", flush=True)
+    hero_hand_label = ",".join(sorted(hero_hand_filter)) if hero_hand_filter else "any (natural incidence)"
+    print(f"comparison: {comparison.label}; archetypes={archetype_label}; hero_hand_filter={hero_hand_label}", flush=True)
     _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
 
 
@@ -815,11 +914,13 @@ def run_adaptive_probe(
     min_divergent: int,
     max_divergent: int,
     allowed_archetypes: list[str] | None,
+    hero_hand_filter: set[str] | None = None,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
     base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
+    hero_hand_filter = _resolve_hero_hand_filter(comparison, hero_hand_filter)
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
     branch_counts: list[int] = []
@@ -828,10 +929,12 @@ def run_adaptive_probe(
     t0 = time.perf_counter()
     stop_reason = None
     archetype_label = ",".join(allowed_archetypes) if allowed_archetypes else "population"
+    hero_hand_label = ",".join(sorted(hero_hand_filter)) if hero_hand_filter else "any (natural incidence)"
     print(
         f"adaptive chance-enumeration: {label} ({preset}), "
         f"comparison={comparison.label}, "
         f"archetypes={archetype_label}, "
+        f"hero_hand_filter={hero_hand_label}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
         f"max_zero_divergent_hands={max_zero_divergent_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
@@ -852,6 +955,7 @@ def run_adaptive_probe(
                 random_deltas,
                 enum_deltas,
                 branch_counts,
+                hero_hand_filter,
             )
             n_hands += this_chunk
             random_delta, random_ci = _stats(random_deltas)
@@ -901,6 +1005,16 @@ def main() -> None:
     )
     parser.add_argument("--adaptive", action="store_true", help="run chunks until effect-strength/precision or hard-cap stop criteria are met")
     parser.add_argument("--archetypes", help="comma-separated opponent archetypes to seat; omitted means the real population mix")
+    parser.add_argument(
+        "--hero-hand-filter",
+        help=(
+            "comma-separated hand notations (e.g. QQ,AKs,AKo) to force hero's dealt "
+            "hand to, instead of natural incidence -- auto-inferred for presets whose "
+            "rule only fires on a specific hero-hand set (e.g. v26/r15v-fold-* read "
+            "FOLDABLE_PREMIUM_VS_EXTREME_AGGRO); pass 'none' to disable auto-inference "
+            "and use natural incidence anyway"
+        ),
+    )
     parser.add_argument("--target-ci", type=float, default=1.0)
     parser.add_argument("--effect-ratio", type=float, default=0.5, help="positive effect is confirmed when CI <= abs(delta) * this ratio")
     parser.add_argument("--min-hands", type=int, default=5_000)
@@ -916,6 +1030,12 @@ def main() -> None:
         raise SystemExit(f"unknown preset {preset}; options: {', '.join(groups)}")
     try:
         allowed_archetypes = _parse_archetypes(args.archetypes)
+        if args.hero_hand_filter is None:
+            hero_hand_filter = None  # auto-infer from the preset, if applicable
+        elif args.hero_hand_filter.strip().lower() == "none":
+            hero_hand_filter = set()  # explicit opt-out -- _resolve treats non-None as final, but an empty set is falsy everywhere it's checked
+        else:
+            hero_hand_filter = {n.strip() for n in args.hero_hand_filter.split(",") if n.strip()}
         if args.adaptive:
             run_adaptive_probe(
                 preset,
@@ -929,9 +1049,10 @@ def main() -> None:
                 min_divergent=args.min_divergent,
                 max_divergent=args.max_divergent,
                 allowed_archetypes=allowed_archetypes,
+                hero_hand_filter=hero_hand_filter,
             )
         else:
-            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes)
+            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes, hero_hand_filter)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
