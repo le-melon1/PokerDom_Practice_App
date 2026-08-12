@@ -99,6 +99,7 @@ RULE_TEST_GROUPS = {
     "r11-hero-pot-damping": (["HERO_PROGRESSIVE_POT_DAMPING"], "r11 hero progressive pot damping"),
     "r12-tight-big-iso-limpers": (["TIGHT_BIG_ISO_RAISE_LIMPERS"], "r12 tight big iso-raise limpers"),
     "r13-shove-aa-kk-vs-3bet-plus": (["SHOVE_AA_KK_VS_3BET_PLUS"], "r13 shove AA/KK vs 3bet+"),
+    "r14-bluff-3bet-vs-tight": (["BLUFF_3BET_VS_TIGHT"], "r14 bluff 3bet vs tight"),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [

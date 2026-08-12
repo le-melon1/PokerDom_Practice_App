@@ -192,6 +192,7 @@ IDs:
 | `r11-hero-pot-damping` | `v19-hero-pot-damping` | `HERO_PROGRESSIVE_POT_DAMPING` |
 | `r12-tight-big-iso-limpers` | new v31 candidate | `TIGHT_BIG_ISO_RAISE_LIMPERS` |
 | `r13-shove-aa-kk-vs-3bet-plus` | new v32 candidate | `SHOVE_AA_KK_VS_3BET_PLUS` |
+| `r14-bluff-3bet-vs-tight` | `v24-bluff-3bet` | `BLUFF_3BET_VS_TIGHT` |
 
 This list covers the current ablation-supported tracked rule units. Older
 historical ideas such as early core opening/calling changes are not separate
@@ -217,6 +218,7 @@ population-weighted EV.
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
 | `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97`; best params `+22.54 +/- 4.77` | `confirmed_positive` for 0.85/5.5+1.5 | enabled |
 | `r13-shove-aa-kk-vs-3bet-plus` | population | not run yet | candidate | test next |
+| `r14-bluff-3bet-vs-tight` | Nit/TAG/LAG | `+1.80` at 2M hands/arm | confirmed in session sim | enabled |
 
 Logs backing the final four-row update:
 `/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows

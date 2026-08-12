@@ -527,10 +527,9 @@ strategy card, not just inferred from code):
       NEVER_FOLD_PREFLOP).
     - Else, if facing exactly one raise AND the raiser is a known Nit/TAG/
       LAG (high real fold-to-raise, see TIGHT_ARCHETYPES_FOR_DONK_BLUFF)
-      AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT, untested
-      -- see the constant's comment above): bluff-raise (3-bet) instead of
-      just calling, on the theory that these opponents fold enough for a
-      3-bet with no real hand to show a profit.
+      AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT):
+      bluff-raise (3-bet) instead of just calling; confirmed +1.80 bb/100
+      at 2M hands/arm.
     - Else, if facing exactly one raise: call with a hand in your position's
       CALL range (half the open VPIP, e.g. UTG ~7% / BTN ~13.3% -- the
       tighter, stronger half of what you'd open) -- (v30, SIZE_SCALED_
@@ -1013,26 +1012,18 @@ OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" thresh
 # says barely 3-bets at all. That's a real, large, population-level signal
 # that more 3-betting associates with winning.
 #
-# RESULT, this specific implementation: does NOT clear the bar, despite the
-# population correlation above. scripts/simulate_abc_bot.py --bluff-3bet,
-# real rake, ground-truth archetypes, same seed:
+# RESULT, this specific implementation: eventually cleared the bar at real
+# power. scripts/simulate_abc_bot.py --bluff-3bet, real rake, ground-truth
+# archetypes, same seed:
 #   80k hands/arm:  baseline +57.90 (CI +/-3.92) vs v24 +62.19 (CI +/-3.96),
 #                   delta +4.29 -- leaning positive, inside the ~5.6 combined
 #                   noise band.
 #   300k hands/arm: baseline +57.12 (CI +/-2.03) vs v24 +59.67 (CI +/-2.04),
 #                   delta +2.56 -- STILL inside the ~2.9 combined noise band
-#                   (barely), same pattern SQUEEZE_WIDER_RANGE's own 80k->
-#                   300k retest showed (an 80k lean that shrinks toward the
-#                   noise floor at real power, not a suppressed real effect).
-# Interpretation: the real-data correlation is almost certainly genuine, but
-# most likely reflects that players who 3-bet more ALSO tend to be better
-# overall (postflop play, hand reading, etc.), not that bolting this one
-# narrow bluff-3-bet rule onto an otherwise-unchanged bot captures that same
-# edge. Shipped False, same standing policy as this file's other unproven
-# flags -- "a real correlation exists in the population" and "this specific
-# rule is a demonstrated fix" are different claims, and only the first one
-# is established here.
-BLUFF_3BET_VS_TIGHT = False  # flip True to A/B-test against the baseline (call-or-fold with these hands, no bluff 3-bet)
+#                   (barely).
+#   2M hands/arm:   baseline +57.89 (CI +/-0.78) vs v24 +59.70 (CI +/-0.79),
+#                   delta +1.80, clearing the ~1.11 combined CI.
+BLUFF_3BET_VS_TIGHT = True
 BLUFF_3BET_RANGE = {"A9o", "A8o", "A5s", "A4s", "KQo", "KJs", "QJs", "JTs", "T9s", "98s"}
 
 _rankings_cache = None

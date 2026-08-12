@@ -30,6 +30,7 @@ PRESETS=(
   r07-wider-3bet-vs-loose
   r10-donk-bluff-vs-tight
   r12-tight-big-iso-limpers
+  r14-bluff-3bet-vs-tight
 )
 if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
   read -r -a PRESETS <<< "$PRESETS_OVERRIDE"
@@ -57,6 +58,9 @@ for preset in "${PRESETS[@]}"; do
         archetypes_label="Maniac,Station"
         ;;
       r10-donk-bluff-vs-tight|v17-donk-bluff)
+        archetypes_label="Nit,TAG,LAG"
+        ;;
+      r14-bluff-3bet-vs-tight|v24-bluff-3bet)
         archetypes_label="Nit,TAG,LAG"
         ;;
     esac

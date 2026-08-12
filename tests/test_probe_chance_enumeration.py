@@ -127,6 +127,7 @@ def test_rule_ids_cover_current_ablation_rule_units():
         "r11-hero-pot-damping": ["HERO_PROGRESSIVE_POT_DAMPING"],
         "r12-tight-big-iso-limpers": ["TIGHT_BIG_ISO_RAISE_LIMPERS"],
         "r13-shove-aa-kk-vs-3bet-plus": ["SHOVE_AA_KK_VS_3BET_PLUS"],
+        "r14-bluff-3bet-vs-tight": ["BLUFF_3BET_VS_TIGHT"],
     }
 
     assert {name: groups[name][0] for name in expected} == expected
@@ -184,6 +185,7 @@ def test_rule_ids_match_legacy_v_aliases_for_same_flags():
         "r09-iso-raise-limpers": "v16-iso-limpers",
         "r10-donk-bluff-vs-tight": "v17-donk-bluff",
         "r11-hero-pot-damping": "v19-hero-pot-damping",
+        "r14-bluff-3bet-vs-tight": "v24-bluff-3bet",
     }
 
     for rule_id, legacy_id in aliases.items():
