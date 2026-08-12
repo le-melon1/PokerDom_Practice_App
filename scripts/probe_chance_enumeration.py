@@ -346,7 +346,30 @@ HISTORICAL_PRIOR_ON_FLAGS = {
     # v21+ happened after the monster-pot damping work. Squeeze itself stays
     # off in later historical baselines: the changelog says it was not
     # confirmed and shipped off, even if today's module default drifts.
+    #
+    # 2026-08-12 BUG FOUND AND FIXED: this list was missing ALLOW_CALLING_
+    # RAISES (v3) and UNCONDITIONAL_FLOP_CBET (v6) -- both foundational,
+    # confirmed-real rules shipped True LONG before v21 (v3: the "raise-or-
+    # fold-only" leak fix; v6: -1.11 vs -9.90 bb/100 without rake, one of
+    # the earliest confirmed deltas in the whole file). _historical_baseline_
+    # state resets EVERY flag in ALL_COMPARISON_FLAGS to False except what's
+    # explicitly listed here -- so every "historical"-mode v21-v30 test run
+    # BEFORE this fix had hero permanently unable to call a facing raise
+    # (fold-or-3bet-only) and never c-betting the flop with air, a severely
+    # crippled baseline that doesn't represent "today's actual strategy" at
+    # all. Found while root-causing why v30 (SIZE_SCALED_CALL_RANGE) showed
+    # zero divergent hands even after its thresholds were correctly
+    # recalibrated: a specific hand (JTo, SB, facing a 3.25bb raise) that
+    # should have called in baseline (in call_ranges[SB]) instead folded in
+    # BOTH baseline and treatment, because ALLOW_CALLING_RAISES=False made
+    # the entire call-range branch unreachable regardless of the flag under
+    # test. Every v22-v30 "historical" result reported earlier tonight
+    # needs to be treated as suspect and re-run with this fix -- see
+    # CLAUDE.md's "historical baseline bug" note for which ones actually
+    # changed after re-running.
     "v21-squeeze-wide": [
+        "ALLOW_CALLING_RAISES",
+        "UNCONDITIONAL_FLOP_CBET",
         "USE_WIDE_VALUE_3BET",
         "STEAL_WIDER_VS_NIT",
         "SIZING_TARGET_ARCHETYPES",
