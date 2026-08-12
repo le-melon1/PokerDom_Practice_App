@@ -100,9 +100,33 @@ RULE_TEST_GROUPS = {
     "r12-tight-big-iso-limpers": (["TIGHT_BIG_ISO_RAISE_LIMPERS"], "r12 tight big iso-raise limpers"),
 }
 
+TIGHT_ISO_PARAM_FLAGS = [
+    "TIGHT_BIG_ISO_RAISE_LIMPERS",
+    "TIGHT_ISO_VPIP_MULTIPLIER",
+    "TIGHT_ISO_BASE_SIZING_BB",
+    "TIGHT_ISO_SIZING_PER_LIMPER_BB",
+]
+
+TIGHT_ISO_VARIANTS = {
+    "r12v-tight-same-size": (0.55, 4.5, 1.0),
+    "r12v-wide-same-size": (0.85, 4.5, 1.0),
+    "r12v-current-smaller": (0.70, 3.5, 0.5),
+    "r12v-current-bigger": (0.70, 5.5, 1.5),
+    "r12v-tight-bigger": (0.55, 5.5, 1.5),
+    "r12v-wide-smaller": (0.85, 3.5, 0.5),
+}
+
+TIGHT_ISO_VARIANT_GROUPS = {
+    name: (
+        TIGHT_ISO_PARAM_FLAGS,
+        f"{name} vs current tight iso ({mult:.2f}x open, {base:.1f}bb + {per:.1f}bb/limper)",
+    )
+    for name, (mult, base, per) in TIGHT_ISO_VARIANTS.items()
+}
+
 
 def _all_test_groups() -> dict[str, tuple[list[str], str]]:
-    return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS, **RULE_TEST_GROUPS}
+    return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS, **RULE_TEST_GROUPS, **TIGHT_ISO_VARIANT_GROUPS}
 
 
 PSEUDO_OPPONENT_AWARE = "OPPONENT_AWARE_ARCHETYPES"
@@ -119,6 +143,9 @@ ALL_COMPARISON_FLAGS = [
     "SIZE_UP_ON_TURN",
     "ISO_RAISE_OVER_LIMPERS",
     "TIGHT_BIG_ISO_RAISE_LIMPERS",
+    "TIGHT_ISO_VPIP_MULTIPLIER",
+    "TIGHT_ISO_BASE_SIZING_BB",
+    "TIGHT_ISO_SIZING_PER_LIMPER_BB",
     "DONK_BLUFF_VS_TIGHT",
     "HERO_PROGRESSIVE_POT_DAMPING",
     "SQUEEZE_WIDER_RANGE",
@@ -238,6 +265,19 @@ def _historical_baseline_state(preset: str) -> dict[str, object]:
 
 def _build_comparison(preset: str, comparison: Literal["current", "historical", "ablation"]) -> ProbeComparison:
     flag_names, _ = _all_test_groups()[preset]
+    if preset in TIGHT_ISO_VARIANTS:
+        if comparison != "current":
+            raise ValueError("tight iso parameter variants only support --comparison current")
+        mult, base, per_limper = TIGHT_ISO_VARIANTS[preset]
+        baseline = _current_state_for_flags(TIGHT_ISO_PARAM_FLAGS)
+        baseline["TIGHT_BIG_ISO_RAISE_LIMPERS"] = True
+        treatment = baseline | {
+            "TIGHT_BIG_ISO_RAISE_LIMPERS": True,
+            "TIGHT_ISO_VPIP_MULTIPLIER": mult,
+            "TIGHT_ISO_BASE_SIZING_BB": base,
+            "TIGHT_ISO_SIZING_PER_LIMPER_BB": per_limper,
+        }
+        return ProbeComparison("tight iso parameter variant - current r12", baseline, treatment)
     if comparison == "current":
         return ProbeComparison(
             "current defaults overlay",
@@ -253,6 +293,11 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical", 
     return ProbeComparison("historical at-introduction flags", baseline, treatment)
 
 
+def _invalidate_cached_ranges_if_needed(state: dict[str, object]) -> None:
+    if "TIGHT_ISO_VPIP_MULTIPLIER" in state:
+        abc_bot._tight_iso_range_cache = {}
+
+
 def _apply_flag_state(state: dict[str, object]) -> None:
     for name, real_value in state.items():
         if name in PSEUDO_FLAGS:
@@ -260,6 +305,7 @@ def _apply_flag_state(state: dict[str, object]) -> None:
         if name in _NON_BOOLEAN_FLAG_ON_VALUES:
             real_value = set(real_value)
         setattr(abc_bot, name, real_value)
+    _invalidate_cached_ranges_if_needed(state)
     if "USE_WIDE_VALUE_3BET" in state:
         _sync_value_3bet(bool(state["USE_WIDE_VALUE_3BET"]))
     if MULTIWAY_SUBFLAGS & state.keys() and "MULTIWAY_AWARE" not in state:
@@ -271,6 +317,7 @@ def _restore_flags(original: dict[str, object]) -> None:
         if name in PSEUDO_FLAGS:
             continue
         setattr(abc_bot, name, value)
+    _invalidate_cached_ranges_if_needed(original)
     if "USE_WIDE_VALUE_3BET" in original:
         _sync_value_3bet(original["USE_WIDE_VALUE_3BET"])
     if MULTIWAY_SUBFLAGS & original.keys() and "MULTIWAY_AWARE" not in original:

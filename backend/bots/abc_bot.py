@@ -1038,22 +1038,27 @@ def _ranges():
     global _tight_iso_range_cache, _call_range_wide_cache, _call_range_narrow_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
+    if not _open_range_cache:
         _open_range_cache = {
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in OPEN_VPIP_BY_POSITION.items()
         }
+    if not _call_range_cache:
         _call_range_cache = {
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
+    if not _steal_range_cache:
         _steal_range_cache = {
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in STEAL_VPIP_BY_POSITION.items()
         }
+    if not _tight_iso_range_cache:
         _tight_iso_range_cache = {
             pos: set(implied_range(vpip * TIGHT_ISO_VPIP_MULTIPLIER, _rankings_cache))
             for pos, vpip in OPEN_VPIP_BY_POSITION.items()
         }
+    if not _call_range_wide_cache:
         # v30 (SIZE_SCALED_CALL_RANGE): two more tiers around the existing
         # call range, +/- CALL_VPIP_WIDE_MULTIPLIER/CALL_VPIP_NARROW_
         # MULTIPLIER, so the call range can scale with how big the actual
@@ -1064,6 +1069,7 @@ def _ranges():
             pos: set(implied_range(vpip * CALL_VPIP_WIDE_MULTIPLIER, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
+    if not _call_range_narrow_cache:
         _call_range_narrow_cache = {
             pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache))
             for pos, vpip in CALL_VPIP_BY_POSITION.items()

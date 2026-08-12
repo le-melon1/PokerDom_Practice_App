@@ -131,6 +131,44 @@ def test_rule_ids_cover_current_ablation_rule_units():
     assert {name: groups[name][0] for name in expected} == expected
 
 
+def test_tight_iso_parameter_variants_compare_against_current_r12():
+    comparison = probe._build_comparison("r12v-tight-bigger", "current")
+
+    assert comparison.baseline["TIGHT_BIG_ISO_RAISE_LIMPERS"] is True
+    assert comparison.baseline["TIGHT_ISO_VPIP_MULTIPLIER"] == abc_bot.TIGHT_ISO_VPIP_MULTIPLIER
+    assert comparison.baseline["TIGHT_ISO_BASE_SIZING_BB"] == abc_bot.TIGHT_ISO_BASE_SIZING_BB
+    assert comparison.baseline["TIGHT_ISO_SIZING_PER_LIMPER_BB"] == abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB
+    assert comparison.treatment == {
+        "TIGHT_BIG_ISO_RAISE_LIMPERS": True,
+        "TIGHT_ISO_VPIP_MULTIPLIER": 0.55,
+        "TIGHT_ISO_BASE_SIZING_BB": 5.5,
+        "TIGHT_ISO_SIZING_PER_LIMPER_BB": 1.5,
+    }
+
+
+def test_tight_iso_variants_are_current_comparison_only():
+    with pytest.raises(ValueError, match="only support --comparison current"):
+        probe._build_comparison("r12v-tight-bigger", "ablation")
+
+
+def test_tight_iso_range_cache_tracks_multiplier_changes():
+    original = {
+        "TIGHT_ISO_VPIP_MULTIPLIER": abc_bot.TIGHT_ISO_VPIP_MULTIPLIER,
+        "_tight_iso_range_cache": dict(abc_bot._tight_iso_range_cache),
+    }
+    try:
+        abc_bot._tight_iso_range_cache = {}
+        probe._apply_flag_state({"TIGHT_ISO_VPIP_MULTIPLIER": 0.55})
+        tight_count = len(abc_bot._ranges()[3]["BTN"])
+        probe._apply_flag_state({"TIGHT_ISO_VPIP_MULTIPLIER": 0.85})
+        wide_count = len(abc_bot._ranges()[3]["BTN"])
+
+        assert wide_count > tight_count
+    finally:
+        abc_bot.TIGHT_ISO_VPIP_MULTIPLIER = original["TIGHT_ISO_VPIP_MULTIPLIER"]
+        abc_bot._tight_iso_range_cache = original["_tight_iso_range_cache"]
+
+
 def test_rule_ids_match_legacy_v_aliases_for_same_flags():
     groups = probe._all_test_groups()
     aliases = {
