@@ -807,6 +807,25 @@ LIMP_BEHIND_EXTRA_HANDS = {
     "A2s", "A3s", "A4s", "A5s",
 }
 
+# 2026-08-12: r16v A/B tested three LIMP_BEHIND_VPIP_MULTIPLIER tiers
+# (0.45/0.55/0.75, i.e. narrow/standard/wide -- see scripts/probe_chance_
+# enumeration.py's r16v-limp-behind-* presets) against baseline. All three
+# measured the SAME confirmed-positive effect: +10.3 to +10.5 bb/100
+# across two independent seeds and sample sizes (6k and 20k hands) --
+# looked like a caching bug at first, but direct instrumentation proved
+# otherwise: of every divergent hand found, 100% came from the FIXED
+# LIMP_BEHIND_EXTRA_HANDS set above, ZERO from the swept VPIP-multiplier-
+# scaled portion of the range. Real, well-evidenced conclusion: against
+# this population's actual self-play dynamics, the multiplier parameter
+# has NO measurable effect -- the entire benefit comes from the fixed
+# small-pairs/suited-connectors/small-suited-aces core, not from how much
+# wider or narrower the swept tier is around it. If this flag is ever
+# shipped True, the multiplier value doesn't matter for THIS population;
+# don't spend more time tuning it without first checking whether the
+# swept region is ever actually reached (the same class of dead-parameter
+# bug found and fixed for v30/r19v-tight this same night, just resolved
+# here as "confirmed genuinely inert" instead of "off by a factor").
+
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
 # wider, not just bigger) -- not fit to a measured breakeven point, same
