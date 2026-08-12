@@ -5,6 +5,7 @@ matching the convention already used throughout the analysis project's
 parsers -- keeps this codebase consistent with the data it's trained on.
 """
 
+import random
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -40,6 +41,7 @@ class Hand:
         small_blind: float,
         big_blind: float,
         deck: Deck | None = None,
+        deck_seed: int | None = None,
         rake_percent: float = 0.0,
         rake_cap_bb: float = 0.0,
     ):
@@ -55,7 +57,7 @@ class Hand:
         self.rake_percent = rake_percent
         self.rake_cap_bb = rake_cap_bb
         self.deck = deck or Deck()
-        self.deck.shuffle()
+        self.deck.shuffle(random.Random(deck_seed) if deck_seed is not None else None)
         self.board: list[str] = []
         self.street_idx = 0
         self.actions: list[ActionRecord] = []

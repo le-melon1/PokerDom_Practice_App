@@ -49,11 +49,24 @@ RAKE_PERCENT = 0.05
 RAKE_CAP_BB = 5.0
 STARTING_STACK = 200.0
 MAX_SEATS = 6
+DECK_SEED_STREAM = 1
+BOT_ACTION_SEED_STREAM = 2
+COMMON_RANDOM = False
+
+
+def _common_seed(base_seed: int, hand_index: int, stream: int, *parts: int) -> int:
+    """Stable per-hand/per-decision seed for common-random-number A/B tests."""
+    value = base_seed & 0xFFFFFFFF
+    for part in (hand_index, stream, *parts):
+        value ^= (part + 0x9E3779B9 + ((value << 6) & 0xFFFFFFFF) + (value >> 2)) & 0xFFFFFFFF
+        value &= 0xFFFFFFFF
+    return value
 
 
 def run_batch(
     n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int,
     opponent_aware: bool = True, archetype_source: str = "ground_truth",
+    common_random: bool | None = None,
 ) -> dict:
     """archetype_source: "ground_truth" feeds choose_abc_action the archetype
     the ML bot was actually SEATED with (a ceiling test -- the live app can't
@@ -74,9 +87,11 @@ def run_batch(
     for seat in range(1, MAX_SEATS + 1):
         table.add_player(seat=seat, name=("Hero" if seat == HERO_SEAT else f"Bot{seat}"), stack=STARTING_STACK)
 
+    use_common_random = COMMON_RANDOM if common_random is None else common_random
     hero_net_total = 0.0
     hero_net_per_hand: list[float] = []
     hero_net_per_hand_normal: list[float] = []  # excludes monster pots
+    normal_net_by_hand_index: list[float | None] = []
     hero_vpip_hands = 0
     hero_pfr_hands = 0
     hands_completed = 0
@@ -84,12 +99,14 @@ def run_batch(
     # stack-unaware sizing model ran away with repeated large raises (see
     # scripts/simulate_abc_bot.py's usage docstring / final report)
 
-    for _ in range(n_hands):
+    for hand_index in range(n_hands):
+        normal_net_by_hand_index.append(None)
         if table.players[HERO_SEAT].stack <= 0:
             table.players[HERO_SEAT].stack = STARTING_STACK  # rebuy, keep sim running
 
         try:
-            hand = table.start_new_hand()
+            deck_seed = _common_seed(seed, hand_index, DECK_SEED_STREAM) if use_common_random else None
+            hand = table.start_new_hand(deck_seed=deck_seed)
         except RuntimeError:
             for p in table.players.values():
                 if p.stack <= 0:
@@ -117,7 +134,8 @@ def run_batch(
                 action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
             else:
                 archetype = turnover.archetype_for(seat)
-                action, amount = choose_bot_action(hand, seat, archetype=archetype)
+                bot_seed = _common_seed(seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat) if use_common_random else None
+                action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
             try:
                 hand.apply_action(seat, action, amount)
             except IllegalAction:
@@ -137,6 +155,7 @@ def run_batch(
             monster_pots += 1
         else:
             hero_net_per_hand_normal.append(hero_net)
+            normal_net_by_hand_index[hand_index] = hero_net
 
         preflop_actions = [a for a in hand.actions if a.street == "preflop" and a.seat == HERO_SEAT]
         if any(a.action in ("calls", "bets", "raises") for a in preflop_actions):
@@ -180,7 +199,45 @@ def run_batch(
         "bb_per_100_excl_monsters_ci95": ci95_normal,
         "hero_vpip": hero_vpip_hands / n if n else 0.0,
         "hero_pfr": hero_pfr_hands / n if n else 0.0,
+        "normal_net_by_hand_index": normal_net_by_hand_index,
+        "common_random": use_common_random,
     }
+
+
+def _paired_delta_stats(baseline: dict, treatment: dict) -> dict:
+    baseline_hands = baseline.get("normal_net_by_hand_index") or []
+    treatment_hands = treatment.get("normal_net_by_hand_index") or []
+    deltas = [
+        treatment_net - baseline_net
+        for baseline_net, treatment_net in zip(baseline_hands, treatment_hands)
+        if baseline_net is not None and treatment_net is not None
+    ]
+    n = len(deltas)
+    if not n:
+        return {"n": 0, "delta_bb100": 0.0, "ci95_bb100": 0.0}
+    mean = sum(deltas) / n
+    stdev = statistics.pstdev(deltas) if n > 1 else 0.0
+    ci95 = 1.96 * (stdev / (n ** 0.5)) * 100 if n > 1 else 0.0
+    return {"n": n, "delta_bb100": mean * 100, "ci95_bb100": ci95}
+
+
+def _print_paired_delta(label: str, baseline: dict, treatment: dict) -> None:
+    if not (baseline.get("common_random") and treatment.get("common_random")):
+        return
+    paired = _paired_delta_stats(baseline, treatment)
+    independent_ci = (
+        baseline["bb_per_100_excl_monsters_ci95"] ** 2
+        + treatment["bb_per_100_excl_monsters_ci95"] ** 2
+    ) ** 0.5
+    ci_ratio = independent_ci / paired["ci95_bb100"] if paired["ci95_bb100"] else float("inf")
+    print(
+        f"{label} paired delta: {paired['delta_bb100']:+.2f} bb/100 "
+        f"(95% CI +/- {paired['ci95_bb100']:.2f}, paired non-monster hands: {paired['n']})"
+    )
+    print(
+        f"{label} CI shrink: independent +/- {independent_ci:.2f} -> paired +/- {paired['ci95_bb100']:.2f} "
+        f"({ci_ratio:.2f}x tighter)"
+    )
 
 
 def run_opponent_aware_comparison(n_hands: int):
@@ -210,6 +267,7 @@ def run_opponent_aware_comparison(n_hands: int):
 
     delta = aware["bb_per_100_excl_monsters"] - unaware["bb_per_100_excl_monsters"]
     print(f"\nOpponent-awareness delta: {delta:+.2f} bb/100")
+    _print_paired_delta("Opponent-awareness", unaware, aware)
 
 
 def run_dossier_realism_comparison(n_hands: int):
@@ -251,6 +309,8 @@ def run_dossier_realism_comparison(n_hands: int):
     print(f"\nCeiling gain (ground truth):     {ceiling_gain:+.2f} bb/100")
     print(f"Realistic gain (dossier estimate): {realistic_gain:+.2f} bb/100")
     print(f"Retained: {retained:.0f}% of the ceiling gain")
+    _print_paired_delta("Ground-truth vs unaware", unaware, ceiling)
+    _print_paired_delta("Dossier vs unaware", unaware, realistic)
 
 
 def run_value_raise_comparison(n_hands: int):
@@ -281,6 +341,7 @@ def run_value_raise_comparison(n_hands: int):
 
     delta = with_value_raise["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
     print(f"\nValue-raise delta: {delta:+.2f} bb/100")
+    _print_paired_delta("Value-raise", baseline, with_value_raise)
 
 
 def run_value_raise_tier_comparison(n_hands: int):
@@ -326,6 +387,8 @@ def run_value_raise_tier_comparison(n_hands: int):
 
     print(f"\nDelta (two-pair+ vs baseline):  {two_pair_plus['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
     print(f"Delta (trips+ only vs baseline): {trips_plus['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
+    _print_paired_delta("Two-pair+ vs baseline", baseline, two_pair_plus)
+    _print_paired_delta("Trips+ only vs baseline", baseline, trips_plus)
 
 
 def run_overbet_fold_comparison(n_hands: int):
@@ -357,6 +420,7 @@ def run_overbet_fold_comparison(n_hands: int):
 
     delta = with_fold["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
     print(f"\nOverbet-fold delta: {delta:+.2f} bb/100")
+    _print_paired_delta("Overbet-fold", baseline, with_fold)
 
 
 def run_sizing_theory_comparison(n_hands: int):
@@ -411,6 +475,7 @@ def run_sizing_theory_comparison(n_hands: int):
 
     for label, r in (("strength-only", strength_only), ("wet-board-only", wet_board_only), ("both", both)):
         print(f"Delta ({label} vs baseline): {r['bb_per_100_excl_monsters']-baseline['bb_per_100_excl_monsters']:+.2f} bb/100")
+        _print_paired_delta(label, baseline, r)
 
 
 def _sync_value_3bet(is_wide: bool) -> None:
@@ -488,6 +553,7 @@ def run_flag_confirmation(flag_names: list[str], n_hands: int, label: str):
 
     delta = treatment["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
     print(f"\n{label} delta: {delta:+.2f} bb/100")
+    _print_paired_delta(label, baseline, treatment)
 
 
 def run_bluff_3bet_comparison(n_hands: int):
@@ -521,6 +587,7 @@ def run_bluff_3bet_comparison(n_hands: int):
 
     delta = with_bluff_3bet["bb_per_100_excl_monsters"] - baseline["bb_per_100_excl_monsters"]
     print(f"\nBluff-3-bet delta: {delta:+.2f} bb/100")
+    _print_paired_delta("Bluff-3bet", baseline, with_bluff_3bet)
 
 
 PRESET_FLAG_GROUPS = {
@@ -529,6 +596,9 @@ PRESET_FLAG_GROUPS = {
     "v15-loose-3bet-turn": (["WIDER_3BET_VS_LOOSE", "SIZE_UP_ON_TURN"], "v15 B1+B2"),
     "v16-iso-limpers": (["ISO_RAISE_OVER_LIMPERS"], "v16 C1"),
     "v17-donk-bluff": (["DONK_BLUFF_VS_TIGHT"], "v17 C2"),
+    "v21-squeeze-wide": (["SQUEEZE_WIDER_RANGE"], "v21 squeeze wider range"),
+    "v21-squeeze-size": (["SQUEEZE_SIZE_UP_PER_CALLER"], "v21 squeeze size up per caller"),
+    "v21-squeeze-both": (["SQUEEZE_WIDER_RANGE", "SQUEEZE_SIZE_UP_PER_CALLER"], "v21 squeeze wider+size"),
     "v25-barrel-bluff": (["BARREL_BLUFF_VS_TIGHT"], "v25 barrel bluff"),
     "v26-fold-premium-extreme": (["FOLD_PREMIUM_VS_EXTREME_AGGRO"], "v26 fold premium vs extreme aggro"),
     "v27-river-overbet": (["RIVER_OVERBET_NUTS_VS_LOOSE"], "v27 river overbet nuts vs loose"),
@@ -539,7 +609,11 @@ PRESET_FLAG_GROUPS = {
 
 
 def main():
+    global COMMON_RANDOM
     args = sys.argv[1:]
+    if "--common-random" in args:
+        COMMON_RANDOM = True
+        args = [a for a in args if a != "--common-random"]
     if "--barrel-bluff" in args:
         remaining = [a for a in args if a != "--barrel-bluff"]
         n_hands = int(remaining[0]) if remaining and remaining[0].isdigit() else 80000

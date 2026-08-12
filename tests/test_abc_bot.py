@@ -178,9 +178,9 @@ def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
 def test_folds_a_standard_call_range_hand_to_a_big_raise_when_flag_on():
     _, call_ranges, _, _, call_ranges_narrow = abc_bot._ranges()
     position = "MP"
-    narrowed_out = call_ranges[position] - call_ranges_narrow[position]
+    narrowed_out = call_ranges[position] - call_ranges_narrow[position] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
     assert narrowed_out, "expected the narrow call tier to exclude some hands the standard one includes, for MP"
-    test_hand = next(iter(narrowed_out))
+    test_hand = sorted(narrowed_out)[0]
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)

@@ -49,7 +49,7 @@ class Table:
         idx = seats.index(self.button_seat)
         return seats[(idx + 1) % len(seats)]
 
-    def start_new_hand(self) -> Hand:
+    def start_new_hand(self, deck_seed: int | None = None) -> Hand:
         # Busted players (stack == 0) must sit out -- otherwise they'd still get
         # dealt in, occupy a blind slot, and shift the rest of the table's
         # rotation, even though they have no chips to actually play with.
@@ -74,6 +74,7 @@ class Table:
             button_seat=self.button_seat,
             small_blind=self.small_blind,
             big_blind=self.big_blind,
+            deck_seed=deck_seed,
             rake_percent=self.rake_percent,
             rake_cap_bb=self.rake_cap_bb,
         )
