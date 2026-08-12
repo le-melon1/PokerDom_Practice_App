@@ -52,7 +52,6 @@ project; don't report a delta as "working" without checking it against this.
 | Flag | Delta | Sample | Note |
 |---|---|---|---|
 | v10 (opponent-aware calling bar) | +16.05 bb/100 | 80k | the original, biggest lever |
-| v16 C1 (`ISO_RAISE_OVER_LIMPERS`) | +4.88 bb/100 | 500k | re-confirmed 2026-08-11 |
 | v17 C2 (`DONK_BLUFF_VS_TIGHT`) | +3.40 bb/100 | 500k | re-confirmed 2026-08-11 |
 | v24 (`BLUFF_3BET_VS_TIGHT`) | +1.80 bb/100 | 2,000,000 | confirmed 2026-08-11, was inside CI at 300k |
 
@@ -65,9 +64,12 @@ inside CI, but sign-consistent across two independent samples — the one
 candidate worth a bigger re-test if ever revisited, **deliberately deferred
 per user request, do not re-run without asking**), v15 B1+B2
 `WIDER_3BET_VS_LOOSE`+`SIZE_UP_ON_TURN` (+1.62 @ 500k, inside CI, sign
-flipped vs its original 80k run — looks like noise around zero), v19, v21
-`SQUEEZE_WIDER_RANGE`/`SQUEEZE_SIZE_UP_PER_CALLER`, v22
-`VALUE_RAISE_FACING_BET` (measured WORSE, -9.66 bb/100).
+flipped vs its original 80k run — looks like noise around zero), v16 C1
+`ISO_RAISE_OVER_LIMPERS` (later full-model ablation `-0.60 +/- 0.99`, no
+proven benefit), v19 hero pot damping (later full-model ablation measured
+removing it much better, `+72.06 +/- 6.94`), v21 `SQUEEZE_WIDER_RANGE`/
+`SQUEEZE_SIZE_UP_PER_CALLER`, v22 `VALUE_RAISE_FACING_BET` (measured WORSE,
+-9.66 bb/100).
 
 **Pattern worth remembering**: three separate "widen a range because a
 population frequency table says so" theories (v9, v14, v15/A1+A2/B1+B2) have
@@ -166,7 +168,7 @@ the full-model-minus-one-rule batch. That ablation script defaults
 for where appropriate (e.g. Nit-only for `STEAL_WIDER_VS_NIT`); read those
 results as conditional EV in the target spot, not population-weighted EV.
 
-Rule checks now have a separate `rXX-*` numbering for current full-model
+Rule checks now have a separate `rXX-*` numbering for tracked full-model
 ablation units. The old `vXX-*` names are historical/version labels and remain
 as aliases where useful, but the ablation batch should use the contiguous rule
 IDs:
@@ -185,7 +187,7 @@ IDs:
 | `r10-donk-bluff-vs-tight` | `v17-donk-bluff` | `DONK_BLUFF_VS_TIGHT` |
 | `r11-hero-pot-damping` | `v19-hero-pot-damping` | `HERO_PROGRESSIVE_POT_DAMPING` |
 
-This list covers the current ablation-supported active rule units. Older
+This list covers the current ablation-supported tracked rule units. Older
 historical ideas such as early core opening/calling changes are not separate
 `rXX` checks until the probe can disable them as explicit rule units.
 
@@ -203,10 +205,10 @@ population-weighted EV.
 | `r05-steal-wide-vs-nit` | Nit | `-27.55 +/- 1.81` | `confirmed_negative` | keep |
 | `r06-size-up-vs-nit-tag` | Nit/TAG | `-3.33 +/- 0.94` | `confirmed_negative` | keep |
 | `r07-wider-3bet-vs-loose` | Maniac/Station | `-9.87 +/- 3.98` | `confirmed_negative` | keep |
-| `r08-size-up-turn` | population | `+0.46 +/- 0.59` | `inconclusive_small_effect` | no proven benefit |
-| `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | no proven benefit |
+| `r08-size-up-turn` | population | `+0.46 +/- 0.59` | `inconclusive_small_effect` | disabled, no proven benefit |
+| `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | disabled, no proven benefit |
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
-| `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | likely harmful; disabling should be tested/applied next |
+| `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
 
 Logs backing the final four-row update:
 `/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows
@@ -234,6 +236,12 @@ tweak" pattern above as the guide):
    card-removal effects, session-length/tilt dynamics already computed in
    the Analysis repo but not wired in, sample-size-weighted trust in a
    given opponent's archetype read.
+
+Follow-up research request to preserve: test whether players change style
+after getting coolered/sucked out on or running badly. Look for increased
+impulsiveness: higher VPIP/PFR/3bet, bigger bets, thinner calls, more bluffing,
+or faster stack-off lines in the next N hands after a bad-beat/run-bad event.
+If real, derive an exploitable rule rather than assuming generic "tilt."
 
 Full category list (game state, money, action history, opponent stats,
 cards, board, timing, session/meta) is worth re-deriving fresh if picked

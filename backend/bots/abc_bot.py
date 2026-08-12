@@ -474,6 +474,16 @@ script's docstring). Revision history, each one a real measured finding:
   it plays" is the more consistently productive direction this file's own
   history points to.
 
+  2026-08-12 full-model ablation update: the newer chance-enumeration probe
+  compared today's full strategy against "full minus one rule" rather than
+  testing historical add-one deltas. That supersedes some old keep-on-faith
+  defaults: SIZE_UP_ON_TURN was tiny/noisy (+0.46 +/-0.59 when removed),
+  ISO_RAISE_OVER_LIMPERS was tiny/noisy (-0.60 +/-0.99 when removed), and
+  HERO_PROGRESSIVE_POT_DAMPING looked actively harmful (+72.06 +/-6.94 when
+  removed). Those three now ship False. DONK_BLUFF_VS_TIGHT stayed good
+  (-11.90 +/-4.22 when removed), and opponent-aware loose calls stayed very
+  large (-77.94 +/-10.75 when removed).
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -486,7 +496,9 @@ strategy card, not just inferred from code):
       (v29, ISO_WIDER_RANGE_OVER_LIMPERS, untested) the same widened range
       STEAL_WIDER_VS_NIT uses if at least one player has already limped in
       -- a limper has shown a weak/speculative hand, isolate them wider,
-      not just for more money (see ISO_RAISE_OVER_LIMPERS just below).
+      not just for more money. The old bigger-over-limpers sizing rule
+      (ISO_RAISE_OVER_LIMPERS) is currently disabled by the 2026-08-12
+      full-model ablation result.
       Else fold.
 
   PREFLOP, facing a raise (any number of raises deep):
@@ -698,7 +710,9 @@ ASSUMED_VALUE_HAND_EQUITY = 0.75  # disclosed, single-number approximation of "h
 # monster-pot fix, hero side -- see choose_abc_action's
 # HERO_PROGRESSIVE_POT_DAMPING comment. Same shape/rationale as behavior_
 # clone.py's PROGRESSIVE_POT_DAMPING, applied to hero's own value-bet sizing.
-HERO_PROGRESSIVE_POT_DAMPING = True
+# 2026-08-12 full-model ablation measured this as harmful:
+# without_rule - full_model = +72.06 +/- 6.94 bb/100, so ship it off.
+HERO_PROGRESSIVE_POT_DAMPING = False
 HERO_POT_DAMPING_START_BB = 5.0
 HERO_POT_DAMPING_FULL_BB = 18.0
 HERO_POT_DAMPING_FLOOR_FRAC = 0.05
@@ -711,7 +725,7 @@ HERO_POT_DAMPING_FLOOR_FRAC = 0.05
 # CBET is flop-only), there's no reason to undersize there: reuse the same
 # BIG_VALUE_SIZING_POT_FRACTION tier on the turn regardless of opponent
 # archetype, rather than adding a third sizing number to keep this simple.
-SIZE_UP_ON_TURN = True  # flip False to A/B-test against the flat standard-fraction baseline
+SIZE_UP_ON_TURN = False  # full-model ablation: +0.46 +/- 0.59, no proven benefit
 
 # v23, two more sizing-by-context theories (2026-08-11, sourced from
 # published exploitative-sizing strategy, not read off a real-data table --
@@ -736,7 +750,7 @@ SIZE_UP_ON_WET_BOARD = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of sta
 # out anyone left to act. This is a standard-theory sizing convention, not a
 # number fit to a specific measured breakeven point (unlike A2/B2's
 # archetype-table-derived sizes) -- flagged as such.
-ISO_RAISE_OVER_LIMPERS = True  # flip False to A/B-test against the flat OPEN_SIZING_BB baseline
+ISO_RAISE_OVER_LIMPERS = False  # full-model ablation: -0.60 +/- 0.99, no proven benefit
 ISO_SIZING_PER_LIMPER_BB = 1.0
 
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above

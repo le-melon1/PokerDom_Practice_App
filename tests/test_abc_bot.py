@@ -811,11 +811,11 @@ def test_value_raises_two_pair_facing_a_bet_when_flag_is_flipped_on(monkeypatch)
 
 
 def test_value_raise_sizing_is_damped_in_an_already_big_pot_when_flag_is_flipped_on(monkeypatch):
-    # Same very-strong hand and bet, flag on, damping left ON (the default) --
-    # only checks the mechanism composes (raises, sized below the undamped
-    # 3x) rather than hardcoding the damped number, since it depends on the
-    # module's damping constants staying exactly as they are today.
+    # Same very-strong hand and bet, both gated flags flipped on. Damping now
+    # defaults off after the 2026-08-12 ablation result, but the mechanism
+    # stays testable for anyone who wants to re-check it later.
     monkeypatch.setattr(abc_bot, "VALUE_RAISE_FACING_BET", True)
+    monkeypatch.setattr(abc_bot, "HERO_PROGRESSIVE_POT_DAMPING", True)
     hand = _hero_facing_a_flop_bet_from_bb()
     hand.players[4].hole_cards = ["9s", "6s"]
     action, amount = choose_abc_action(hand, 4)

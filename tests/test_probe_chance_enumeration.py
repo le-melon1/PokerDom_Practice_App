@@ -78,10 +78,10 @@ def test_v9_historical_probe_is_rejected_because_opponent_awareness_is_always_on
 
 
 def test_ablation_compares_current_full_model_to_rule_removed():
-    comparison = probe._build_comparison("v16-iso-limpers", "ablation")
+    comparison = probe._build_comparison("v17-donk-bluff", "ablation")
 
-    assert comparison.baseline["ISO_RAISE_OVER_LIMPERS"] is True
-    assert comparison.treatment["ISO_RAISE_OVER_LIMPERS"] is False
+    assert comparison.baseline["DONK_BLUFF_VS_TIGHT"] is True
+    assert comparison.treatment["DONK_BLUFF_VS_TIGHT"] is False
     assert "without rule - full" in comparison.label
 
 
@@ -132,10 +132,10 @@ def test_rule_ids_match_legacy_v_aliases_for_same_flags():
 
 
 def test_ablation_can_use_new_rule_ids():
-    comparison = probe._build_comparison("r09-iso-raise-limpers", "ablation")
+    comparison = probe._build_comparison("r10-donk-bluff-vs-tight", "ablation")
 
-    assert comparison.baseline["ISO_RAISE_OVER_LIMPERS"] is True
-    assert comparison.treatment["ISO_RAISE_OVER_LIMPERS"] is False
+    assert comparison.baseline["DONK_BLUFF_VS_TIGHT"] is True
+    assert comparison.treatment["DONK_BLUFF_VS_TIGHT"] is False
 
 
 def test_parse_archetypes_rejects_unknown_values():
@@ -154,6 +154,12 @@ def test_conditioned_probe_state_restricts_turnover_archetypes():
 
 def test_squeeze_wider_range_default_matches_unconfirmed_v21_result():
     assert abc_bot.SQUEEZE_WIDER_RANGE is False
+
+
+def test_unproven_or_harmful_ablation_rules_default_off():
+    assert abc_bot.SIZE_UP_ON_TURN is False
+    assert abc_bot.ISO_RAISE_OVER_LIMPERS is False
+    assert abc_bot.HERO_PROGRESSIVE_POT_DAMPING is False
 
 
 def test_multiway_aware_is_recomputed_from_subflags():

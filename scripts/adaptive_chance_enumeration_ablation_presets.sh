@@ -28,10 +28,7 @@ PRESETS=(
   r05-steal-wide-vs-nit
   r06-size-up-vs-nit-tag
   r07-wider-3bet-vs-loose
-  r08-size-up-turn
-  r09-iso-raise-limpers
   r10-donk-bluff-vs-tight
-  r11-hero-pot-damping
 )
 if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
   read -r -a PRESETS <<< "$PRESETS_OVERRIDE"
