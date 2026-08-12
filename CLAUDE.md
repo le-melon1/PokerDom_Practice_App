@@ -217,7 +217,7 @@ population-weighted EV.
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
 | `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97`; best params `+22.54 +/- 4.77` | `confirmed_positive` for 0.85/5.5+1.5 | enabled |
-| `r13-shove-aa-kk-vs-3bet-plus` | population | not run yet | candidate | test next |
+| `r13-shove-aa-kk-vs-3bet-plus` | population | `0 divergent / 50k hands even with hero forced to AA/KK` | `untestable_by_self_play` | see note below |
 | `r14-bluff-3bet-vs-tight` | Nit/TAG/LAG | `+1.80` at 2M hands/arm | confirmed in session sim | enabled |
 
 Logs backing the final four-row update:
@@ -237,6 +237,64 @@ variant was `0.85x` normal open VPIP, `5.5bb + 1.5bb/limper`, at
 open range and only added a small sizing bump over limpers. `r12` now uses
 85% of the normal open VPIP and raises to `5.5bb + 1.5bb/limper`, targeting
 a lower multiway rate rather than simply adding price.
+
+### v25-v30 + r13 confirmatory results (2026-08-12, later session) and the new hero-hand-filter tool
+
+Ran `scripts/adaptive_chance_enumeration_confirm_presets.sh` with
+`PRESETS_OVERRIDE` limited to v25-v30 + r13 (the "built but not yet run"
+set from the table above). Results, historical comparison unless noted
+(log: `/tmp/adaptive_chance_enumeration_20260812_175150.log`):
+
+| Preset | Enum delta bb/100 | Stop/status |
+| --- | ---: | --- |
+| v25-barrel-bluff | `+0.97 +/- 0.65` | `inconclusive_small_effect` (leans real, not confirmed) |
+| v26-fold-premium-extreme | `0 divergent / 50k hands` | see fix below, re-running |
+| v27-river-overbet | n=10000, 33 divergent | `inconclusive_small_effect` |
+| v28-optimal-sizing | `-0.55 +/- 0.85` | `inconclusive_small_effect` |
+| **v29-iso-wider-range** | **`+18.25 +/- 5.10`** | **`confirmed_positive`** -- real, large, keep enabled |
+| v30-size-scaled-call | `0 divergent / 50k hands` | see finding below |
+| r13-shove-aa-kk-vs-3bet-plus | `0 divergent / 50k hands, even with hero forced to AA/KK` | `untestable_by_self_play`, see below |
+
+**New tool: `--hero-hand-filter`** (`scripts/probe_chance_enumeration.py`,
+commit `58f1870`). Rules gated on a specific hero hand (v26/r15v-fold-*:
+QQ+/AK is ~1.8% of hands; r13/r18v-shove-*: AA/KK) were burning their whole
+`max_zero_divergent_hands` budget on hands that could never trigger the
+rule. New `_pick_hero_hand_swap`/`_apply_hero_hand_swap` force-deal hero's
+hole cards to match a target notation set (swapped in from the still-
+undealt deck, same technique as the existing `_force_next_board_card` for
+board cards), identically on both the baseline and treatment hand so the
+paired comparison stays valid. Auto-inferred from
+`FOLDABLE_PREMIUM_VS_EXTREME_AGGRO` for v26/r15v-fold-*; pass
+`--hero-hand-filter AA,KK` explicitly for r13/r18v-shove-* (different
+gating flag, `SHOVE_VS_3BET_PLUS_RANGE`). Verified correct: 200/200
+forced hands matched the target notation, no duplicate cards, base/
+treatment hands identical.
+
+**r13/r18v-shove-* real finding, not a bug**: even with hero's hand
+FORCED to AA/KK, still 0 divergent hands over 50k. Root cause: the rule
+only fires facing `n_raises>=2` -- for HERO to reach that node with
+AA/KK, an opponent must open, hero (holding forced AA/KK) must 3-bet, AND
+then that SAME hand needs a 4-bet from someone else, before hero's 3-bet
+is the action facing a fold/call. Two independent rare opponent actions
+compounding (this population barely 3-bets at all, 2-5% of raise
+responses per Tier 2 -- 4-betting is rarer still) -- this spot may be
+close to un-hittable via self-play sampling even with card-forcing.
+Confirming it for real would need conditioning on the OPPONENT's action
+too (force an opener + a 4-bettor), not just hero's cards -- bigger lift,
+not done yet.
+
+**v30 finding, needs investigation**: `SIZE_SCALED_CALL_RANGE` also hit 0
+divergent hands over 50k with NO hero-hand-filter applied (it's not a
+hero-hand-strength-gated rule, so this isn't the same fix) -- worth
+checking whether the flag is actually reachable in `choose_abc_action`'s
+control flow before assuming it's just rare.
+
+v26 (and the r15v-fold-* variants) are queued to re-run with the new
+filter via `scripts/remaining_variants_confirm.sh`, along with r16v-*
+(limp behind range tiers), r17v (call range by raiser position), r18v-*
+(shove range tiers, same rarity risk as r13), and r19v-* (BB defend vs
+steal tiers) -- none of these had been run at all before this session.
+Check `/tmp/remaining_variants_*.log` for the latest results.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
