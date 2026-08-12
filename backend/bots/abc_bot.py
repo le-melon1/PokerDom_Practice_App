@@ -1021,11 +1021,34 @@ VALUE_RAISE_TRIPS_OR_BETTER_ONLY = False
 # RESULT (scripts/simulate_abc_bot.py --overbet-fold, 30k hands/arm, real
 # rake, ground-truth archetypes, same seed): +0.86 bb/100 (58.22 vs 57.35,
 # CI +/-6.39 / +/-6.45) -- well inside the ~9.0 combined noise band, NOT a
-# demonstrated effect either direction. Made-hand calls being bet-size-
-# blind (unlike wizard_like/the CFR solver, which both DO use bet size --
-# see live_ev.py) turned out not to be costing this bot anything measurable
-# against this population at the one threshold tested (pot-sized bet).
-# Shipped False, same standing policy as this file's other unproven flags.
+# demonstrated effect either direction. **THIS RESULT IS NOW KNOWN INVALID**
+# (see 2026-08-12 bug below) -- both arms of that A/B test behaved
+# identically because the fold condition literally could never fire, so
+# "no demonstrated effect" was comparing two copies of the same strategy,
+# not a real neutral finding.
+#
+# 2026-08-12 BUG (fixed in choose_abc_action): the fold condition compared
+# to_call against a `pot_before` that already included the opponent's
+# current bet -- to_call/pot_before is algebraically bet/(pot_before_bet+
+# bet), which can never reach or exceed 1.0 for any finite bet. A
+# 300,000-hand probe confirmed exactly zero divergent hands. Fixed by
+# comparing against the pot as it stood BEFORE the bet instead.
+#
+# 2026-08-12 FOLLOW-UP, after the fix: re-tested at 50k hands, STILL zero
+# divergent hands -- but this time confirmed as a real structural fact,
+# not a bug. Direct instrumentation of 15,000 hands found 44 genuine
+# postflop overbet-facing spots, and in ALL 44 hero held zero pair (air).
+# Why: this bot always value-bets any made hand the instant it's checked
+# to (`should_bet = made or ...` in the to_call<=0 branch above) -- so the
+# only version of hero that ever reaches "checked, then faced a bet" on a
+# given street is, by the bot's own consistent policy, exactly the
+# sub-population that had no hand to bet with in the first place. A
+# made-but-not-very-strong hand facing an overbet requires hero to have
+# passively checked a real hand, which this bot's architecture doesn't
+# allow. FOLD_TOP_PAIR_VS_OVERBET targets a scenario this bot's own other
+# rules make nearly unreachable -- not a promising avenue to keep
+# revisiting without first relaxing the "always bet a made hand" rule
+# itself (untested, bigger change, not attempted).
 FOLD_TOP_PAIR_VS_OVERBET = False
 OVERBET_POT_FRACTION = 1.0  # standard-theory "a bet bigger than the pot" threshold, not fit to a measured breakeven point
 
