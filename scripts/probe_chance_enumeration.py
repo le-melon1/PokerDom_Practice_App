@@ -554,7 +554,7 @@ def _force_next_board_card(hand, card_str: str) -> bool:
 
 
 def _pick_hero_hand_swap(
-    hand, notations: set[str], hand_index: int
+    hand, notations: set[str], hand_index: int, base_seed: int = 42
 ) -> tuple[list[str], list[str]] | None:
     """Finds a replacement for hero's already-dealt hole cards matching one
     of `notations` (e.g. {"QQ","AKs","AKo"}), sourced from hand.deck.cards
@@ -569,7 +569,7 @@ def _pick_hero_hand_swap(
     common-random-numbers discipline like every other draw in this file) --
     NOT the bare global `random` module, which would make reruns
     unreproducible."""
-    rng = random.Random(_common_seed(42, hand_index, HERO_HAND_SEED_STREAM))
+    rng = random.Random(_common_seed(base_seed, hand_index, HERO_HAND_SEED_STREAM))
     remaining = hand.deck.cards
     for notation in rng.sample(sorted(notations), len(notations)):
         if len(notation) == 2:  # pocket pair, e.g. "QQ"
@@ -634,6 +634,7 @@ def _choose_and_apply(
     guard: int,
     turnover: TableTurnover,
     flag_state: dict[str, object],
+    base_seed: int = 42,
 ) -> tuple[str, float | None]:
     if seat == HERO_SEAT:
         _apply_flag_state(flag_state)
@@ -641,7 +642,7 @@ def _choose_and_apply(
         action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
     else:
         archetype = turnover.archetype_for(seat)
-        bot_seed = _common_seed(42, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
+        bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
         action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
 
     try:
@@ -658,6 +659,7 @@ def _continue_to_finish(
     turnover: TableTurnover,
     flag_state: dict[str, object],
     branch_id: int = 0,
+    base_seed: int = 42,
 ) -> float | None:
     guard = 0
     while not hand.finished and guard < 500:
@@ -670,7 +672,7 @@ def _continue_to_finish(
             action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
         else:
             archetype = turnover.archetype_for(seat)
-            bot_seed = _common_seed(42, hand_index, BOT_ACTION_SEED_STREAM, guard, seat, branch_id)
+            bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat, branch_id)
             action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
         try:
             hand.apply_action(seat, action, amount)
@@ -702,12 +704,13 @@ def _run_probe_chunk(
     enum_deltas: list[float],
     branch_counts: list[int],
     hero_hand_filter: set[str] | None = None,
+    base_seed: int = 42,
 ) -> int:
     divergent = 0
     for hand_index in range(start_hand_index, start_hand_index + n_hands):
         _reset_stacks(base_table)
         _reset_stacks(treat_table)
-        deck_seed = _common_seed(42, hand_index, DECK_SEED_STREAM)
+        deck_seed = _common_seed(base_seed, hand_index, DECK_SEED_STREAM)
         base_hand = base_table.start_new_hand(deck_seed=deck_seed)
         treat_hand = treat_table.start_new_hand(deck_seed=deck_seed)
 
@@ -719,7 +722,7 @@ def _run_probe_chunk(
             # treatment get the IDENTICAL forced cards (both dealt from the
             # same deck_seed, so their pre-swap decks match exactly) --
             # otherwise this wouldn't be a valid paired comparison anymore.
-            swap = _pick_hero_hand_swap(base_hand, hero_hand_filter, hand_index)
+            swap = _pick_hero_hand_swap(base_hand, hero_hand_filter, hand_index, base_seed)
             if swap is None:
                 continue
             new_cards, old_cards = swap
@@ -736,8 +739,8 @@ def _run_probe_chunk(
 
             base_before = copy.deepcopy(base_hand)
             treat_before = copy.deepcopy(treat_hand)
-            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, baseline_state)
-            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, treatment_state)
+            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, baseline_state, base_seed)
+            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, treatment_state, base_seed)
 
             same_action = base_action[0] == treat_action[0] and (base_action[1] == treat_action[1])
             if not same_action and base_seat == HERO_SEAT:
@@ -746,8 +749,8 @@ def _run_probe_chunk(
 
                 random_base = copy.deepcopy(base_hand)
                 random_treat = copy.deepcopy(treat_hand)
-                rb = _continue_to_finish(random_base, hand_index, base_turnover, baseline_state, branch_id=0)
-                rt = _continue_to_finish(random_treat, hand_index, treat_turnover, treatment_state, branch_id=0)
+                rb = _continue_to_finish(random_base, hand_index, base_turnover, baseline_state, branch_id=0, base_seed=base_seed)
+                rt = _continue_to_finish(random_treat, hand_index, treat_turnover, treatment_state, branch_id=0, base_seed=base_seed)
                 if rb is not None and rt is not None:
                     random_deltas.append(rt - rb)
 
@@ -759,8 +762,8 @@ def _run_probe_chunk(
                     t = copy.deepcopy(treat_hand)
                     _force_next_board_card(b, card_str)
                     _force_next_board_card(t, card_str)
-                    nb = _continue_to_finish(b, hand_index, base_turnover, baseline_state, branch_id=branch_id)
-                    nt = _continue_to_finish(t, hand_index, treat_turnover, treatment_state, branch_id=branch_id)
+                    nb = _continue_to_finish(b, hand_index, base_turnover, baseline_state, branch_id=branch_id, base_seed=base_seed)
+                    nt = _continue_to_finish(t, hand_index, treat_turnover, treatment_state, branch_id=branch_id, base_seed=base_seed)
                     if nb is not None and nt is not None:
                         branch_deltas.append(nt - nb)
                 if branch_deltas:
@@ -793,13 +796,15 @@ def _parse_archetypes(value: str | None) -> list[str] | None:
     return archetypes or None
 
 
-def _new_probe_state(allowed_archetypes: list[str] | None) -> tuple[Table, Table, TableTurnover, TableTurnover]:
+def _new_probe_state(
+    allowed_archetypes: list[str] | None, base_seed: int = 42
+) -> tuple[Table, Table, TableTurnover, TableTurnover]:
     bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     return (
         _make_table(),
         _make_table(),
-        TableTurnover(bot_seats, rng_seed=42, allowed_archetypes=allowed_archetypes),
-        TableTurnover(bot_seats, rng_seed=42, allowed_archetypes=allowed_archetypes),
+        TableTurnover(bot_seats, rng_seed=base_seed, allowed_archetypes=allowed_archetypes),
+        TableTurnover(bot_seats, rng_seed=base_seed, allowed_archetypes=allowed_archetypes),
     )
 
 
@@ -854,11 +859,12 @@ def run_probe(
     comparison_mode: Literal["current", "historical", "ablation"],
     allowed_archetypes: list[str] | None,
     hero_hand_filter: set[str] | None = None,
+    base_seed: int = 42,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
-    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes, base_seed)
     hero_hand_filter = _resolve_hero_hand_filter(comparison, hero_hand_filter)
 
     random_deltas: list[float] = []
@@ -880,13 +886,14 @@ def run_probe(
             enum_deltas,
             branch_counts,
             hero_hand_filter,
+            base_seed,
         )
     finally:
         _restore_flags(original)
 
     archetype_label = ",".join(allowed_archetypes) if allowed_archetypes else "population"
     hero_hand_label = ",".join(sorted(hero_hand_filter)) if hero_hand_filter else "any (natural incidence)"
-    print(f"comparison: {comparison.label}; archetypes={archetype_label}; hero_hand_filter={hero_hand_label}", flush=True)
+    print(f"comparison: {comparison.label}; archetypes={archetype_label}; hero_hand_filter={hero_hand_label}; base_seed={base_seed}", flush=True)
     _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
 
 
@@ -938,11 +945,12 @@ def run_adaptive_probe(
     max_divergent: int,
     allowed_archetypes: list[str] | None,
     hero_hand_filter: set[str] | None = None,
+    base_seed: int = 42,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
-    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes, base_seed)
     hero_hand_filter = _resolve_hero_hand_filter(comparison, hero_hand_filter)
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
@@ -957,7 +965,7 @@ def run_adaptive_probe(
         f"adaptive chance-enumeration: {label} ({preset}), "
         f"comparison={comparison.label}, "
         f"archetypes={archetype_label}, "
-        f"hero_hand_filter={hero_hand_label}, "
+        f"hero_hand_filter={hero_hand_label}, base_seed={base_seed}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
         f"max_zero_divergent_hands={max_zero_divergent_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
@@ -979,6 +987,7 @@ def run_adaptive_probe(
                 enum_deltas,
                 branch_counts,
                 hero_hand_filter,
+                base_seed,
             )
             n_hands += this_chunk
             random_delta, random_ci = _stats(random_deltas)
@@ -1046,6 +1055,18 @@ def main() -> None:
     parser.add_argument("--chunk-size", type=int, default=2_000)
     parser.add_argument("--min-divergent", type=int, default=30)
     parser.add_argument("--max-divergent", type=int, default=2_000)
+    parser.add_argument(
+        "--base-seed",
+        type=int,
+        default=42,
+        help=(
+            "base seed for deck deal / ML-bot decisions / turnover / hero-hand-filter draws "
+            "(everything derives from _common_seed(base_seed, ...)) -- every run in this file "
+            "defaulted to 42 until now; pass a different value for a genuinely independent "
+            "second sample, e.g. to cross-check a confirmed_positive/negative result the way "
+            "this project's own standard requires before calling something permanently confirmed"
+        ),
+    )
     args = parser.parse_args()
     preset = args.preset
     groups = _all_test_groups()
@@ -1073,9 +1094,10 @@ def main() -> None:
                 max_divergent=args.max_divergent,
                 allowed_archetypes=allowed_archetypes,
                 hero_hand_filter=hero_hand_filter,
+                base_seed=args.base_seed,
             )
         else:
-            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes, hero_hand_filter)
+            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes, hero_hand_filter, args.base_seed)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
