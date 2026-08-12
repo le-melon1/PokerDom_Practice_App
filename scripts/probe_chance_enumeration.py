@@ -41,7 +41,7 @@ from backend.bots.behavior_clone import choose_bot_action
 from backend.engine.cards_import import Card
 from backend.engine.hand import IllegalAction
 from backend.engine.table import Table
-from backend.sessions.live_dynamics import TableTurnover
+from backend.sessions.live_dynamics import ARCHETYPE_POOL, TableTurnover
 from scripts.simulate_abc_bot import (
     BOT_ACTION_SEED_STREAM,
     DECK_SEED_STREAM,
@@ -451,12 +451,23 @@ def _run_probe_chunk(
     return divergent
 
 
-def _new_probe_state() -> tuple[Table, Table, TableTurnover, TableTurnover]:
+def _parse_archetypes(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    archetypes = [item.strip() for item in value.split(",") if item.strip()]
+    unknown = sorted(set(archetypes) - set(ARCHETYPE_POOL))
+    if unknown:
+        raise ValueError(f"unknown archetypes: {', '.join(unknown)}; options: {', '.join(ARCHETYPE_POOL)}")
+    return archetypes or None
+
+
+def _new_probe_state(allowed_archetypes: list[str] | None) -> tuple[Table, Table, TableTurnover, TableTurnover]:
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     return (
         _make_table(),
         _make_table(),
-        TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42),
-        TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42),
+        TableTurnover(bot_seats, rng_seed=42, allowed_archetypes=allowed_archetypes),
+        TableTurnover(bot_seats, rng_seed=42, allowed_archetypes=allowed_archetypes),
     )
 
 
@@ -488,11 +499,16 @@ def _original_state_for(comparison: ProbeComparison) -> dict[str, object]:
     return {name: getattr(abc_bot, name) for name in names if hasattr(abc_bot, name)}
 
 
-def run_probe(preset: str, n_hands: int, comparison_mode: Literal["current", "historical", "ablation"]) -> None:
+def run_probe(
+    preset: str,
+    n_hands: int,
+    comparison_mode: Literal["current", "historical", "ablation"],
+    allowed_archetypes: list[str] | None,
+) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
-    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
 
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
@@ -516,7 +532,8 @@ def run_probe(preset: str, n_hands: int, comparison_mode: Literal["current", "hi
     finally:
         _restore_flags(original)
 
-    print(f"comparison: {comparison.label}", flush=True)
+    archetype_label = ",".join(allowed_archetypes) if allowed_archetypes else "population"
+    print(f"comparison: {comparison.label}; archetypes={archetype_label}", flush=True)
     _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
 
 
@@ -563,11 +580,12 @@ def run_adaptive_probe(
     chunk_size: int,
     min_divergent: int,
     max_divergent: int,
+    allowed_archetypes: list[str] | None,
 ) -> None:
     _, label = _all_test_groups()[preset]
     comparison = _build_comparison(preset, comparison_mode)
     original = _original_state_for(comparison)
-    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state(allowed_archetypes)
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
     branch_counts: list[int] = []
@@ -575,9 +593,11 @@ def run_adaptive_probe(
     n_hands = 0
     t0 = time.perf_counter()
     stop_reason = None
+    archetype_label = ",".join(allowed_archetypes) if allowed_archetypes else "population"
     print(
         f"adaptive chance-enumeration: {label} ({preset}), "
         f"comparison={comparison.label}, "
+        f"archetypes={archetype_label}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
         f"max_zero_divergent_hands={max_zero_divergent_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
@@ -646,6 +666,7 @@ def main() -> None:
         ),
     )
     parser.add_argument("--adaptive", action="store_true", help="run chunks until precision/effect or hard-cap stop criteria are met")
+    parser.add_argument("--archetypes", help="comma-separated opponent archetypes to seat; omitted means the real population mix")
     parser.add_argument("--target-ci", type=float, default=1.0)
     parser.add_argument("--effect-ratio", type=float, default=0.5, help="confirmed when CI <= abs(delta) * this ratio")
     parser.add_argument("--min-hands", type=int, default=10_000)
@@ -660,6 +681,7 @@ def main() -> None:
     if preset not in groups:
         raise SystemExit(f"unknown preset {preset}; options: {', '.join(groups)}")
     try:
+        allowed_archetypes = _parse_archetypes(args.archetypes)
         if args.adaptive:
             run_adaptive_probe(
                 preset,
@@ -672,9 +694,10 @@ def main() -> None:
                 chunk_size=args.chunk_size,
                 min_divergent=args.min_divergent,
                 max_divergent=args.max_divergent,
+                allowed_archetypes=allowed_archetypes,
             )
         else:
-            run_probe(preset, args.n_hands, args.comparison)
+            run_probe(preset, args.n_hands, args.comparison, allowed_archetypes)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 

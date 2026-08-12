@@ -161,7 +161,10 @@ at-introduction context before applying treatment; `--comparison ablation`
 uses today's full model as baseline and disables one rule in treatment, so
 its delta is `without_rule - full_model` (negative means the removed rule was
 helping). Use `scripts/adaptive_chance_enumeration_ablation_presets.sh` for
-the full-model-minus-one-rule batch.
+the full-model-minus-one-rule batch. That ablation script defaults
+`CONDITION_ARCHETYPES=auto`, seating only the archetypes a rule is designed
+for where appropriate (e.g. Nit-only for `STEAL_WIDER_VS_NIT`); read those
+results as conditional EV in the target spot, not population-weighted EV.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 

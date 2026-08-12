@@ -19,6 +19,7 @@ MAX_ZERO_DIVERGENT_HANDS="${MAX_ZERO_DIVERGENT_HANDS:-50000}"
 CHUNK_SIZE="${CHUNK_SIZE:-2000}"
 MIN_DIVERGENT="${MIN_DIVERGENT:-30}"
 MAX_DIVERGENT="${MAX_DIVERGENT:-2000}"
+ARCHETYPES="${ARCHETYPES:-}"
 LOG=/tmp/adaptive_chance_enumeration_$(date +%Y%m%d_%H%M%S).log
 
 PRESETS=(
@@ -50,9 +51,13 @@ if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
 fi
 
 echo "=== adaptive chance-enumeration run started $(date) ===" | tee -a "$LOG"
-echo "target_ci=$TARGET_CI effect_ratio=$EFFECT_RATIO comparison=$COMPARISON min_hands=$MIN_HANDS max_hands=$MAX_HANDS max_zero_divergent_hands=$MAX_ZERO_DIVERGENT_HANDS chunk_size=$CHUNK_SIZE min_divergent=$MIN_DIVERGENT max_divergent=$MAX_DIVERGENT" | tee -a "$LOG"
+echo "target_ci=$TARGET_CI effect_ratio=$EFFECT_RATIO comparison=$COMPARISON archetypes=${ARCHETYPES:-population} min_hands=$MIN_HANDS max_hands=$MAX_HANDS max_zero_divergent_hands=$MAX_ZERO_DIVERGENT_HANDS chunk_size=$CHUNK_SIZE min_divergent=$MIN_DIVERGENT max_divergent=$MAX_DIVERGENT" | tee -a "$LOG"
 
 for preset in "${PRESETS[@]}"; do
+  archetypes_arg=()
+  if [[ -n "$ARCHETYPES" ]]; then
+    archetypes_arg=(--archetypes "$ARCHETYPES")
+  fi
   preset_comparison="$COMPARISON"
   if [[ "$COMPARISON" == "historical" && "$preset" == "v9-wide-3bet" ]]; then
     preset_comparison="current"
@@ -61,6 +66,7 @@ for preset in "${PRESETS[@]}"; do
   echo "### $preset ($preset_comparison comparison) ###" | tee -a "$LOG"
   nice -n 15 .venv/bin/python3 scripts/probe_chance_enumeration.py \
     --comparison "$preset_comparison" \
+    "${archetypes_arg[@]}" \
     --adaptive "$preset" \
     --target-ci "$TARGET_CI" \
     --effect-ratio "$EFFECT_RATIO" \

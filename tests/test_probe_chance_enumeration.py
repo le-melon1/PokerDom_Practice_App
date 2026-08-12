@@ -92,6 +92,20 @@ def test_ablation_can_disable_the_v10_opponent_awareness_pseudo_rule():
     assert comparison.treatment["OPPONENT_AWARE_ARCHETYPES"] is False
 
 
+def test_parse_archetypes_rejects_unknown_values():
+    assert probe._parse_archetypes("Nit,TAG") == ["Nit", "TAG"]
+    with pytest.raises(ValueError, match="unknown archetypes"):
+        probe._parse_archetypes("Nit,Wizard")
+
+
+def test_conditioned_probe_state_restricts_turnover_archetypes():
+    _, _, base_turnover, treat_turnover = probe._new_probe_state(["Nit"])
+
+    bot_seats = [seat for seat in base_turnover.occupants]
+    assert {base_turnover.archetype_for(seat) for seat in bot_seats} == {"Nit"}
+    assert {treat_turnover.archetype_for(seat) for seat in bot_seats} == {"Nit"}
+
+
 def test_squeeze_wider_range_default_matches_unconfirmed_v21_result():
     assert abc_bot.SQUEEZE_WIDER_RANGE is False
 
