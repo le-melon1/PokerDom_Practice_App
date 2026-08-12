@@ -420,6 +420,40 @@ probably real but smaller than it first looked. v28 needs more data
 before it's trustworthy -- don't cite the `+2.25` number on its own
 again without the caveat above.
 
+**v28, third sample** (base_seed=314159, tighter target_ci=0.5): `+4.88
++/- 2.21`, confirmed_positive on its own. All three v28 samples now:
+seed42 `+2.25+/-1.12`, seed777 `+0.82+/-0.96`, seed314159 `+4.88+/-2.21`
+-- all positive in direction, but pairwise inconsistent with each other
+at the combined-CI-in-quadrature standard (e.g. seed777 vs seed314159:
+combined CI 2.41, delta between them 4.06). Honest read: v28 very likely
+has a real positive effect (never once measured negative across three
+independent samples), but the true magnitude is noisy/uncertain --
+somewhere in the +1 to +5 bb/100 range, not a single settled number.
+Would need either a much larger single run or a pooled multi-seed
+analysis to pin down precisely. Treat as "probably worth enabling,
+magnitude unclear" rather than citing any one of these three numbers.
+
+### v23-overbet-fold: fully resolved, real structural finding (not the historical-baseline bug)
+
+Also affected by tonight's historical-baseline bug, but re-testing after
+that fix STILL showed zero divergent hands (300,000-hand run). Root-
+caused separately: `FOLD_TOP_PAIR_VS_OVERBET`'s own condition was
+independently, mathematically broken (`pot_before` already included the
+opponent's bet, so `to_call/pot_before > 1.0` could never be true for
+any finite bet -- see `abc_bot.py`'s `FOLD_TOP_PAIR_VS_OVERBET` comment,
+fixed in commit `82d2567`). Even after fixing the formula (verified
+correct via a direct synthetic test), a 50k-hand re-test STILL showed
+zero divergent hands -- but this time confirmed as a genuine structural
+fact via direct instrumentation: of 44 real postflop overbet-facing
+spots found in 15,000 hands, hero held zero pair in ALL 44. This bot
+always value-bets any made hand the instant it's checked to, so the
+only hero that ever reaches "checked, then faced a bet" is exactly the
+sub-population that had no hand to bet with in the first place --
+FOLD_TOP_PAIR_VS_OVERBET targets a scenario this bot's own other rules
+make nearly unreachable by construction, not a sampling problem. Two
+real, independent bugs found and fixed on this one flag tonight; the
+final answer is a structural non-starter, not "needs more hands."
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
