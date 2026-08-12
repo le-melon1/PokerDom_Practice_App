@@ -251,11 +251,13 @@ def test_folds_a_standard_call_range_hand_to_a_big_raise_when_flag_on():
 
 
 def test_still_calls_a_standard_sized_raise_with_the_standard_range_when_flag_on():
-    # A raise between the two thresholds (SMALL/BIG_RAISE_BB_THRESHOLD)
-    # uses the plain standard call range, same as the flag being off.
+    # A raise strictly between the two thresholds (SMALL/BIG_RAISE_BB_
+    # THRESHOLD, 2.5/3.0bb -- recalibrated 2026-08-12 to bracket this
+    # population's real ~2.35bb/~3.25bb sizing clusters, see the constants'
+    # comment) uses the plain standard call range, same as the flag off.
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
-    hand.apply_action(4, "raise", amount=5.0)  # a normal, standard-sized open
+    hand.apply_action(4, "raise", amount=5.5)  # 2.75bb -- strictly inside the dead zone
     actor = hand.current_actor()
     hand.players[actor].hole_cards = ["Jd", "Td"]  # JTs -- in the standard call range
     abc_bot.SIZE_SCALED_CALL_RANGE = True

@@ -623,8 +623,20 @@ CALL_VPIP_BY_POSITION = {pos: vpip * 0.5 for pos, vpip in OPEN_VPIP_BY_POSITION.
 # ranges, etc.) -- picked by comparing the actual raise-to size (in bb)
 # against two thresholds, not a continuous function of size.
 SIZE_SCALED_CALL_RANGE = False  # flip True to A/B-test against the baseline (one fixed call range regardless of raise size)
-SMALL_RAISE_BB_THRESHOLD = 2.0  # raise-to at or below this many bb -- wider call range
-BIG_RAISE_BB_THRESHOLD = 4.0  # raise-to at or above this many bb -- narrower call range
+# 2026-08-12: original thresholds (2.0 / 4.0) were textbook picks, not
+# checked against this population's actual sizing -- confirmed DEAD:
+# scripts/probe_chance_enumeration.py's r30 ablation test found ZERO
+# divergent hands over 50k, and a direct measurement of what hero actually
+# faces (949 "facing exactly one raise" preflop spots, 15k-hand sample)
+# showed the ML bots' open sizing is nearly bimodal-deterministic, not a
+# spread: p10 through p90 all sit at exactly 2.35bb, then a small tail
+# jumps straight to 3.25bb (p95/p99) -- NOTHING ever lands at <=2.0 or
+# >=4.0, so SIZE_SCALED_CALL_RANGE could never do anything against this
+# specific opponent pool regardless of sample size. Recalibrated to
+# bracket the two real observed clusters instead of a theoretical
+# min-raise/big-raise split -- re-test pending with these values.
+SMALL_RAISE_BB_THRESHOLD = 2.5  # raise-to at or below this many bb -- wider call range (catches the ~2.35bb cluster)
+BIG_RAISE_BB_THRESHOLD = 3.0  # raise-to at or above this many bb -- narrower call range (catches the ~3.25bb cluster)
 CALL_VPIP_WIDE_MULTIPLIER = 1.3
 CALL_VPIP_NARROW_MULTIPLIER = 0.7
 
