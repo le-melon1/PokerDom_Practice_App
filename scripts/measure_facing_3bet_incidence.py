@@ -32,6 +32,8 @@ def main():
     table = Table(small_blind=1.0, big_blind=2.0, max_seats=MAX_SEATS, rake_percent=0.05, rake_cap_bb=5.0)
     bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     turnover = TableTurnover(bot_seats, rng_seed=42)
+    for seat in range(1, MAX_SEATS + 1):
+        table.add_player(seat=seat, name=("Hero" if seat == HERO_SEAT else f"Bot{seat}"), stack=STARTING_STACK)
 
     facing_2plus_raises = 0
     facing_2plus_with_premium = 0
@@ -56,15 +58,16 @@ def main():
             seat = hand.current_actor()
             if seat is None:
                 break
-            if seat == HERO_SEAT and hand.street == "preflop":
-                n_raises = sum(1 for a in hand.actions if a.street == "preflop" and a.action == "raises")
-                if n_raises >= 2:
-                    facing_2plus_raises += 1
-                    notation = _hand_notation(hand.players[HERO_SEAT].hole_cards)
-                    if notation in PREMIUM_VS_3BET:
-                        facing_2plus_with_premium += 1
-                    if notation in ("AA", "KK"):
-                        facing_2plus_with_aa_kk += 1
+            if seat == HERO_SEAT:
+                if hand.street == "preflop":
+                    n_raises = sum(1 for a in hand.actions if a.street == "preflop" and a.action == "raises")
+                    if n_raises >= 2:
+                        facing_2plus_raises += 1
+                        notation = _hand_notation(hand.players[HERO_SEAT].hole_cards)
+                        if notation in PREMIUM_VS_3BET:
+                            facing_2plus_with_premium += 1
+                        if notation in ("AA", "KK"):
+                            facing_2plus_with_aa_kk += 1
                 opponent_archetypes = {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
                 action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
             else:
