@@ -49,6 +49,7 @@ from scripts.simulate_abc_bot import (
     HERO_HAND_SEED_STREAM,
     HERO_SEAT,
     MAX_SEATS,
+    OPPONENT_HAND_SEED_STREAM,
     PRESET_FLAG_GROUPS,
     RAKE_CAP_BB,
     RAKE_PERCENT,
@@ -554,9 +555,10 @@ def _force_next_board_card(hand, card_str: str) -> bool:
 
 
 def _pick_hero_hand_swap(
-    hand, notations: set[str], hand_index: int, base_seed: int = 42
+    hand, notations: set[str], hand_index: int, base_seed: int = 42, seat: int = HERO_SEAT,
+    seed_stream: int = HERO_HAND_SEED_STREAM,
 ) -> tuple[list[str], list[str]] | None:
-    """Finds a replacement for hero's already-dealt hole cards matching one
+    """Finds a replacement for `seat`'s already-dealt hole cards matching one
     of `notations` (e.g. {"QQ","AKs","AKo"}), sourced from hand.deck.cards
     (the remaining, undealt pool) -- same swap principle as
     _force_next_board_card, applied to hole cards instead of the board.
@@ -568,8 +570,12 @@ def _pick_hero_hand_swap(
     dealt to other seats). Deterministic per hand_index (own seed stream,
     common-random-numbers discipline like every other draw in this file) --
     NOT the bare global `random` module, which would make reruns
-    unreproducible."""
-    rng = random.Random(_common_seed(base_seed, hand_index, HERO_HAND_SEED_STREAM))
+    unreproducible. `seat`/`seed_stream` default to hero's own -- pass a
+    different seat (and a different seed_stream, so the draw doesn't
+    coincide with hero's own hand-forcing draw) to condition an OPPONENT's
+    hand instead, e.g. forcing a realistic reraising range onto whichever
+    seat force_opponent_reraise makes reraise."""
+    rng = random.Random(_common_seed(base_seed, hand_index, seed_stream))
     remaining = hand.deck.cards
     for notation in rng.sample(sorted(notations), len(notations)):
         if len(notation) == 2:  # pocket pair, e.g. "QQ"
@@ -577,7 +583,7 @@ def _pick_hero_hand_swap(
             candidates = [c for c in remaining if c.rank == rank]
             if len(candidates) >= 2:
                 chosen = rng.sample(candidates, 2)
-                return [str(c) for c in chosen], list(hand.players[HERO_SEAT].hole_cards)
+                return [str(c) for c in chosen], list(hand.players[seat].hole_cards)
             continue
         r1, r2, suited = notation[0], notation[1], notation[2] == "s"
         pairs = []
@@ -594,22 +600,23 @@ def _pick_hero_hand_swap(
                 pairs.append((c1, c2))
         if pairs:
             chosen = rng.choice(pairs)
-            return [str(c) for c in chosen], list(hand.players[HERO_SEAT].hole_cards)
+            return [str(c) for c in chosen], list(hand.players[seat].hole_cards)
     return None
 
 
-def _apply_hero_hand_swap(hand, new_cards: list[str], old_cards: list[str]) -> None:
+def _apply_hero_hand_swap(hand, new_cards: list[str], old_cards: list[str], seat: int = HERO_SEAT) -> None:
     """Applies an EXACT swap (by card string) computed elsewhere -- used to
-    mirror the same forced hero hand onto both the baseline and treatment
-    Hand objects, which are dealt from the same deck_seed and so have
-    identical remaining decks at this point."""
+    mirror the same forced hand onto both the baseline and treatment Hand
+    objects, which are dealt from the same deck_seed and so have identical
+    remaining decks at this point. `seat` defaults to hero's own; pass a
+    different seat to apply an opponent's forced hand instead."""
     remaining = hand.deck.cards
     for card_str in new_cards:
         for i, card in enumerate(remaining):
             if str(card) == card_str:
                 remaining.pop(i)
                 break
-    hand.players[HERO_SEAT].hole_cards = list(new_cards)
+    hand.players[seat].hole_cards = list(new_cards)
     remaining.extend(Card(c) for c in old_cards)
 
 
@@ -656,7 +663,29 @@ def _should_force_opponent_reraise(hand, seat: int) -> bool:
     return hand.current_actor() == seat
 
 
-def _force_reraise_action(hand, seat: int) -> tuple[str, float | None]:
+# 2026-08-13: a first version of force_opponent_reraise forced the ACTION
+# only, leaving the opponent's actual dealt cards untouched -- this creates
+# an artificially wide/weak "reraising range" (any random hand forced to
+# reraise, not a real hand-selected one), and hero's forced premium hand
+# crushed it far harder than it would a real opponent range (a smoke test
+# measured deltas in the THOUSANDS of bb/100, clearly not real -- see
+# CLAUDE.md's "r13/v26/..." section for the full story). Fixed by ALSO
+# forcing the reraiser's cards to a real 3-betting-tier range
+# (VALUE_3BET_WIDE: AA/KK/QQ/JJ/TT/AKs/AKo/AQs/AQo) -- not a perfect
+# per-archetype reraising range, but a real, standard-theory "hand strong
+# enough to 4-bet with" set, not an arbitrary one.
+OPPONENT_RERAISE_HAND_SET = abc_bot.VALUE_3BET_WIDE
+
+
+def _force_reraise_action(
+    hand, seat: int, hand_index: int, base_seed: int = 42
+) -> tuple[str, float | None]:
+    swap = _pick_hero_hand_swap(
+        hand, OPPONENT_RERAISE_HAND_SET, hand_index, base_seed, seat, OPPONENT_HAND_SEED_STREAM
+    )
+    if swap is not None:
+        new_cards, old_cards = swap
+        _apply_hero_hand_swap(hand, new_cards, old_cards, seat)
     legal = hand.legal_actions(seat)
     amount = legal["min_raise_to"]
     return "raise", amount
@@ -677,7 +706,7 @@ def _choose_and_apply(
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
     elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
-        action, amount = _force_reraise_action(hand, seat)
+        action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
     else:
         archetype = turnover.archetype_for(seat)
         bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
@@ -1121,15 +1150,20 @@ def main() -> None:
             "frequency is too low to naturally surface even across hundreds of thousands of "
             "hands (confirmed via r13: 0 divergent over 50k even with hero's cards forced to "
             "AA/KK). Applied identically to both baseline and treatment for a valid paired "
-            "comparison, same principle as --hero-hand-filter. KNOWN LIMITATION, unlike --hero-"
-            "hand-filter: the forced reraise isn't conditioned on the opponent actually holding "
-            "a real 4-betting-worthy hand (that would need forcing THEIR cards too, not built), "
-            "so it creates an artificially wide/weak reraising range -- a 2026-08-12 smoke test "
-            "measured deltas in the THOUSANDS of bb/100 (clearly not real), because hero's forced "
-            "premium hand crushes a random-strength forced range far harder than it would crush a "
-            "real, hand-selected 3-bet/4-bet range. Useful for confirming the DECISION POINT is "
-            "reachable and the rule's branch fires correctly -- NOT yet reliable for an actual "
-            "bb/100 magnitude claim. Don't report a number from this flag without noting the caveat."
+            "comparison, same principle as --hero-hand-filter. Opponent's cards are ALSO forced "
+            "(to VALUE_3BET_WIDE, a real premium 3-betting range -- OPPONENT_RERAISE_HAND_SET), "
+            "not just their action. READ THIS BEFORE TRUSTING A NUMBER: combined with "
+            "--hero-hand-filter, this pushes a spot real self-play reaches on well under 0.1% of "
+            "hands up to 60%+ of the SAMPLE -- smoke tests measured deltas in the THOUSANDS of "
+            "bb/100 (2026-08-12/13), which looked like a bug at first but isn't one: enum_delta "
+            "is the mean per-hand delta over ALL sampled hands (0.0 for every non-divergent one, "
+            "see _run_probe_chunk), so forcing a decision to occur ~1000x more often than reality "
+            "inflates its reported bb/100 contribution by roughly that same factor. The raw number "
+            "this flag produces is NOT a population bb/100 -- rescale it by (true incidence of the "
+            "targeted spot) / (this sample's forced incidence, printed as the divergent-hand "
+            "percentage) to get a real contribution estimate. True incidence isn't measured "
+            "precisely yet; until it is, treat this flag as confirming a rule's branch is reachable "
+            "and correctly ordered in EV sign, not as a literal magnitude."
         ),
     )
     args = parser.parse_args()
