@@ -841,7 +841,7 @@ WIDER_3BET_VS_LOOSE = True  # flip False to A/B-test against the baseline (VALUE
 #   more big blind per caller already in -- mirrors C1's ISO_SIZING_PER_
 #   LIMPER_BB pattern (isolating callers, not limpers, but same idea: more
 #   dead money in the pot needs a bigger bet to actually fold it all out).
-SQUEEZE_WIDER_RANGE = True
+SQUEEZE_WIDER_RANGE = False
 SQUEEZE_SIZE_UP_PER_CALLER = False
 SQUEEZE_SIZING_PER_CALLER_BB = 1.5
 

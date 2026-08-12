@@ -30,6 +30,8 @@ import statistics
 import sys
 import time
 from argparse import ArgumentParser
+from dataclasses import dataclass
+from typing import Literal
 
 sys.path.insert(0, str(__file__).rsplit("/scripts/", 1)[0])
 
@@ -57,7 +59,7 @@ from scripts.simulate_abc_bot import (
 
 EXTRA_TEST_GROUPS = {
     "v11-multiway-aware": (
-        ["MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL", "MULTIWAY_AWARE"],
+        ["MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL"],
         "v11 multiway aware",
     ),
     "v21-squeeze-wide": (["SQUEEZE_WIDER_RANGE"], "v21 squeeze wider range"),
@@ -80,15 +82,141 @@ def _all_test_groups() -> dict[str, tuple[list[str], str]]:
     return {**PRESET_FLAG_GROUPS, **EXTRA_TEST_GROUPS}
 
 
-def _apply_flags(flag_names: list[str], value: bool) -> None:
-    for name in flag_names:
+MULTIWAY_SUBFLAGS = {"MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL"}
+
+ALL_COMPARISON_FLAGS = [
+    "USE_WIDE_VALUE_3BET",
+    "STEAL_WIDER_VS_NIT",
+    "SIZING_TARGET_ARCHETYPES",
+    "WIDER_3BET_VS_LOOSE",
+    "SIZE_UP_ON_TURN",
+    "ISO_RAISE_OVER_LIMPERS",
+    "DONK_BLUFF_VS_TIGHT",
+    "HERO_PROGRESSIVE_POT_DAMPING",
+    "SQUEEZE_WIDER_RANGE",
+    "SQUEEZE_SIZE_UP_PER_CALLER",
+    "VALUE_RAISE_FACING_BET",
+    "VALUE_RAISE_TRIPS_OR_BETTER_ONLY",
+    "FOLD_TOP_PAIR_VS_OVERBET",
+    "SIZE_UP_WITH_VERY_STRONG_HAND",
+    "SIZE_UP_ON_WET_BOARD",
+    "BLUFF_3BET_VS_TIGHT",
+    "BARREL_BLUFF_VS_TIGHT",
+    "FOLD_PREMIUM_VS_EXTREME_AGGRO",
+    "RIVER_OVERBET_NUTS_VS_LOOSE",
+    "OPTIMAL_VALUE_SIZING_PER_ARCHETYPE",
+    "ISO_WIDER_RANGE_OVER_LIMPERS",
+    "SIZE_SCALED_CALL_RANGE",
+    *sorted(MULTIWAY_SUBFLAGS),
+]
+
+HISTORICAL_PRIOR_ON_FLAGS = {
+    "v11-multiway-aware": ["USE_WIDE_VALUE_3BET"],
+    "v14-steal-sizing": ["USE_WIDE_VALUE_3BET"],
+    "v15-loose-3bet-turn": ["USE_WIDE_VALUE_3BET", "STEAL_WIDER_VS_NIT", "SIZING_TARGET_ARCHETYPES"],
+    "v16-iso-limpers": [
+        "USE_WIDE_VALUE_3BET",
+        "STEAL_WIDER_VS_NIT",
+        "SIZING_TARGET_ARCHETYPES",
+        "WIDER_3BET_VS_LOOSE",
+        "SIZE_UP_ON_TURN",
+    ],
+    "v17-donk-bluff": [
+        "USE_WIDE_VALUE_3BET",
+        "STEAL_WIDER_VS_NIT",
+        "SIZING_TARGET_ARCHETYPES",
+        "WIDER_3BET_VS_LOOSE",
+        "SIZE_UP_ON_TURN",
+        "ISO_RAISE_OVER_LIMPERS",
+    ],
+    # v21+ happened after the monster-pot damping work. Squeeze itself stays
+    # off in later historical baselines: the changelog says it was not
+    # confirmed and shipped off, even if today's module default drifts.
+    "v21-squeeze-wide": [
+        "USE_WIDE_VALUE_3BET",
+        "STEAL_WIDER_VS_NIT",
+        "SIZING_TARGET_ARCHETYPES",
+        "WIDER_3BET_VS_LOOSE",
+        "SIZE_UP_ON_TURN",
+        "ISO_RAISE_OVER_LIMPERS",
+        "DONK_BLUFF_VS_TIGHT",
+        "HERO_PROGRESSIVE_POT_DAMPING",
+    ],
+}
+HISTORICAL_PRIOR_ON_FLAGS["v21-squeeze-size"] = HISTORICAL_PRIOR_ON_FLAGS["v21-squeeze-wide"]
+HISTORICAL_PRIOR_ON_FLAGS["v21-squeeze-both"] = HISTORICAL_PRIOR_ON_FLAGS["v21-squeeze-wide"]
+
+for _preset in (
+    "v22-value-raise",
+    "v22-value-raise-trips",
+    "v23-overbet-fold",
+    "v23-size-strong",
+    "v23-size-wet",
+    "v23-size-both",
+    "v24-bluff-3bet",
+    "v25-barrel-bluff",
+    "v26-fold-premium-extreme",
+    "v27-river-overbet",
+    "v28-optimal-sizing",
+    "v29-iso-wider-range",
+    "v30-size-scaled-call",
+):
+    HISTORICAL_PRIOR_ON_FLAGS[_preset] = HISTORICAL_PRIOR_ON_FLAGS["v21-squeeze-wide"]
+
+
+@dataclass(frozen=True)
+class ProbeComparison:
+    label: str
+    baseline: dict[str, object]
+    treatment: dict[str, object]
+
+
+def _real_flag_value(name: str, value: bool) -> object:
+    if name in _NON_BOOLEAN_FLAG_ON_VALUES:
+        return _NON_BOOLEAN_FLAG_ON_VALUES[name] if value else _NON_BOOLEAN_FLAG_OFF_VALUES[name]
+    return value
+
+
+def _state_for_flags(flag_names: list[str], value: bool) -> dict[str, object]:
+    return {name: _real_flag_value(name, value) for name in flag_names}
+
+
+def _historical_baseline_state(preset: str) -> dict[str, object]:
+    if preset == "v9-wide-3bet":
+        raise ValueError(
+            "v9 predates the v10 opponent-aware calling rule, but this probe always runs with "
+            "opponent archetypes. Use --comparison current for v9, or add an explicit opponent-aware off arm."
+        )
+    if preset not in HISTORICAL_PRIOR_ON_FLAGS:
+        raise ValueError(f"no historical comparison profile for {preset}")
+    state = {name: _real_flag_value(name, False) for name in ALL_COMPARISON_FLAGS}
+    for name in HISTORICAL_PRIOR_ON_FLAGS[preset]:
+        state[name] = _real_flag_value(name, True)
+    return state
+
+
+def _build_comparison(preset: str, comparison: Literal["current", "historical"]) -> ProbeComparison:
+    flag_names, _ = _all_test_groups()[preset]
+    if comparison == "current":
+        return ProbeComparison(
+            "current defaults overlay",
+            _state_for_flags(flag_names, False),
+            _state_for_flags(flag_names, True),
+        )
+    baseline = _historical_baseline_state(preset)
+    treatment = baseline | _state_for_flags(flag_names, True)
+    return ProbeComparison("historical at-introduction flags", baseline, treatment)
+
+
+def _apply_flag_state(state: dict[str, object]) -> None:
+    for name, real_value in state.items():
         if name in _NON_BOOLEAN_FLAG_ON_VALUES:
-            real_value = _NON_BOOLEAN_FLAG_ON_VALUES[name] if value else _NON_BOOLEAN_FLAG_OFF_VALUES[name]
-        else:
-            real_value = value
+            real_value = set(real_value)
         setattr(abc_bot, name, real_value)
-    if "USE_WIDE_VALUE_3BET" in flag_names:
-        _sync_value_3bet(value)
+    if "USE_WIDE_VALUE_3BET" in state:
+        _sync_value_3bet(bool(state["USE_WIDE_VALUE_3BET"]))
+    if MULTIWAY_SUBFLAGS & state.keys() and "MULTIWAY_AWARE" not in state:
+        abc_bot.MULTIWAY_AWARE = any(bool(getattr(abc_bot, name)) for name in MULTIWAY_SUBFLAGS)
 
 
 def _restore_flags(original: dict[str, object]) -> None:
@@ -96,6 +224,8 @@ def _restore_flags(original: dict[str, object]) -> None:
         setattr(abc_bot, name, value)
     if "USE_WIDE_VALUE_3BET" in original:
         _sync_value_3bet(original["USE_WIDE_VALUE_3BET"])
+    if MULTIWAY_SUBFLAGS & original.keys() and "MULTIWAY_AWARE" not in original:
+        abc_bot.MULTIWAY_AWARE = any(bool(getattr(abc_bot, name)) for name in MULTIWAY_SUBFLAGS)
 
 
 def _make_table() -> Table:
@@ -141,10 +271,17 @@ def _available_next_cards(*hands) -> list[str]:
     return []
 
 
-def _choose_and_apply(hand, seat: int, hand_index: int, guard: int, turnover: TableTurnover, flag_names: list[str], flag_value: bool) -> tuple[str, float | None]:
+def _choose_and_apply(
+    hand,
+    seat: int,
+    hand_index: int,
+    guard: int,
+    turnover: TableTurnover,
+    flag_state: dict[str, object],
+) -> tuple[str, float | None]:
     bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     if seat == HERO_SEAT:
-        _apply_flags(flag_names, flag_value)
+        _apply_flag_state(flag_state)
         opponent_archetypes = {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
         action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
     else:
@@ -160,14 +297,20 @@ def _choose_and_apply(hand, seat: int, hand_index: int, guard: int, turnover: Ta
     return action, amount
 
 
-def _continue_to_finish(hand, hand_index: int, turnover: TableTurnover, flag_names: list[str], flag_value: bool, branch_id: int = 0) -> float | None:
+def _continue_to_finish(
+    hand,
+    hand_index: int,
+    turnover: TableTurnover,
+    flag_state: dict[str, object],
+    branch_id: int = 0,
+) -> float | None:
     guard = 0
     while not hand.finished and guard < 500:
         seat = hand.current_actor()
         if seat is None:
             break
         if seat == HERO_SEAT:
-            _apply_flags(flag_names, flag_value)
+            _apply_flag_state(flag_state)
             bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
             opponent_archetypes = {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
             action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
@@ -193,7 +336,8 @@ def _stats(values: list[float]) -> tuple[float, float]:
 
 
 def _run_probe_chunk(
-    flag_names: list[str],
+    baseline_state: dict[str, object],
+    treatment_state: dict[str, object],
     base_table: Table,
     treat_table: Table,
     base_turnover: TableTurnover,
@@ -222,8 +366,8 @@ def _run_probe_chunk(
 
             base_before = copy.deepcopy(base_hand)
             treat_before = copy.deepcopy(treat_hand)
-            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, flag_names, False)
-            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, flag_names, True)
+            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, baseline_state)
+            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, treatment_state)
 
             same_action = base_action[0] == treat_action[0] and (base_action[1] == treat_action[1])
             if not same_action and base_seat == HERO_SEAT:
@@ -232,8 +376,8 @@ def _run_probe_chunk(
 
                 random_base = copy.deepcopy(base_hand)
                 random_treat = copy.deepcopy(treat_hand)
-                rb = _continue_to_finish(random_base, hand_index, base_turnover, flag_names, False, branch_id=0)
-                rt = _continue_to_finish(random_treat, hand_index, treat_turnover, flag_names, True, branch_id=0)
+                rb = _continue_to_finish(random_base, hand_index, base_turnover, baseline_state, branch_id=0)
+                rt = _continue_to_finish(random_treat, hand_index, treat_turnover, treatment_state, branch_id=0)
                 if rb is not None and rt is not None:
                     random_deltas.append(rt - rb)
 
@@ -245,8 +389,8 @@ def _run_probe_chunk(
                     t = copy.deepcopy(treat_hand)
                     _force_next_board_card(b, card_str)
                     _force_next_board_card(t, card_str)
-                    nb = _continue_to_finish(b, hand_index, base_turnover, flag_names, False, branch_id=branch_id)
-                    nt = _continue_to_finish(t, hand_index, treat_turnover, flag_names, True, branch_id=branch_id)
+                    nb = _continue_to_finish(b, hand_index, base_turnover, baseline_state, branch_id=branch_id)
+                    nt = _continue_to_finish(t, hand_index, treat_turnover, treatment_state, branch_id=branch_id)
                     if nb is not None and nt is not None:
                         branch_deltas.append(nt - nb)
                 if branch_deltas:
@@ -301,9 +445,15 @@ def _print_probe_summary(
     print(f"elapsed: {elapsed:.2f}s")
 
 
-def run_probe(preset: str, n_hands: int) -> None:
-    flag_names, label = _all_test_groups()[preset]
-    original = {name: getattr(abc_bot, name) for name in flag_names}
+def _original_state_for(comparison: ProbeComparison) -> dict[str, object]:
+    names = set(comparison.baseline) | set(comparison.treatment) | {"MULTIWAY_AWARE"}
+    return {name: getattr(abc_bot, name) for name in names if hasattr(abc_bot, name)}
+
+
+def run_probe(preset: str, n_hands: int, comparison_mode: Literal["current", "historical"]) -> None:
+    _, label = _all_test_groups()[preset]
+    comparison = _build_comparison(preset, comparison_mode)
+    original = _original_state_for(comparison)
     base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
 
     random_deltas: list[float] = []
@@ -313,7 +463,8 @@ def run_probe(preset: str, n_hands: int) -> None:
     t0 = time.perf_counter()
     try:
         divergent += _run_probe_chunk(
-            flag_names,
+            comparison.baseline,
+            comparison.treatment,
             base_table,
             treat_table,
             base_turnover,
@@ -327,6 +478,7 @@ def run_probe(preset: str, n_hands: int) -> None:
     finally:
         _restore_flags(original)
 
+    print(f"comparison: {comparison.label}", flush=True)
     _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
 
 
@@ -349,6 +501,8 @@ def _adaptive_stop_reason(
         return "max_divergent"
     if n_hands < min_hands or divergent < min_divergent:
         return None
+    if enum_delta < 0 and enum_ci <= abs(enum_delta):
+        return "confirmed_negative"
     if enum_ci <= target_ci and enum_ci <= abs(enum_delta) * effect_ratio:
         return "confirmed"
     if enum_ci <= target_ci and abs(enum_delta) < target_ci:
@@ -359,6 +513,7 @@ def _adaptive_stop_reason(
 def run_adaptive_probe(
     preset: str,
     *,
+    comparison_mode: Literal["current", "historical"],
     target_ci: float,
     effect_ratio: float,
     min_hands: int,
@@ -367,8 +522,9 @@ def run_adaptive_probe(
     min_divergent: int,
     max_divergent: int,
 ) -> None:
-    flag_names, label = _all_test_groups()[preset]
-    original = {name: getattr(abc_bot, name) for name in flag_names}
+    _, label = _all_test_groups()[preset]
+    comparison = _build_comparison(preset, comparison_mode)
+    original = _original_state_for(comparison)
     base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
     random_deltas: list[float] = []
     enum_deltas: list[float] = []
@@ -379,6 +535,7 @@ def run_adaptive_probe(
     stop_reason = None
     print(
         f"adaptive chance-enumeration: {label} ({preset}), "
+        f"comparison={comparison.label}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
         flush=True,
@@ -387,7 +544,8 @@ def run_adaptive_probe(
         while n_hands < max_hands:
             this_chunk = min(chunk_size, max_hands - n_hands)
             divergent += _run_probe_chunk(
-                flag_names,
+                comparison.baseline,
+                comparison.treatment,
                 base_table,
                 treat_table,
                 base_turnover,
@@ -433,6 +591,15 @@ def main() -> None:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("preset", nargs="?", default="v16-iso-limpers")
     parser.add_argument("n_hands", nargs="?", type=int, default=1000)
+    parser.add_argument(
+        "--comparison",
+        choices=("current", "historical"),
+        default="current",
+        help=(
+            "current overlays only the tested flags on today's defaults; "
+            "historical resets known A/B flags to the preset's at-introduction context"
+        ),
+    )
     parser.add_argument("--adaptive", action="store_true", help="run chunks until precision/effect or hard-cap stop criteria are met")
     parser.add_argument("--target-ci", type=float, default=1.0)
     parser.add_argument("--effect-ratio", type=float, default=0.5, help="confirmed when CI <= abs(delta) * this ratio")
@@ -446,19 +613,23 @@ def main() -> None:
     groups = _all_test_groups()
     if preset not in groups:
         raise SystemExit(f"unknown preset {preset}; options: {', '.join(groups)}")
-    if args.adaptive:
-        run_adaptive_probe(
-            preset,
-            target_ci=args.target_ci,
-            effect_ratio=args.effect_ratio,
-            min_hands=args.min_hands,
-            max_hands=args.max_hands,
-            chunk_size=args.chunk_size,
-            min_divergent=args.min_divergent,
-            max_divergent=args.max_divergent,
-        )
-    else:
-        run_probe(preset, args.n_hands)
+    try:
+        if args.adaptive:
+            run_adaptive_probe(
+                preset,
+                comparison_mode=args.comparison,
+                target_ci=args.target_ci,
+                effect_ratio=args.effect_ratio,
+                min_hands=args.min_hands,
+                max_hands=args.max_hands,
+                chunk_size=args.chunk_size,
+                min_divergent=args.min_divergent,
+                max_divergent=args.max_divergent,
+            )
+        else:
+            run_probe(preset, args.n_hands, args.comparison)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":

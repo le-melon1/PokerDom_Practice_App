@@ -149,9 +149,13 @@ For normal follow-up work, prefer
 `scripts/adaptive_chance_enumeration_confirm_presets.sh`: it runs chunks,
 flushes progress after every chunk, and stops each preset once `CI <= 1.0`
 and `CI <= abs(delta) / 2`, or when the configured hand/divergence caps are
-hit. This is a methodology tool, not a full session simulator replacement:
-it starts each hand from fresh stacks and enumerates only the next chance
-card.
+hit. For negative deltas it can stop earlier once `CI <= abs(delta)`, because
+that is already enough to classify the flag as worse. This is a methodology
+tool, not a full session simulator replacement: it starts each hand from fresh
+stacks and enumerates only the next chance card. Be explicit about comparison
+mode: `--comparison current` overlays only the tested flags on today's
+defaults; `--comparison historical` resets known A/B flags to the preset's
+at-introduction context before applying treatment.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
