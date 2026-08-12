@@ -296,6 +296,58 @@ filter via `scripts/remaining_variants_confirm.sh`, along with r16v-*
 steal tiers) -- none of these had been run at all before this session.
 Check `/tmp/remaining_variants_*.log` for the latest results.
 
+**UPDATE**: v26/r15v-fold-*/r18v-shove-* turned out to share r13's exact
+`n_raises>=2` compound-rarity problem (confirmed via r13's own 0-divergent-
+over-50k-hands result even with hero's cards forced to AA/KK -- the
+bottleneck is a rare OPPONENT action sequence, not hero's hand) --
+removed from the queue rather than wasted more runtime on them; see
+`scripts/remaining_variants_confirm.sh`'s own comment for the full
+reasoning. Real fix would need conditioning the opponent's action too
+(force an opener + a re-raiser), not just hero's cards -- not built yet.
+
+Ran the reprioritized queue (`/tmp/remaining_variants_20260812_201559.log`):
+
+| Preset | Enum delta bb/100 | Stop/status |
+| --- | ---: | --- |
+| r16v-limp-behind-{tight,medium,wide} | `+10.32 +/- 4.04` (all three identical) | `confirmed_positive`, but see caveat below |
+| r17v-call-by-raiser-position | `-15.24 +/- 6.47` | **`confirmed_negative`** -- real, keep disabled |
+| r19v-bb-defend-minraise-tight | `0 divergent / 50k hands` | likely the same dead-threshold bug as v30 (`BB_DEFEND_MAX_RAISE_BB=2.0`, but real min-open sizing never goes below ~2.35bb -- see the v30 note above) |
+| r19v-bb-defend-steal-medium | `+1.35 +/- 0.65` | `confirmed_positive` |
+| r19v-bb-defend-steal-wide | `+2.16 +/- 1.02` | `confirmed_positive` |
+| v30-size-scaled-call (recalibrated 2.5/3.0bb) | `0 divergent / 50k hands` | still zero even after recalibration -- see below |
+
+**r16v caveat, found while double-checking**: all three multiplier tiers
+(0.45/0.55/0.75) produced byte-identical deltas, which looked like a bug
+at first. Verified directly: `limp_behind_ranges` genuinely DOES differ
+by multiplier (e.g. UTG: 26 hands @0.45x vs 32 @0.75x, real hands like
+AJo/AKo/ATs only in the wider tier) -- NOT a caching bug (my first check
+used the wrong tuple index into `_ranges()`, a self-inflicted false
+alarm). Real, more likely explanation: within this specific 6000-hand
+seeded sample, none of hero's limping-behind-eligible dealt hands
+happened to land in the narrow multiplier-differential region (~6-13
+hands per position out of 169) -- most divergent hands came from
+`LIMP_BEHIND_EXTRA_HANDS` (pairs/suited connectors/small suited aces),
+which is identical across all three tiers by construction. So this
+confirms "some limp-behind range beats none" but does NOT yet
+distinguish which tier is best -- needs a bigger sample or (better) the
+same hero-hand-filter technique, forced to the differential hand set
+specifically.
+
+**v30 still-open mystery**: recalibrated thresholds (2.5/3.0bb) should
+bracket the real observed opponent-sizing clusters (2.35bb/3.25bb, see
+the earlier percentile measurement) and DID clear the earlier "dead
+threshold" explanation -- yet still zero divergent hands over 50k.
+`call_ranges_wide`/`call_ranges_narrow` are confirmed to genuinely differ
+from `call_ranges` (existing passing tests assert non-empty diffs). Not
+yet root-caused; candidates for next look: whether `SIZE_SCALED_CALL_RANGE`'s
+branch in `choose_abc_action` is actually reached given the "historical"
+comparison's specific flag combination (v21-squeeze-wide baseline), or
+whether hero's actual dealt hands in facing-one-raise spots just don't
+fall in the differential region often enough at this sample size (same
+class of explanation as the r16v caveat above, in which case a bigger
+sample or hero-hand-filter would resolve it, not a real bug). Left open,
+flagged for whoever picks this up next.
+
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
 The user asked for a full brainstorm of possible decision inputs beyond
