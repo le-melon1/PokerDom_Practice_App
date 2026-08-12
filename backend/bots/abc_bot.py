@@ -1858,12 +1858,27 @@ def choose_abc_action(
     # real but modest bet-size/hand-strength correlation, not precise enough
     # to derive a specific threshold from) -- testing a standard-theory
     # number (pot-sized bet) rather than assuming either way.
+    #
+    # 2026-08-12 BUG FIX: `pot_before` here is computed the same way it is
+    # everywhere else in this function -- total contributed AT DECISION
+    # TIME, which already includes the opponent's current bet (correct for
+    # sizing hero's OWN bet as "a fraction of the pot facing me right now",
+    # but wrong for "is this bet bigger than the pot WAS before it" --
+    # the standard definition of "overbet"). As originally written,
+    # to_call/pot_before can never exceed 1.0 for any finite bet (it's
+    # bet/(pot_before_bet+bet), which approaches but never reaches 1) --
+    # the condition was mathematically unreachable, confirmed by a
+    # 300,000-hand probe run finding exactly zero divergent hands despite
+    # real ~0.78% postflop overbet incidence measured independently.
+    # Fixed by comparing against the pot as it stood BEFORE this bet
+    # (pot_before - to_call).
+    pot_before_the_bet = pot_before - to_call
     if made:
         if (
             FOLD_TOP_PAIR_VS_OVERBET
             and not very_strong
-            and pot_before > 0
-            and (to_call / pot_before) > OVERBET_POT_FRACTION
+            and pot_before_the_bet > 0
+            and (to_call / pot_before_the_bet) > OVERBET_POT_FRACTION
         ):
             # Falls straight to fold -- deliberately bypasses the
             # loose-archetype any-pair-or-better call below too, so this

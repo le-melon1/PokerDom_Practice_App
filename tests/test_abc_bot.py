@@ -1161,3 +1161,61 @@ def test_does_not_size_up_a_bluff_cbet_with_the_strength_flag(monkeypatch):
     _, amount_baseline = choose_abc_action(hand2, 4)
 
     assert amount_flagged == amount_baseline  # air never triggers the size-up, flag or not
+
+
+def _hero_facing_an_overbet_from_bb(bet_multiple_of_pot: float):
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)  # UTG (seat 4) opens, has initiative
+    for s in (5, 6, 1, 2):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    hand.apply_action(3, "call")  # BB calls
+    assert hand.street == "flop"
+    hand.board = ["9c", "6d", "2h"]
+    pot_before_the_bet = sum(p.total_contributed for p in hand.players.values())
+    hand.apply_action(3, "check")  # BB checks to hero (seat 4), who bets into hero
+    hand.apply_action(4, "bet", amount=pot_before_the_bet * bet_multiple_of_pot)
+    return hand
+
+
+def test_folds_plain_top_pair_to_a_genuine_overbet_when_flag_on(monkeypatch):
+    # 2026-08-12 bug fix regression test: the original formula compared
+    # to_call against a `pot_before` that already included the opponent's
+    # bet, making a "bet > pot" overbet mathematically unreachable (a
+    # 300,000-hand probe confirmed exactly zero divergent hands before this
+    # fix). This uses a real 1.5x-pot bet -- a genuine overbet -- and
+    # asserts the fold actually fires now.
+    monkeypatch.setattr(abc_bot, "FOLD_TOP_PAIR_VS_OVERBET", True)
+    hand = _hero_facing_an_overbet_from_bb(1.5)
+    hero = hand.current_actor()
+    hand.players[hero].hole_cards = ["9s", "Kd"]  # plain top pair (nines), not very_strong
+    action, _ = choose_abc_action(hand, hero)
+    assert action == "fold"
+
+
+def test_still_calls_plain_top_pair_facing_an_overbet_when_flag_off():
+    hand = _hero_facing_an_overbet_from_bb(1.5)
+    hero = hand.current_actor()
+    hand.players[hero].hole_cards = ["9s", "Kd"]
+    action, _ = choose_abc_action(hand, hero)
+    assert action == "call"
+
+
+def test_still_calls_plain_top_pair_facing_a_sub_pot_bet_when_flag_on(monkeypatch):
+    # 0.75x pot is a big bet but NOT an overbet -- the fold should not fire.
+    monkeypatch.setattr(abc_bot, "FOLD_TOP_PAIR_VS_OVERBET", True)
+    hand = _hero_facing_an_overbet_from_bb(0.75)
+    hero = hand.current_actor()
+    hand.players[hero].hole_cards = ["9s", "Kd"]
+    action, _ = choose_abc_action(hand, hero)
+    assert action == "call"
+
+
+def test_very_strong_hand_still_calls_a_genuine_overbet_when_flag_on(monkeypatch):
+    monkeypatch.setattr(abc_bot, "FOLD_TOP_PAIR_VS_OVERBET", True)
+    hand = _hero_facing_an_overbet_from_bb(1.5)
+    hero = hand.current_actor()
+    hand.players[hero].hole_cards = ["9s", "9d"]  # trips nines -- very_strong, never folds here
+    action, _ = choose_abc_action(hand, hero)
+    assert action == "call"
