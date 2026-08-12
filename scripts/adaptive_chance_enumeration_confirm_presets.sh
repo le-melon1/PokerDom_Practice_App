@@ -1,9 +1,9 @@
 #!/bin/bash
 # Adaptive confirmatory batch using next-card chance enumeration.
 #
-# Stops each preset once the EV delta is precise enough, or once hard caps are
-# reached. Defaults:
-#   confirmed: CI <= TARGET_CI and CI <= abs(delta) * EFFECT_RATIO
+# Stops each preset once the EV signal is strong enough, precise enough to call
+# small, or once hard caps are reached. Defaults:
+#   confirmed positive: delta > 0 and CI <= abs(delta) * EFFECT_RATIO
 #   confirmed negative: delta < 0 and CI <= abs(delta)
 #   small/inconclusive: CI <= TARGET_CI and abs(delta) < TARGET_CI
 #   hard stop: MAX_HANDS or MAX_DIVERGENT

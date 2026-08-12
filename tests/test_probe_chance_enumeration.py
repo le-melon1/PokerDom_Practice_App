@@ -23,13 +23,32 @@ def test_adaptive_stop_accepts_negative_delta_once_ci_is_below_loss():
     )
 
 
-def test_adaptive_stop_keeps_positive_delta_on_stricter_precision_bar():
+def test_adaptive_stop_accepts_strong_positive_delta_without_target_ci():
+    assert (
+        probe._adaptive_stop_reason(
+            n_hands=10_000,
+            divergent=30,
+            enum_delta=11.6,
+            enum_ci=1.5,
+            min_hands=10_000,
+            max_hands=500_000,
+            max_zero_divergent_hands=50_000,
+            min_divergent=30,
+            max_divergent=2_000,
+            target_ci=1.0,
+            effect_ratio=0.5,
+        )
+        == "confirmed_positive"
+    )
+
+
+def test_adaptive_stop_keeps_positive_delta_until_signal_clears_effect_ratio():
     assert (
         probe._adaptive_stop_reason(
             n_hands=10_000,
             divergent=30,
             enum_delta=4.0,
-            enum_ci=1.5,
+            enum_ci=2.1,
             min_hands=10_000,
             max_hands=500_000,
             max_zero_divergent_hands=50_000,
@@ -161,7 +180,10 @@ def test_unproven_or_harmful_ablation_rules_default_off():
     assert abc_bot.SIZE_UP_ON_TURN is False
     assert abc_bot.ISO_RAISE_OVER_LIMPERS is False
     assert abc_bot.HERO_PROGRESSIVE_POT_DAMPING is False
-    assert abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS is False
+
+
+def test_tight_big_iso_limpers_defaults_on_after_positive_check():
+    assert abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS is True
 
 
 def test_multiway_aware_is_recomputed_from_subflags():

@@ -575,10 +575,13 @@ def _adaptive_stop_reason(
         return "no_divergent_hands"
     if n_hands < min_hands or divergent < min_divergent:
         return None
-    if enum_delta < 0 and enum_ci <= abs(enum_delta):
+    abs_delta = abs(enum_delta)
+    if enum_delta < 0 and enum_ci <= abs_delta:
         return "confirmed_negative"
-    if enum_ci <= target_ci and enum_ci <= abs(enum_delta) * effect_ratio:
-        return "confirmed"
+    if enum_delta > 0 and enum_ci <= abs_delta * effect_ratio:
+        return "confirmed_positive"
+    if enum_ci <= target_ci and enum_ci <= abs_delta * effect_ratio:
+        return "confirmed_precise"
     if enum_ci <= target_ci and abs(enum_delta) < target_ci:
         return "inconclusive_small_effect"
     return None
@@ -681,10 +684,10 @@ def main() -> None:
             "ablation compares today's full model against full model with the tested flags disabled"
         ),
     )
-    parser.add_argument("--adaptive", action="store_true", help="run chunks until precision/effect or hard-cap stop criteria are met")
+    parser.add_argument("--adaptive", action="store_true", help="run chunks until effect-strength/precision or hard-cap stop criteria are met")
     parser.add_argument("--archetypes", help="comma-separated opponent archetypes to seat; omitted means the real population mix")
     parser.add_argument("--target-ci", type=float, default=1.0)
-    parser.add_argument("--effect-ratio", type=float, default=0.5, help="confirmed when CI <= abs(delta) * this ratio")
+    parser.add_argument("--effect-ratio", type=float, default=0.5, help="positive effect is confirmed when CI <= abs(delta) * this ratio")
     parser.add_argument("--min-hands", type=int, default=10_000)
     parser.add_argument("--max-hands", type=int, default=500_000)
     parser.add_argument("--max-zero-divergent-hands", type=int, default=50_000)

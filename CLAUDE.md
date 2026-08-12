@@ -149,10 +149,12 @@ branch as one observation. Use `scripts/chance_enumeration_confirm_presets.sh`
 and `scripts/summarize_chance_enumeration_log.py` for fixed-N batch runs.
 For normal follow-up work, prefer
 `scripts/adaptive_chance_enumeration_confirm_presets.sh`: it runs chunks,
-flushes progress after every chunk, and stops each preset once `CI <= 1.0`
-and `CI <= abs(delta) / 2`, or when the configured hand/divergence caps are
-hit. For negative deltas it can stop earlier once `CI <= abs(delta)`, because
-that is already enough to classify the flag as worse. Rules that never find
+flushes progress after every chunk, and stops each preset once a positive
+signal is large enough (`CI <= abs(delta) * EFFECT_RATIO`, default `0.5`), or
+when the configured hand/divergence caps are hit. For negative deltas it can
+stop once `CI <= abs(delta)`, because that is already enough to classify the
+flag as worse. `TARGET_CI` is still used to call small/inconclusive effects,
+but it no longer blocks a clearly large positive signal. Rules that never find
 any divergent hands stop at `MAX_ZERO_DIVERGENT_HANDS` and should be labeled
 "not enough divergent hands," not as EV-zero. This is a methodology tool, not
 a full session simulator replacement: it starts each hand from fresh stacks
@@ -210,12 +212,16 @@ population-weighted EV.
 | `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | disabled, no proven benefit |
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
-| `r12-tight-big-iso-limpers` | population | not run yet | candidate | test next |
+| `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97` | manual stop after strong positive signal | enabled |
 
 Logs backing the final four-row update:
 `/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows
 come from `/tmp/adaptive_chance_enumeration_ablation_20260812_095622.log` and
-`/tmp/adaptive_chance_enumeration_ablation_20260812_101746.log`.
+`/tmp/adaptive_chance_enumeration_ablation_20260812_101746.log`. The `r12`
+current-comparison row comes from
+`/tmp/adaptive_chance_enumeration_20260812_111422.log`; it was stopped by user
+choice at 22k hands / 1311 divergent once the effect was practically clear,
+before the old absolute `CI <= 1.0` target.
 
 `r12` is intentionally different from disabled `r09`: `r09` kept the same
 open range and only added a small sizing bump over limpers. `r12` narrows to

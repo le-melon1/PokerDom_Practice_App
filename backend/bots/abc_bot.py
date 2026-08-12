@@ -489,9 +489,11 @@ script's docstring). Revision history, each one a real measured finding:
   idea: don't isolate limpers with the same/wider range and a small sizing
   bump; instead isolate tighter, with a larger size, to make overcalls less
   attractive and more often get heads-up against the limper. Added
-  TIGHT_BIG_ISO_RAISE_LIMPERS as an off-by-default test flag: 70% of the
-  normal open VPIP, 4.5bb + 1bb/limper. This is a new theory, not covered
-  by the old r09 result.
+  TIGHT_BIG_ISO_RAISE_LIMPERS as a test flag: 70% of the normal open VPIP,
+  4.5bb + 1bb/limper. This is a new theory, not covered by the old r09
+  result. Partial adaptive current check was stopped manually once the signal
+  was clear: +11.61 +/-3.97 bb/100 at 22k hands, 1311 divergent. Shipped
+  True.
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -766,7 +768,7 @@ ISO_SIZING_PER_LIMPER_BB = 1.0
 # v31: anti-multiway limper isolation candidate. This is deliberately NOT the
 # old C1 rule: it narrows the range and uses a much bigger raise so callers
 # behind hero get a worse price and hero more often plays heads-up.
-TIGHT_BIG_ISO_RAISE_LIMPERS = False
+TIGHT_BIG_ISO_RAISE_LIMPERS = True
 TIGHT_ISO_VPIP_MULTIPLIER = 0.7
 TIGHT_ISO_BASE_SIZING_BB = 4.5
 TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.0

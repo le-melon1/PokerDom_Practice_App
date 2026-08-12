@@ -29,6 +29,7 @@ PRESETS=(
   r06-size-up-vs-nit-tag
   r07-wider-3bet-vs-loose
   r10-donk-bluff-vs-tight
+  r12-tight-big-iso-limpers
 )
 if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
   read -r -a PRESETS <<< "$PRESETS_OVERRIDE"

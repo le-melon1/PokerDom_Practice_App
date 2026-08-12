@@ -40,11 +40,14 @@ def test_isolates_a_limper_with_a_wider_range_when_flag_on():
             hand.apply_action(s, "fold")
     actor = hand.current_actor()  # seat 1, BTN
     hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    original_tight_iso = abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS
     abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = True
+    abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
     try:
         action, _ = choose_abc_action(hand, actor)
     finally:
         abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = False
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
     assert action == "raise"
 
 
@@ -64,8 +67,13 @@ def test_does_not_isolate_a_limper_wider_when_flag_off():
     hand.players[actor].hole_cards = _cards_from_notation(test_hand)
     # ISO_WIDER_RANGE_OVER_LIMPERS defaults False -- a hand outside the
     # plain open range still folds even facing a limper.
-    action, _ = choose_abc_action(hand, actor)
-    assert action == "fold"
+    original_tight_iso = abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS
+    abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+    try:
+        action, _ = choose_abc_action(hand, actor)
+        assert action == "fold"
+    finally:
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
 
 
 def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
@@ -101,11 +109,12 @@ def test_tight_big_iso_folds_plain_open_hands_outside_tight_iso_range():
             hand.apply_action(s, "fold")
     actor = hand.current_actor()
     hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    original_tight_iso = abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS
     abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = True
     try:
         action, _ = choose_abc_action(hand, actor)
     finally:
-        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
     assert action == "fold"
 
 
@@ -122,11 +131,12 @@ def test_tight_big_iso_raises_bigger_with_tight_iso_hand():
             hand.apply_action(s, "fold")
     actor = hand.current_actor()
     hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    original_tight_iso = abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS
     abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = True
     try:
         action, amount = choose_abc_action(hand, actor)
     finally:
-        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
     assert action == "raise"
     assert amount == pytest.approx(11.0)  # (4.5bb base + 1bb for one limper) * 2-chip BB
 
