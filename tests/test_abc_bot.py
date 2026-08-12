@@ -86,6 +86,51 @@ def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
     assert action == "fold"
 
 
+def test_tight_big_iso_folds_plain_open_hands_outside_tight_iso_range():
+    open_ranges, _, _, tight_iso_ranges, *_ = abc_bot._ranges()
+    position = "BTN"
+    marginal_iso_hands = open_ranges[position] - tight_iso_ranges[position]
+    assert marginal_iso_hands, "expected tight iso range to be narrower than the plain open range"
+    test_hand = next(iter(marginal_iso_hands))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")  # UTG limps
+    for s in (5, 6):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = True
+    try:
+        action, _ = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+    assert action == "fold"
+
+
+def test_tight_big_iso_raises_bigger_with_tight_iso_hand():
+    _, _, _, tight_iso_ranges, *_ = abc_bot._ranges()
+    position = "BTN"
+    test_hand = next(iter(tight_iso_ranges[position]))
+
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "call")  # UTG limps
+    for s in (5, 6):
+        if hand.current_actor() == s:
+            hand.apply_action(s, "fold")
+    actor = hand.current_actor()
+    hand.players[actor].hole_cards = _cards_from_notation(test_hand)
+    abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = True
+    try:
+        action, amount = choose_abc_action(hand, actor)
+    finally:
+        abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+    assert action == "raise"
+    assert amount == pytest.approx(11.0)  # (4.5bb base + 1bb for one limper) * 2-chip BB
+
+
 def test_utg_opens_a_premium_hand():
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -139,7 +184,7 @@ def test_calls_a_raise_with_a_hand_in_the_narrow_call_range_but_not_premium():
 
 
 def test_calls_wider_vs_a_min_raise_when_flag_on():
-    _, call_ranges, _, call_ranges_wide, _ = abc_bot._ranges()
+    _, call_ranges, _, _, call_ranges_wide, _ = abc_bot._ranges()
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
     assert wide_only, "expected the wide call tier to be strictly bigger than the standard one for MP"
@@ -159,7 +204,7 @@ def test_calls_wider_vs_a_min_raise_when_flag_on():
 
 
 def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
-    _, call_ranges, _, call_ranges_wide, _ = abc_bot._ranges()
+    _, call_ranges, _, _, call_ranges_wide, _ = abc_bot._ranges()
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
     test_hand = next(iter(wide_only))
@@ -176,7 +221,7 @@ def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
 
 
 def test_folds_a_standard_call_range_hand_to_a_big_raise_when_flag_on():
-    _, call_ranges, _, _, call_ranges_narrow = abc_bot._ranges()
+    _, call_ranges, _, _, _, call_ranges_narrow = abc_bot._ranges()
     position = "MP"
     narrowed_out = call_ranges[position] - call_ranges_narrow[position] - abc_bot.VALUE_3BET - abc_bot.BLUFF_3BET_RANGE
     assert narrowed_out, "expected the narrow call tier to exclude some hands the standard one includes, for MP"

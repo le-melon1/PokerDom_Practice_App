@@ -45,6 +45,7 @@ PRESETS=(
   v28-optimal-sizing
   v29-iso-wider-range
   v30-size-scaled-call
+  r12-tight-big-iso-limpers
 )
 if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
   read -r -a PRESETS <<< "$PRESETS_OVERRIDE"

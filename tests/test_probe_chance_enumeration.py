@@ -106,6 +106,7 @@ def test_rule_ids_cover_current_ablation_rule_units():
         "r09-iso-raise-limpers": ["ISO_RAISE_OVER_LIMPERS"],
         "r10-donk-bluff-vs-tight": ["DONK_BLUFF_VS_TIGHT"],
         "r11-hero-pot-damping": ["HERO_PROGRESSIVE_POT_DAMPING"],
+        "r12-tight-big-iso-limpers": ["TIGHT_BIG_ISO_RAISE_LIMPERS"],
     }
 
     assert {name: groups[name][0] for name in expected} == expected
@@ -160,6 +161,7 @@ def test_unproven_or_harmful_ablation_rules_default_off():
     assert abc_bot.SIZE_UP_ON_TURN is False
     assert abc_bot.ISO_RAISE_OVER_LIMPERS is False
     assert abc_bot.HERO_PROGRESSIVE_POT_DAMPING is False
+    assert abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS is False
 
 
 def test_multiway_aware_is_recomputed_from_subflags():

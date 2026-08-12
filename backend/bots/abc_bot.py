@@ -484,6 +484,15 @@ script's docstring). Revision history, each one a real measured finding:
   (-11.90 +/-4.22 when removed), and opponent-aware loose calls stayed very
   large (-77.94 +/-10.75 when removed).
 
+  v31 candidate (2026-08-12): user pointed out that the disabled C1
+  ISO_RAISE_OVER_LIMPERS did NOT test the more anti-multiway live-poker
+  idea: don't isolate limpers with the same/wider range and a small sizing
+  bump; instead isolate tighter, with a larger size, to make overcalls less
+  attractive and more often get heads-up against the limper. Added
+  TIGHT_BIG_ISO_RAISE_LIMPERS as an off-by-default test flag: 70% of the
+  normal open VPIP, 4.5bb + 1bb/limper. This is a new theory, not covered
+  by the old r09 result.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -498,7 +507,8 @@ strategy card, not just inferred from code):
       -- a limper has shown a weak/speculative hand, isolate them wider,
       not just for more money. The old bigger-over-limpers sizing rule
       (ISO_RAISE_OVER_LIMPERS) is currently disabled by the 2026-08-12
-      full-model ablation result.
+      full-model ablation result. A separate v31 candidate can instead
+      isolate limpers tighter but much bigger.
       Else fold.
 
   PREFLOP, facing a raise (any number of raises deep):
@@ -752,6 +762,14 @@ SIZE_UP_ON_WET_BOARD = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of sta
 # archetype-table-derived sizes) -- flagged as such.
 ISO_RAISE_OVER_LIMPERS = False  # full-model ablation: -0.60 +/- 0.99, no proven benefit
 ISO_SIZING_PER_LIMPER_BB = 1.0
+
+# v31: anti-multiway limper isolation candidate. This is deliberately NOT the
+# old C1 rule: it narrows the range and uses a much bigger raise so callers
+# behind hero get a worse price and hero more often plays heads-up.
+TIGHT_BIG_ISO_RAISE_LIMPERS = False
+TIGHT_ISO_VPIP_MULTIPLIER = 0.7
+TIGHT_ISO_BASE_SIZING_BB = 4.5
+TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.0
 
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
@@ -1008,13 +1026,14 @@ _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
 _call_range_cache: dict[str, set] = {}
 _steal_range_cache: dict[str, set] = {}
+_tight_iso_range_cache: dict[str, set] = {}
 _call_range_wide_cache: dict[str, set] = {}
 _call_range_narrow_cache: dict[str, set] = {}
 
 
 def _ranges():
     global _rankings_cache, _open_range_cache, _call_range_cache, _steal_range_cache
-    global _call_range_wide_cache, _call_range_narrow_cache
+    global _tight_iso_range_cache, _call_range_wide_cache, _call_range_narrow_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
         _open_range_cache = {
@@ -1028,6 +1047,10 @@ def _ranges():
         _steal_range_cache = {
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in STEAL_VPIP_BY_POSITION.items()
+        }
+        _tight_iso_range_cache = {
+            pos: set(implied_range(vpip * TIGHT_ISO_VPIP_MULTIPLIER, _rankings_cache))
+            for pos, vpip in OPEN_VPIP_BY_POSITION.items()
         }
         # v30 (SIZE_SCALED_CALL_RANGE): two more tiers around the existing
         # call range, +/- CALL_VPIP_WIDE_MULTIPLIER/CALL_VPIP_NARROW_
@@ -1047,6 +1070,7 @@ def _ranges():
         _open_range_cache,
         _call_range_cache,
         _steal_range_cache,
+        _tight_iso_range_cache,
         _call_range_wide_cache,
         _call_range_narrow_cache,
     )
@@ -1404,7 +1428,7 @@ def choose_abc_action(
     from each seat's session dossier (`dossier.style`, an estimate); the
     simulation script can also pass the ground-truth archetype to measure the
     ceiling of what opponent-awareness is worth before dossier noise."""
-    open_ranges, call_ranges, steal_ranges, call_ranges_wide, call_ranges_narrow = _ranges()
+    open_ranges, call_ranges, steal_ranges, tight_iso_ranges, call_ranges_wide, call_ranges_narrow = _ranges()
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     to_call = legal["call_amount"]
@@ -1432,14 +1456,21 @@ def choose_abc_action(
             # precomputed range tier -- conceptually the same move (widen
             # against a shown weakness), just a different trigger. If
             # BOTH conditions apply, either one is enough to widen.
-            use_iso_wide = ISO_WIDER_RANGE_OVER_LIMPERS and _n_limpers_preflop(hand) >= 1
-            open_range = steal_ranges.get(position) if (use_steal or use_iso_wide) else open_ranges.get(position)
+            n_limpers = _n_limpers_preflop(hand)
+            use_tight_big_iso = TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1
+            use_iso_wide = ISO_WIDER_RANGE_OVER_LIMPERS and n_limpers >= 1 and not use_tight_big_iso
+            if use_tight_big_iso:
+                open_range = tight_iso_ranges.get(position)
+            else:
+                open_range = steal_ranges.get(position) if (use_steal or use_iso_wide) else open_ranges.get(position)
             if open_range and notation in open_range:
                 # v16, C1 (see ISO_RAISE_OVER_LIMPERS above): size up over
                 # already-limped-in callers instead of the flat open size.
                 sizing_bb = OPEN_SIZING_BB
-                if ISO_RAISE_OVER_LIMPERS:
-                    sizing_bb += ISO_SIZING_PER_LIMPER_BB * _n_limpers_preflop(hand)
+                if use_tight_big_iso:
+                    sizing_bb = TIGHT_ISO_BASE_SIZING_BB + TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
+                elif ISO_RAISE_OVER_LIMPERS:
+                    sizing_bb += ISO_SIZING_PER_LIMPER_BB * n_limpers
                 # v19, hand-strength-dependent sizing: size up further with a
                 # premium hand (reuses VALUE_3BET_TIGHT as the "premium" set,
                 # rather than defining a second premium-hand list) -- untested

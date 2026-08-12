@@ -186,6 +186,7 @@ IDs:
 | `r09-iso-raise-limpers` | `v16-iso-limpers` | `ISO_RAISE_OVER_LIMPERS` |
 | `r10-donk-bluff-vs-tight` | `v17-donk-bluff` | `DONK_BLUFF_VS_TIGHT` |
 | `r11-hero-pot-damping` | `v19-hero-pot-damping` | `HERO_PROGRESSIVE_POT_DAMPING` |
+| `r12-tight-big-iso-limpers` | new v31 candidate | `TIGHT_BIG_ISO_RAISE_LIMPERS` |
 
 This list covers the current ablation-supported tracked rule units. Older
 historical ideas such as early core opening/calling changes are not separate
@@ -209,11 +210,17 @@ population-weighted EV.
 | `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | disabled, no proven benefit |
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
+| `r12-tight-big-iso-limpers` | population | not run yet | candidate | test next |
 
 Logs backing the final four-row update:
 `/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows
 come from `/tmp/adaptive_chance_enumeration_ablation_20260812_095622.log` and
 `/tmp/adaptive_chance_enumeration_ablation_20260812_101746.log`.
+
+`r12` is intentionally different from disabled `r09`: `r09` kept the same
+open range and only added a small sizing bump over limpers. `r12` narrows to
+70% of the normal open VPIP and raises to `4.5bb + 1bb/limper`, targeting a
+lower multiway rate rather than simply adding price.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 

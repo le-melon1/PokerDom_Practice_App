@@ -97,6 +97,7 @@ RULE_TEST_GROUPS = {
     "r09-iso-raise-limpers": (["ISO_RAISE_OVER_LIMPERS"], "r09 iso-raise over limpers"),
     "r10-donk-bluff-vs-tight": (["DONK_BLUFF_VS_TIGHT"], "r10 donk bluff vs tight"),
     "r11-hero-pot-damping": (["HERO_PROGRESSIVE_POT_DAMPING"], "r11 hero progressive pot damping"),
+    "r12-tight-big-iso-limpers": (["TIGHT_BIG_ISO_RAISE_LIMPERS"], "r12 tight big iso-raise limpers"),
 }
 
 
@@ -117,6 +118,7 @@ ALL_COMPARISON_FLAGS = [
     "WIDER_3BET_VS_LOOSE",
     "SIZE_UP_ON_TURN",
     "ISO_RAISE_OVER_LIMPERS",
+    "TIGHT_BIG_ISO_RAISE_LIMPERS",
     "DONK_BLUFF_VS_TIGHT",
     "HERO_PROGRESSIVE_POT_DAMPING",
     "SQUEEZE_WIDER_RANGE",
