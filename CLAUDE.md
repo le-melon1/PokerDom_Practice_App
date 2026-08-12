@@ -215,7 +215,7 @@ population-weighted EV.
 | `r09-iso-raise-limpers` | population | `-0.60 +/- 0.99` | `inconclusive_small_effect` | disabled, no proven benefit |
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
-| `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97` | manual stop after strong positive signal | enabled |
+| `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97`; best params `+22.54 +/- 4.77` | `confirmed_positive` for 0.85/5.5+1.5 | enabled |
 | `r13-shove-aa-kk-vs-3bet-plus` | population | not run yet | candidate | test next |
 
 Logs backing the final four-row update:
@@ -225,12 +225,16 @@ come from `/tmp/adaptive_chance_enumeration_ablation_20260812_095622.log` and
 current-comparison row comes from
 `/tmp/adaptive_chance_enumeration_20260812_111422.log`; it was stopped by user
 choice at 22k hands / 1311 divergent once the effect was practically clear,
-before the old absolute `CI <= 1.0` target.
+before the old absolute `CI <= 1.0` target. Follow-up parameter grid:
+`/tmp/adaptive_chance_enumeration_20260812_113700.log` and
+`/tmp/adaptive_chance_enumeration_20260812_114754.log`. The best checked
+variant was `0.85x` normal open VPIP, `5.5bb + 1.5bb/limper`, at
+`+22.54 +/- 4.77` bb/100 vs the first shipped r12 default.
 
 `r12` is intentionally different from disabled `r09`: `r09` kept the same
-open range and only added a small sizing bump over limpers. `r12` narrows to
-70% of the normal open VPIP and raises to `4.5bb + 1bb/limper`, targeting a
-lower multiway rate rather than simply adding price.
+open range and only added a small sizing bump over limpers. `r12` now uses
+85% of the normal open VPIP and raises to `5.5bb + 1.5bb/limper`, targeting
+a lower multiway rate rather than simply adding price.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 

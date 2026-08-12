@@ -493,7 +493,9 @@ script's docstring). Revision history, each one a real measured finding:
   4.5bb + 1bb/limper. This is a new theory, not covered by the old r09
   result. Partial adaptive current check was stopped manually once the signal
   was clear: +11.61 +/-3.97 bb/100 at 22k hands, 1311 divergent. Shipped
-  True.
+  True. Follow-up parameter grid found wider+bigger was best: 85% of normal
+  open VPIP, 5.5bb + 1.5bb/limper, +22.54 +/-4.77 bb/100 vs the first r12
+  default at 10k hands / 490 divergent.
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -771,9 +773,9 @@ ISO_SIZING_PER_LIMPER_BB = 1.0
 # old C1 rule: it narrows the range and uses a much bigger raise so callers
 # behind hero get a worse price and hero more often plays heads-up.
 TIGHT_BIG_ISO_RAISE_LIMPERS = True
-TIGHT_ISO_VPIP_MULTIPLIER = 0.7
-TIGHT_ISO_BASE_SIZING_BB = 4.5
-TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.0
+TIGHT_ISO_VPIP_MULTIPLIER = 0.85
+TIGHT_ISO_BASE_SIZING_BB = 5.5
+TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers

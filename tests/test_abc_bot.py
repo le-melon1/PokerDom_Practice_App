@@ -138,7 +138,7 @@ def test_tight_big_iso_raises_bigger_with_tight_iso_hand():
     finally:
         abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
     assert action == "raise"
-    assert amount == pytest.approx(11.0)  # (4.5bb base + 1bb for one limper) * 2-chip BB
+    assert amount == pytest.approx(14.0)  # (5.5bb base + 1.5bb for one limper) * 2-chip BB
 
 
 def test_utg_opens_a_premium_hand():
