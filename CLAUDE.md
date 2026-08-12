@@ -144,9 +144,14 @@ There is also a second, lower-variance probe:
 lockstep, and when hero's action first differs it averages the continuation
 over each possible next board card while still counting the whole averaged
 branch as one observation. Use `scripts/chance_enumeration_confirm_presets.sh`
-and `scripts/summarize_chance_enumeration_log.py` for batch runs. This is a
-methodology tool, not a full session simulator replacement: it starts each
-hand from fresh stacks and enumerates only the next chance card.
+and `scripts/summarize_chance_enumeration_log.py` for fixed-N batch runs.
+For normal follow-up work, prefer
+`scripts/adaptive_chance_enumeration_confirm_presets.sh`: it runs chunks,
+flushes progress after every chunk, and stops each preset once `CI <= 1.0`
+and `CI <= abs(delta) / 2`, or when the configured hand/divergence caps are
+hit. This is a methodology tool, not a full session simulator replacement:
+it starts each hand from fresh stacks and enumerates only the next chance
+card.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 

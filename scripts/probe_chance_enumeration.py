@@ -29,6 +29,7 @@ import math
 import statistics
 import sys
 import time
+from argparse import ArgumentParser
 
 sys.path.insert(0, str(__file__).rsplit("/scripts/", 1)[0])
 
@@ -191,87 +192,104 @@ def _stats(values: list[float]) -> tuple[float, float]:
     return mean * 100, ci
 
 
-def run_probe(preset: str, n_hands: int) -> None:
-    flag_names, label = _all_test_groups()[preset]
-    original = {name: getattr(abc_bot, name) for name in flag_names}
-    base_table = _make_table()
-    treat_table = _make_table()
-    base_turnover = TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42)
-    treat_turnover = TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42)
-
-    random_deltas: list[float] = []
-    enum_deltas: list[float] = []
+def _run_probe_chunk(
+    flag_names: list[str],
+    base_table: Table,
+    treat_table: Table,
+    base_turnover: TableTurnover,
+    treat_turnover: TableTurnover,
+    start_hand_index: int,
+    n_hands: int,
+    random_deltas: list[float],
+    enum_deltas: list[float],
+    branch_counts: list[int],
+) -> int:
     divergent = 0
-    branch_counts: list[int] = []
-    t0 = time.perf_counter()
-    try:
-        for hand_index in range(n_hands):
-            _reset_stacks(base_table)
-            _reset_stacks(treat_table)
-            deck_seed = _common_seed(42, hand_index, DECK_SEED_STREAM)
-            base_hand = base_table.start_new_hand(deck_seed=deck_seed)
-            treat_hand = treat_table.start_new_hand(deck_seed=deck_seed)
+    for hand_index in range(start_hand_index, start_hand_index + n_hands):
+        _reset_stacks(base_table)
+        _reset_stacks(treat_table)
+        deck_seed = _common_seed(42, hand_index, DECK_SEED_STREAM)
+        base_hand = base_table.start_new_hand(deck_seed=deck_seed)
+        treat_hand = treat_table.start_new_hand(deck_seed=deck_seed)
 
-            split = False
-            guard = 0
-            while not base_hand.finished and not treat_hand.finished and guard < 500:
-                base_seat = base_hand.current_actor()
-                treat_seat = treat_hand.current_actor()
-                if base_seat != treat_seat or base_seat is None:
-                    break
+        split = False
+        guard = 0
+        while not base_hand.finished and not treat_hand.finished and guard < 500:
+            base_seat = base_hand.current_actor()
+            treat_seat = treat_hand.current_actor()
+            if base_seat != treat_seat or base_seat is None:
+                break
 
-                base_before = copy.deepcopy(base_hand)
-                treat_before = copy.deepcopy(treat_hand)
-                base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, flag_names, False)
-                treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, flag_names, True)
+            base_before = copy.deepcopy(base_hand)
+            treat_before = copy.deepcopy(treat_hand)
+            base_action = _choose_and_apply(base_hand, base_seat, hand_index, guard, base_turnover, flag_names, False)
+            treat_action = _choose_and_apply(treat_hand, treat_seat, hand_index, guard, treat_turnover, flag_names, True)
 
-                same_action = base_action[0] == treat_action[0] and (base_action[1] == treat_action[1])
-                if not same_action and base_seat == HERO_SEAT:
-                    split = True
-                    divergent += 1
+            same_action = base_action[0] == treat_action[0] and (base_action[1] == treat_action[1])
+            if not same_action and base_seat == HERO_SEAT:
+                split = True
+                divergent += 1
 
-                    random_base = copy.deepcopy(base_hand)
-                    random_treat = copy.deepcopy(treat_hand)
-                    rb = _continue_to_finish(random_base, hand_index, base_turnover, flag_names, False, branch_id=0)
-                    rt = _continue_to_finish(random_treat, hand_index, treat_turnover, flag_names, True, branch_id=0)
-                    if rb is not None and rt is not None:
-                        random_deltas.append(rt - rb)
+                random_base = copy.deepcopy(base_hand)
+                random_treat = copy.deepcopy(treat_hand)
+                rb = _continue_to_finish(random_base, hand_index, base_turnover, flag_names, False, branch_id=0)
+                rt = _continue_to_finish(random_treat, hand_index, treat_turnover, flag_names, True, branch_id=0)
+                if rb is not None and rt is not None:
+                    random_deltas.append(rt - rb)
 
-                    cards = _available_next_cards(base_hand, treat_hand)
-                    branch_counts.append(len(cards))
-                    branch_deltas: list[float] = []
-                    for branch_id, card_str in enumerate(cards, start=1):
-                        b = copy.deepcopy(base_hand)
-                        t = copy.deepcopy(treat_hand)
-                        _force_next_board_card(b, card_str)
-                        _force_next_board_card(t, card_str)
-                        nb = _continue_to_finish(b, hand_index, base_turnover, flag_names, False, branch_id=branch_id)
-                        nt = _continue_to_finish(t, hand_index, treat_turnover, flag_names, True, branch_id=branch_id)
-                        if nb is not None and nt is not None:
-                            branch_deltas.append(nt - nb)
-                    if branch_deltas:
-                        enum_deltas.append(sum(branch_deltas) / len(branch_deltas))
-                    elif rb is not None and rt is not None:
-                        enum_deltas.append(rt - rb)
-                    break
+                cards = _available_next_cards(base_hand, treat_hand)
+                branch_counts.append(len(cards))
+                branch_deltas: list[float] = []
+                for branch_id, card_str in enumerate(cards, start=1):
+                    b = copy.deepcopy(base_hand)
+                    t = copy.deepcopy(treat_hand)
+                    _force_next_board_card(b, card_str)
+                    _force_next_board_card(t, card_str)
+                    nb = _continue_to_finish(b, hand_index, base_turnover, flag_names, False, branch_id=branch_id)
+                    nt = _continue_to_finish(t, hand_index, treat_turnover, flag_names, True, branch_id=branch_id)
+                    if nb is not None and nt is not None:
+                        branch_deltas.append(nt - nb)
+                if branch_deltas:
+                    enum_deltas.append(sum(branch_deltas) / len(branch_deltas))
+                elif rb is not None and rt is not None:
+                    enum_deltas.append(rt - rb)
+                break
 
-                # If a non-hero action somehow differs, restore and just continue
-                # both worlds independently; this probe is about hero-rule splits.
-                if not same_action:
-                    base_hand = base_before
-                    treat_hand = treat_before
-                    break
-                guard += 1
+            # If a non-hero action somehow differs, restore and just continue
+            # both worlds independently; this probe is about hero-rule splits.
+            if not same_action:
+                base_hand = base_before
+                treat_hand = treat_before
+                break
+            guard += 1
 
-            if not split:
-                random_deltas.append(0.0)
-                enum_deltas.append(0.0)
-    finally:
-        _restore_flags(original)
+        if not split:
+            random_deltas.append(0.0)
+            enum_deltas.append(0.0)
+    return divergent
 
+
+def _new_probe_state() -> tuple[Table, Table, TableTurnover, TableTurnover]:
+    return (
+        _make_table(),
+        _make_table(),
+        TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42),
+        TableTurnover([s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT], rng_seed=42),
+    )
+
+
+def _print_probe_summary(
+    label: str,
+    preset: str,
+    n_hands: int,
+    divergent: int,
+    branch_counts: list[int],
+    random_deltas: list[float],
+    enum_deltas: list[float],
+    elapsed: float,
+) -> None:
     random_delta, random_ci = _stats(random_deltas)
     enum_delta, enum_ci = _stats(enum_deltas)
-    elapsed = time.perf_counter() - t0
     shrink = random_ci / enum_ci if enum_ci else float("inf")
     avg_branches = statistics.mean(branch_counts) if branch_counts else 0.0
     print(f"{label} ({preset})")
@@ -283,13 +301,164 @@ def run_probe(preset: str, n_hands: int) -> None:
     print(f"elapsed: {elapsed:.2f}s")
 
 
+def run_probe(preset: str, n_hands: int) -> None:
+    flag_names, label = _all_test_groups()[preset]
+    original = {name: getattr(abc_bot, name) for name in flag_names}
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
+
+    random_deltas: list[float] = []
+    enum_deltas: list[float] = []
+    divergent = 0
+    branch_counts: list[int] = []
+    t0 = time.perf_counter()
+    try:
+        divergent += _run_probe_chunk(
+            flag_names,
+            base_table,
+            treat_table,
+            base_turnover,
+            treat_turnover,
+            0,
+            n_hands,
+            random_deltas,
+            enum_deltas,
+            branch_counts,
+        )
+    finally:
+        _restore_flags(original)
+
+    _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
+
+
+def _adaptive_stop_reason(
+    n_hands: int,
+    divergent: int,
+    enum_delta: float,
+    enum_ci: float,
+    *,
+    min_hands: int,
+    max_hands: int,
+    min_divergent: int,
+    max_divergent: int,
+    target_ci: float,
+    effect_ratio: float,
+) -> str | None:
+    if n_hands >= max_hands:
+        return "max_hands"
+    if divergent >= max_divergent:
+        return "max_divergent"
+    if n_hands < min_hands or divergent < min_divergent:
+        return None
+    if enum_ci <= target_ci and enum_ci <= abs(enum_delta) * effect_ratio:
+        return "confirmed"
+    if enum_ci <= target_ci and abs(enum_delta) < target_ci:
+        return "inconclusive_small_effect"
+    return None
+
+
+def run_adaptive_probe(
+    preset: str,
+    *,
+    target_ci: float,
+    effect_ratio: float,
+    min_hands: int,
+    max_hands: int,
+    chunk_size: int,
+    min_divergent: int,
+    max_divergent: int,
+) -> None:
+    flag_names, label = _all_test_groups()[preset]
+    original = {name: getattr(abc_bot, name) for name in flag_names}
+    base_table, treat_table, base_turnover, treat_turnover = _new_probe_state()
+    random_deltas: list[float] = []
+    enum_deltas: list[float] = []
+    branch_counts: list[int] = []
+    divergent = 0
+    n_hands = 0
+    t0 = time.perf_counter()
+    stop_reason = None
+    print(
+        f"adaptive chance-enumeration: {label} ({preset}), "
+        f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
+        f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
+        flush=True,
+    )
+    try:
+        while n_hands < max_hands:
+            this_chunk = min(chunk_size, max_hands - n_hands)
+            divergent += _run_probe_chunk(
+                flag_names,
+                base_table,
+                treat_table,
+                base_turnover,
+                treat_turnover,
+                n_hands,
+                this_chunk,
+                random_deltas,
+                enum_deltas,
+                branch_counts,
+            )
+            n_hands += this_chunk
+            random_delta, random_ci = _stats(random_deltas)
+            enum_delta, enum_ci = _stats(enum_deltas)
+            elapsed = time.perf_counter() - t0
+            print(
+                f"progress hands={n_hands} divergent={divergent} ({divergent / n_hands * 100:.2f}%) "
+                f"random_delta={random_delta:+.2f} random_ci={random_ci:.2f} "
+                f"enum_delta={enum_delta:+.2f} enum_ci={enum_ci:.2f} elapsed={elapsed:.1f}s",
+                flush=True,
+            )
+            stop_reason = _adaptive_stop_reason(
+                n_hands,
+                divergent,
+                enum_delta,
+                enum_ci,
+                min_hands=min_hands,
+                max_hands=max_hands,
+                min_divergent=min_divergent,
+                max_divergent=max_divergent,
+                target_ci=target_ci,
+                effect_ratio=effect_ratio,
+            )
+            if stop_reason:
+                break
+    finally:
+        _restore_flags(original)
+
+    print(f"stop_reason: {stop_reason or 'finished'}", flush=True)
+    _print_probe_summary(label, preset, n_hands, divergent, branch_counts, random_deltas, enum_deltas, time.perf_counter() - t0)
+
+
 def main() -> None:
-    preset = sys.argv[1] if len(sys.argv) > 1 else "v16-iso-limpers"
-    n_hands = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("preset", nargs="?", default="v16-iso-limpers")
+    parser.add_argument("n_hands", nargs="?", type=int, default=1000)
+    parser.add_argument("--adaptive", action="store_true", help="run chunks until precision/effect or hard-cap stop criteria are met")
+    parser.add_argument("--target-ci", type=float, default=1.0)
+    parser.add_argument("--effect-ratio", type=float, default=0.5, help="confirmed when CI <= abs(delta) * this ratio")
+    parser.add_argument("--min-hands", type=int, default=10_000)
+    parser.add_argument("--max-hands", type=int, default=500_000)
+    parser.add_argument("--chunk-size", type=int, default=2_000)
+    parser.add_argument("--min-divergent", type=int, default=30)
+    parser.add_argument("--max-divergent", type=int, default=2_000)
+    args = parser.parse_args()
+    preset = args.preset
     groups = _all_test_groups()
     if preset not in groups:
         raise SystemExit(f"unknown preset {preset}; options: {', '.join(groups)}")
-    run_probe(preset, n_hands)
+    if args.adaptive:
+        run_adaptive_probe(
+            preset,
+            target_ci=args.target_ci,
+            effect_ratio=args.effect_ratio,
+            min_hands=args.min_hands,
+            max_hands=args.max_hands,
+            chunk_size=args.chunk_size,
+            min_divergent=args.min_divergent,
+            max_divergent=args.max_divergent,
+        )
+    else:
+        run_probe(preset, args.n_hands)
 
 
 if __name__ == "__main__":
