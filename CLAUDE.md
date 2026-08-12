@@ -86,7 +86,9 @@ loose archetypes), v28 `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (real EV-computed
 sizing tier per archetype instead of a hardcoded Nit/TAG shortcut), v29
 `ISO_WIDER_RANGE_OVER_LIMPERS` (wider range isolating limpers, not just
 bigger sizing), v30 `SIZE_SCALED_CALL_RANGE` (call range widens/narrows by
-the actual raise size faced). **These need a follow-up confirmatory batch —
+the actual raise size faced), r13 `SHOVE_AA_KK_VS_3BET_PLUS` (AA/KK shove
+instead of flat-call when facing 3bet/4bet+). **These need a follow-up
+confirmatory batch —
 ask the user before launching it, don't just start it because it's "next."**
 
 ### The confirmatory batch currently running (as of this snapshot)
@@ -189,6 +191,7 @@ IDs:
 | `r10-donk-bluff-vs-tight` | `v17-donk-bluff` | `DONK_BLUFF_VS_TIGHT` |
 | `r11-hero-pot-damping` | `v19-hero-pot-damping` | `HERO_PROGRESSIVE_POT_DAMPING` |
 | `r12-tight-big-iso-limpers` | new v31 candidate | `TIGHT_BIG_ISO_RAISE_LIMPERS` |
+| `r13-shove-aa-kk-vs-3bet-plus` | new v32 candidate | `SHOVE_AA_KK_VS_3BET_PLUS` |
 
 This list covers the current ablation-supported tracked rule units. Older
 historical ideas such as early core opening/calling changes are not separate
@@ -213,6 +216,7 @@ population-weighted EV.
 | `r10-donk-bluff-vs-tight` | Nit/TAG/LAG | `-11.90 +/- 4.22` | `confirmed_negative` | keep |
 | `r11-hero-pot-damping` | population | `+72.06 +/- 6.94` | `max_divergent` | disabled, likely harmful |
 | `r12-tight-big-iso-limpers` | population | `+11.61 +/- 3.97` | manual stop after strong positive signal | enabled |
+| `r13-shove-aa-kk-vs-3bet-plus` | population | not run yet | candidate | test next |
 
 Logs backing the final four-row update:
 `/tmp/adaptive_chance_enumeration_ablation_20260812_103440.log`. Older rows

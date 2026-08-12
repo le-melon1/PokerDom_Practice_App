@@ -335,6 +335,50 @@ def test_only_premium_continues_vs_a_3bet():
     assert action == "call"
 
 
+def test_aa_kk_shove_vs_3bet_plus_when_flag_on():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "raise", amount=15.0)
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    hand.players[4].hole_cards = ["As", "Ah"]
+
+    original = abc_bot.SHOVE_AA_KK_VS_3BET_PLUS
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
+    try:
+        action, amount = choose_abc_action(hand, 4)
+    finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = original
+
+    assert action == "raise"
+    assert amount == hand.legal_actions(4)["max_raise_to"]
+
+
+def test_aa_kk_shove_flag_does_not_shove_qq():
+    players = make_players(6)
+    hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
+    hand.apply_action(4, "raise", amount=5.0)
+    hand.apply_action(5, "raise", amount=15.0)
+    while hand.current_actor() != 4:
+        hand.apply_action(hand.current_actor(), "fold")
+    hand.players[4].hole_cards = ["Qd", "Qs"]
+
+    original = abc_bot.SHOVE_AA_KK_VS_3BET_PLUS
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
+    try:
+        action, amount = choose_abc_action(hand, 4)
+    finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = original
+
+    assert action == "call"
+    assert amount is None
+
+
+def test_aa_kk_shove_flag_defaults_off():
+    assert abc_bot.SHOVE_AA_KK_VS_3BET_PLUS is False
+
+
 def _facing_a_near_shove_4bet(stack=40.0):
     players = make_players(6, stack=stack)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)

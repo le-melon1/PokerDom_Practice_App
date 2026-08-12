@@ -126,6 +126,7 @@ def test_rule_ids_cover_current_ablation_rule_units():
         "r10-donk-bluff-vs-tight": ["DONK_BLUFF_VS_TIGHT"],
         "r11-hero-pot-damping": ["HERO_PROGRESSIVE_POT_DAMPING"],
         "r12-tight-big-iso-limpers": ["TIGHT_BIG_ISO_RAISE_LIMPERS"],
+        "r13-shove-aa-kk-vs-3bet-plus": ["SHOVE_AA_KK_VS_3BET_PLUS"],
     }
 
     assert {name: groups[name][0] for name in expected} == expected

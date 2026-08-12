@@ -98,6 +98,7 @@ RULE_TEST_GROUPS = {
     "r10-donk-bluff-vs-tight": (["DONK_BLUFF_VS_TIGHT"], "r10 donk bluff vs tight"),
     "r11-hero-pot-damping": (["HERO_PROGRESSIVE_POT_DAMPING"], "r11 hero progressive pot damping"),
     "r12-tight-big-iso-limpers": (["TIGHT_BIG_ISO_RAISE_LIMPERS"], "r12 tight big iso-raise limpers"),
+    "r13-shove-aa-kk-vs-3bet-plus": (["SHOVE_AA_KK_VS_3BET_PLUS"], "r13 shove AA/KK vs 3bet+"),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -162,6 +163,7 @@ ALL_COMPARISON_FLAGS = [
     "OPTIMAL_VALUE_SIZING_PER_ARCHETYPE",
     "ISO_WIDER_RANGE_OVER_LIMPERS",
     "SIZE_SCALED_CALL_RANGE",
+    "SHOVE_AA_KK_VS_3BET_PLUS",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
