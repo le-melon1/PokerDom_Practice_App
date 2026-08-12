@@ -150,11 +150,13 @@ For normal follow-up work, prefer
 flushes progress after every chunk, and stops each preset once `CI <= 1.0`
 and `CI <= abs(delta) / 2`, or when the configured hand/divergence caps are
 hit. For negative deltas it can stop earlier once `CI <= abs(delta)`, because
-that is already enough to classify the flag as worse. This is a methodology
-tool, not a full session simulator replacement: it starts each hand from fresh
-stacks and enumerates only the next chance card. Be explicit about comparison
-mode: `--comparison current` overlays only the tested flags on today's
-defaults; `--comparison historical` resets known A/B flags to the preset's
+that is already enough to classify the flag as worse. Rules that never find
+any divergent hands stop at `MAX_ZERO_DIVERGENT_HANDS` and should be labeled
+"not enough divergent hands," not as EV-zero. This is a methodology tool, not
+a full session simulator replacement: it starts each hand from fresh stacks
+and enumerates only the next chance card. Be explicit about comparison mode:
+`--comparison current` overlays only the tested flags on today's defaults;
+`--comparison historical` resets known A/B flags to the preset's
 at-introduction context before applying treatment; `--comparison ablation`
 uses today's full model as baseline and disables one rule in treatment, so
 its delta is `without_rule - full_model` (negative means the removed rule was

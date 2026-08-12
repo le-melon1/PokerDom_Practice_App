@@ -15,6 +15,7 @@ EFFECT_RATIO="${EFFECT_RATIO:-0.5}"
 COMPARISON="${COMPARISON:-historical}"
 MIN_HANDS="${MIN_HANDS:-10000}"
 MAX_HANDS="${MAX_HANDS:-500000}"
+MAX_ZERO_DIVERGENT_HANDS="${MAX_ZERO_DIVERGENT_HANDS:-50000}"
 CHUNK_SIZE="${CHUNK_SIZE:-2000}"
 MIN_DIVERGENT="${MIN_DIVERGENT:-30}"
 MAX_DIVERGENT="${MAX_DIVERGENT:-2000}"
@@ -44,9 +45,12 @@ PRESETS=(
   v29-iso-wider-range
   v30-size-scaled-call
 )
+if [[ -n "${PRESETS_OVERRIDE:-}" ]]; then
+  read -r -a PRESETS <<< "$PRESETS_OVERRIDE"
+fi
 
 echo "=== adaptive chance-enumeration run started $(date) ===" | tee -a "$LOG"
-echo "target_ci=$TARGET_CI effect_ratio=$EFFECT_RATIO comparison=$COMPARISON min_hands=$MIN_HANDS max_hands=$MAX_HANDS chunk_size=$CHUNK_SIZE min_divergent=$MIN_DIVERGENT max_divergent=$MAX_DIVERGENT" | tee -a "$LOG"
+echo "target_ci=$TARGET_CI effect_ratio=$EFFECT_RATIO comparison=$COMPARISON min_hands=$MIN_HANDS max_hands=$MAX_HANDS max_zero_divergent_hands=$MAX_ZERO_DIVERGENT_HANDS chunk_size=$CHUNK_SIZE min_divergent=$MIN_DIVERGENT max_divergent=$MAX_DIVERGENT" | tee -a "$LOG"
 
 for preset in "${PRESETS[@]}"; do
   preset_comparison="$COMPARISON"
@@ -62,6 +66,7 @@ for preset in "${PRESETS[@]}"; do
     --effect-ratio "$EFFECT_RATIO" \
     --min-hands "$MIN_HANDS" \
     --max-hands "$MAX_HANDS" \
+    --max-zero-divergent-hands "$MAX_ZERO_DIVERGENT_HANDS" \
     --chunk-size "$CHUNK_SIZE" \
     --min-divergent "$MIN_DIVERGENT" \
     --max-divergent "$MAX_DIVERGENT" \

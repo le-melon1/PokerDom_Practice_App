@@ -13,6 +13,7 @@ def test_adaptive_stop_accepts_negative_delta_once_ci_is_below_loss():
             enum_ci=3.9,
             min_hands=10_000,
             max_hands=500_000,
+            max_zero_divergent_hands=50_000,
             min_divergent=30,
             max_divergent=2_000,
             target_ci=1.0,
@@ -31,12 +32,32 @@ def test_adaptive_stop_keeps_positive_delta_on_stricter_precision_bar():
             enum_ci=1.5,
             min_hands=10_000,
             max_hands=500_000,
+            max_zero_divergent_hands=50_000,
             min_divergent=30,
             max_divergent=2_000,
             target_ci=1.0,
             effect_ratio=0.5,
         )
         is None
+    )
+
+
+def test_adaptive_stop_caps_rules_that_never_diverge():
+    assert (
+        probe._adaptive_stop_reason(
+            n_hands=50_000,
+            divergent=0,
+            enum_delta=0.0,
+            enum_ci=0.0,
+            min_hands=10_000,
+            max_hands=500_000,
+            max_zero_divergent_hands=50_000,
+            min_divergent=30,
+            max_divergent=2_000,
+            target_ci=1.0,
+            effect_ratio=0.5,
+        )
+        == "no_divergent_hands"
     )
 
 

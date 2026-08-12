@@ -528,6 +528,7 @@ def _adaptive_stop_reason(
     *,
     min_hands: int,
     max_hands: int,
+    max_zero_divergent_hands: int,
     min_divergent: int,
     max_divergent: int,
     target_ci: float,
@@ -537,6 +538,8 @@ def _adaptive_stop_reason(
         return "max_hands"
     if divergent >= max_divergent:
         return "max_divergent"
+    if divergent == 0 and max_zero_divergent_hands > 0 and n_hands >= max_zero_divergent_hands:
+        return "no_divergent_hands"
     if n_hands < min_hands or divergent < min_divergent:
         return None
     if enum_delta < 0 and enum_ci <= abs(enum_delta):
@@ -556,6 +559,7 @@ def run_adaptive_probe(
     effect_ratio: float,
     min_hands: int,
     max_hands: int,
+    max_zero_divergent_hands: int,
     chunk_size: int,
     min_divergent: int,
     max_divergent: int,
@@ -575,6 +579,7 @@ def run_adaptive_probe(
         f"adaptive chance-enumeration: {label} ({preset}), "
         f"comparison={comparison.label}, "
         f"target_ci={target_ci}, effect_ratio={effect_ratio}, min/max hands={min_hands}/{max_hands}, "
+        f"max_zero_divergent_hands={max_zero_divergent_hands}, "
         f"min/max divergent={min_divergent}/{max_divergent}, chunk={chunk_size}",
         flush=True,
     )
@@ -611,6 +616,7 @@ def run_adaptive_probe(
                 enum_ci,
                 min_hands=min_hands,
                 max_hands=max_hands,
+                max_zero_divergent_hands=max_zero_divergent_hands,
                 min_divergent=min_divergent,
                 max_divergent=max_divergent,
                 target_ci=target_ci,
@@ -644,6 +650,7 @@ def main() -> None:
     parser.add_argument("--effect-ratio", type=float, default=0.5, help="confirmed when CI <= abs(delta) * this ratio")
     parser.add_argument("--min-hands", type=int, default=10_000)
     parser.add_argument("--max-hands", type=int, default=500_000)
+    parser.add_argument("--max-zero-divergent-hands", type=int, default=50_000)
     parser.add_argument("--chunk-size", type=int, default=2_000)
     parser.add_argument("--min-divergent", type=int, default=30)
     parser.add_argument("--max-divergent", type=int, default=2_000)
@@ -661,6 +668,7 @@ def main() -> None:
                 effect_ratio=args.effect_ratio,
                 min_hands=args.min_hands,
                 max_hands=args.max_hands,
+                max_zero_divergent_hands=args.max_zero_divergent_hands,
                 chunk_size=args.chunk_size,
                 min_divergent=args.min_divergent,
                 max_divergent=args.max_divergent,
