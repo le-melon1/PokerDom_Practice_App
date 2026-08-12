@@ -506,13 +506,14 @@ strategy card, not just inferred from code):
       (UTG 13.9% / MP 16.5% / CO 21.6% / BTN 26.6% / SB 24.5%, by VPIP-implied
       percentile -- the technique from the guide -- UNION real-showdown-data
       additions, see REAL_DATA_RANGE_ADDITIONS and the v7 note above), OR
-      (v29, ISO_WIDER_RANGE_OVER_LIMPERS, untested) the same widened range
-      STEAL_WIDER_VS_NIT uses if at least one player has already limped in
-      -- a limper has shown a weak/speculative hand, isolate them wider,
-      not just for more money. The old bigger-over-limpers sizing rule
-      (ISO_RAISE_OVER_LIMPERS) is currently disabled by the 2026-08-12
-      full-model ablation result. A separate v31 candidate can instead
-      isolate limpers tighter but much bigger.
+      (v29, ISO_WIDER_RANGE_OVER_LIMPERS, doubly confirmed positive
+      2026-08-12/13, shipped True) the same widened range STEAL_WIDER_VS_NIT
+      uses if at least one player has already limped in -- a limper has
+      shown a weak/speculative hand, isolate them wider, not just for more
+      money. The old bigger-over-limpers sizing rule (ISO_RAISE_OVER_LIMPERS)
+      is currently disabled by the 2026-08-12 full-model ablation result. A
+      separate v31 candidate can instead isolate limpers tighter but much
+      bigger.
       Else fold.
 
   PREFLOP, facing a raise (any number of raises deep):
@@ -830,7 +831,7 @@ LIMP_BEHIND_EXTRA_HANDS = {
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
 # wider, not just bigger) -- not fit to a measured breakeven point, same
 # disclosure as C1 itself.
-ISO_WIDER_RANGE_OVER_LIMPERS = False  # flip True to A/B-test against the baseline (same range as a plain open, regardless of limpers)
+ISO_WIDER_RANGE_OVER_LIMPERS = True  # 2026-08-12/13: doubly confirmed positive via chance-enumeration probe, two independent seeds/samples (+22.10+/-5.18 @ seed42, +19.67+/-6.04 @ seed777, combined-CI-in-quadrature 7.96 vs a 2.43 delta between them -- well inside, high confidence). See CLAUDE.md's "Independent second-seed cross-check" section for the full writeup. Shipped True.
 
 # v19: open bigger with a premium hand (reuses VALUE_3BET_TIGHT below as the
 # "premium" set), stacking with the C1 per-limper bonus above -- i.e. a
