@@ -597,10 +597,7 @@ forced_incidence` only corrects for the frequency distortion, not the
 card-distribution distortion -- so the ~+3.3/+4.2/+4.3 bb/100 numbers were
 directionally probably right but not a real confirmed magnitude. Honest
 fix: `--hero-hand-filter` only (forces hero's own cards, doesn't touch
-opponent behavior at all) with NO `--force-opponent-reraise`, run at up to
-2,000,000 hands adaptive. Launched 2026-08-13 09:32, still running as of
-this writing -- see `/tmp/round2_20260813_r13_honest_seed42.log` /
-`_r18v_qqplus_honest_seed42.log` / `_r18v_qqak_honest_seed42.log`.
+opponent behavior at all) with NO `--force-opponent-reraise`.
 
 **Bug audit found a second real gap**, this time in a currently-shipped
 rule: `_tight_iso_range_cache` (used by `TIGHT_BIG_ISO_RAISE_LIMPERS =
@@ -610,14 +607,12 @@ True`) is the only raising-range tier that never unions
 tight-iso as "X% of the normal open VPIP," where "normal open range" is
 itself defined as VPIP-range UNION `REAL_DATA_RANGE_ADDITIONS`. Added
 `TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR` (off by default, untested + this rule
-is live) and preset `r21`. First two-seed result: **+7.72+/-3.82 @ seed42,
-+25.60+/-10.55 @ seed777** -- both individually clear `confirmed_positive`,
-but combined-CI-in-quadrance is 11.22 against a 17.88 delta BETWEEN the
-seeds, i.e. the two samples don't agree with each other. Sign is
-consistently positive (meaningful on its own) but magnitude is too noisy
-to ship. A bigger precision run (20k-200k hands/seed) is queued to run
-automatically after the rest of this batch finishes (`/tmp/
-round3_r21_precision.sh`, waits on `/tmp/round2_20260813_DONE.log`).
+is live) and preset `r21`. First two-seed result (5-8k hands): **+7.72+/-3.82
+@ seed42, +25.60+/-10.55 @ seed777** -- both individually clear
+`confirmed_positive`, but combined-CI-in-quadrature is 11.22 against a
+17.88 delta BETWEEN the seeds, i.e. the two samples don't agree with each
+other. Sign is consistently positive (meaningful on its own) but
+magnitude is too noisy to ship -- needs a bigger precision run.
 
 **Confirmed and shipped**: **r20 (`SIZE_UP_PREMIUM_OPENS`) = True** --
 +4.00+/-1.89 @ seed42, +3.05+/-1.44 @ seed777, combined-CI 2.38 vs 0.95
@@ -629,18 +624,49 @@ newer chance-enumeration method resolved it.
 -- +0.07+/-0.99 @ seed42, -0.98+/-0.99 @ seed777, both
 `inconclusive_small_effect`, consistent with a true-zero effect. Kept off.
 
-**SIZE_SCALED_CALL_RANGE re-test after the narrow-range bug fix**: queued
-(`/tmp/round2_20260813_v30fixed_seed42.log` etc.), plus three milder-
-multiplier variants (`v30v-mild-narrow` 0.85x, `v30v-no-narrow` 1.0x/
-widen-only, `v30v-mild-both` 1.15x/0.85x) to check whether the original
-1.3x/0.7x multipliers were themselves too aggressive independent of the
-bug. Results pending as of this writing.
+**2026-08-13 ~10:30am: user asked to kill everything running** (needs the
+machine for other work) -- all background jobs were `pkill`'d
+(`round2_confirm.sh`, `round3_r21_precision.sh`, any live
+`probe_chance_enumeration.py` process). Working tree was clean at the
+time (every finding above was already committed). **Queued for the next
+overnight/idle session -- do not start without the user's go-ahead first,
+same standing rule as always:**
 
-**BB_DEFEND_VS_STEAL_MINRAISE (r19v)**: three variants queued (tight/
-medium/wide thresholds). The "tight" variant reuses the same 2.0bb
-threshold noted as likely-dead above (real min-open sizing never goes
-below ~2.35bb) -- included for completeness, expect 0 divergent, real
-signal (if any) should come from medium/wide. Results pending.
+1. **r21 precision run** (the inconsistent-magnitude one above) -- bigger
+   sample per seed:
+   `.venv/bin/python3 scripts/probe_chance_enumeration.py
+   r21-tight-iso-real-data-floor 50000 --comparison current --adaptive
+   --min-hands 20000 --max-hands 200000 --base-seed 42` (and `--base-seed
+   777`).
+2. **v30 (`SIZE_SCALED_CALL_RANGE`) re-test after the narrow-range bug
+   fix**, plus three milder-multiplier variants, all via
+   `--comparison current --adaptive --base-seed 42` (and 777 for
+   cross-check once seed42 looks promising): presets
+   `v30-size-scaled-call`, `v30v-mild-narrow`, `v30v-no-narrow`,
+   `v30v-mild-both`.
+3. **BB_DEFEND_VS_STEAL_MINRAISE (r19v)**, three variants, same adaptive
+   pattern: `r19v-bb-defend-minraise-tight` (expect 0 divergent, same
+   dead-threshold issue as v30's original 2.0bb -- low priority),
+   `r19v-bb-defend-steal-medium`, `r19v-bb-defend-steal-wide`.
+4. **Honest r13/r18v-shove-* natural-incidence tests** (the main
+   unresolved thread) -- `--hero-hand-filter` only, no
+   `--force-opponent-reraise`, large adaptive cap since the target spot is
+   rare even with hero's hand forced:
+   `.venv/bin/python3 scripts/probe_chance_enumeration.py
+   r13-shove-aa-kk-vs-3bet-plus 2000000 --comparison current
+   --hero-hand-filter AA,KK --adaptive --max-hands 2000000 --base-seed 42`,
+   then `r18v-shove-qq-plus --hero-hand-filter AA,KK,QQ`, then
+   `r18v-shove-qq-ak --hero-hand-filter AA,KK,QQ,AKs,AKo`. Each of these
+   could take a long time (the earlier honest smoke test found 0 divergent
+   over 50k hands even with hero's cards forced) -- run one at a time, not
+   in parallel, and check `vm_stat` free memory before launching (this
+   machine runs tight, ~300MB free was typical during this session with
+   several other Claude Code sessions + VS Code open).
+
+All of scripts 1-4 above are cheap to re-launch (`probe_chance_enumeration.py`
+already has every preset/flag wired in from this round's commits) -- no
+further code changes needed, just running them and updating this file +
+`abc_bot.py`'s flag defaults with whatever comes back.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
