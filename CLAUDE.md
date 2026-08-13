@@ -57,6 +57,7 @@ project; don't report a delta as "working" without checking it against this.
 | **v29 (`ISO_WIDER_RANGE_OVER_LIMPERS`)** | **+22.10 / +19.67 bb/100 (2 indep. seeds)** | chance-enum, ~6k divergent each | **shipped True 2026-08-12/13** -- see "Independent second-seed cross-check" section below |
 | **v25 (`BARREL_BLUFF_VS_TIGHT`)** | **+1.99 / +1.33 bb/100 (2 indep. seeds)** | chance-enum, ~60 divergent each | **shipped True 2026-08-12/13** -- smaller than v29 but doubly confirmed |
 | **v28 (`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE`)** | **+2.25 / +0.82 / +4.88 / +1.45 / +0.68 bb/100 (5 indep. seeds)** | chance-enum, up to 54k hands each | **shipped True 2026-08-12/13** -- 5/5 independent samples positive (never once negative; ~3% chance of that by pure luck around a true-zero effect), magnitude noisy (0.68-4.88), best-precision single estimate +1.45+/-0.62 |
+| **r20 (`SIZE_UP_PREMIUM_OPENS`)** | **+4.00 / +3.05 bb/100 (2 indep. seeds)** | chance-enum, ~90-220 divergent each | **shipped True 2026-08-13** -- old v19b whole-game test (+1.76/-0.76, inside CI) was too imprecise to see this; re-tested with chance-enum, combined-CI-in-quadrature 2.38 vs 0.95 delta, well inside |
 
 **Tested, NOT demonstrated (shipped OFF, kept in code for reference):**
 v1-v9 range-only tweaks (plateaued near breakeven), v9 `USE_WIDE_VALUE_3BET`
@@ -72,7 +73,9 @@ flipped vs its original 80k run — looks like noise around zero), v16 C1
 proven benefit), v19 hero pot damping (later full-model ablation measured
 removing it much better, `+72.06 +/- 6.94`), v21 `SQUEEZE_WIDER_RANGE`/
 `SQUEEZE_SIZE_UP_PER_CALLER`, v22 `VALUE_RAISE_FACING_BET` (measured WORSE,
--9.66 bb/100).
+-9.66 bb/100), r17v `CALL_RANGE_BY_RAISER_POSITION` (2026-08-13: +0.07+/-0.99
+@ seed42, -0.98+/-0.99 @ seed777, both `inconclusive_small_effect`, consistent
+with true zero).
 
 **Pattern worth remembering**: three separate "widen a range because a
 population frequency table says so" theories (v9, v14, v15/A1+A2/B1+B2) have
@@ -575,6 +578,69 @@ fraction of a bb/100 when the spot itself is this rare. Not worth further
 testing investment relative to its plausible ceiling impact; the
 plain-language strategy card's existing v26 entry can stay untested/off
 without real cost.
+
+### 2026-08-13 round: honest r13/r18v re-test + bug audit + new confirmed/negative flags
+
+User asked to (1) get an honest r13/r18v-shove-* verdict using natural
+opponent behavior instead of `--force-opponent-reraise`'s biased
+opponent-card-forcing, (2) A/B-test the three untested-since-written flags
+(`CALL_RANGE_BY_RAISER_POSITION`, `SIZE_UP_PREMIUM_OPENS`,
+`BB_DEFEND_VS_STEAL_MINRAISE`), and (3) audit whether other "didn't work"
+flags share SIZE_SCALED_CALL_RANGE's bug (a range tier silently missing a
+real-data union that its sibling tiers include).
+
+**Why the r13/r18v rescaled numbers weren't trustworthy**:
+`--force-opponent-reraise` inflates a rare spot's frequency AND fixes the
+opponent's cards to a specific range (`VALUE_3BET_WIDE`) instead of their
+real trained-model distribution. Rescaling by `true_incidence /
+forced_incidence` only corrects for the frequency distortion, not the
+card-distribution distortion -- so the ~+3.3/+4.2/+4.3 bb/100 numbers were
+directionally probably right but not a real confirmed magnitude. Honest
+fix: `--hero-hand-filter` only (forces hero's own cards, doesn't touch
+opponent behavior at all) with NO `--force-opponent-reraise`, run at up to
+2,000,000 hands adaptive. Launched 2026-08-13 09:32, still running as of
+this writing -- see `/tmp/round2_20260813_r13_honest_seed42.log` /
+`_r18v_qqplus_honest_seed42.log` / `_r18v_qqak_honest_seed42.log`.
+
+**Bug audit found a second real gap**, this time in a currently-shipped
+rule: `_tight_iso_range_cache` (used by `TIGHT_BIG_ISO_RAISE_LIMPERS =
+True`) is the only raising-range tier that never unions
+`REAL_DATA_RANGE_ADDITIONS`, unlike `_open_range_cache` and
+`_steal_range_cache` which both do -- despite the strategy card describing
+tight-iso as "X% of the normal open VPIP," where "normal open range" is
+itself defined as VPIP-range UNION `REAL_DATA_RANGE_ADDITIONS`. Added
+`TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR` (off by default, untested + this rule
+is live) and preset `r21`. First two-seed result: **+7.72+/-3.82 @ seed42,
++25.60+/-10.55 @ seed777** -- both individually clear `confirmed_positive`,
+but combined-CI-in-quadrance is 11.22 against a 17.88 delta BETWEEN the
+seeds, i.e. the two samples don't agree with each other. Sign is
+consistently positive (meaningful on its own) but magnitude is too noisy
+to ship. A bigger precision run (20k-200k hands/seed) is queued to run
+automatically after the rest of this batch finishes (`/tmp/
+round3_r21_precision.sh`, waits on `/tmp/round2_20260813_DONE.log`).
+
+**Confirmed and shipped**: **r20 (`SIZE_UP_PREMIUM_OPENS`) = True** --
++4.00+/-1.89 @ seed42, +3.05+/-1.44 @ seed777, combined-CI 2.38 vs 0.95
+delta, well inside. The 2026-08-07 whole-game test (+1.76/-0.76, inside
+CI, sign flip) was simply too imprecise to see this real effect; the
+newer chance-enumeration method resolved it.
+
+**Tested, not demonstrated**: **r17v (`CALL_RANGE_BY_RAISER_POSITION`)**
+-- +0.07+/-0.99 @ seed42, -0.98+/-0.99 @ seed777, both
+`inconclusive_small_effect`, consistent with a true-zero effect. Kept off.
+
+**SIZE_SCALED_CALL_RANGE re-test after the narrow-range bug fix**: queued
+(`/tmp/round2_20260813_v30fixed_seed42.log` etc.), plus three milder-
+multiplier variants (`v30v-mild-narrow` 0.85x, `v30v-no-narrow` 1.0x/
+widen-only, `v30v-mild-both` 1.15x/0.85x) to check whether the original
+1.3x/0.7x multipliers were themselves too aggressive independent of the
+bug. Results pending as of this writing.
+
+**BB_DEFEND_VS_STEAL_MINRAISE (r19v)**: three variants queued (tight/
+medium/wide thresholds). The "tight" variant reuses the same 2.0bb
+threshold noted as likely-dead above (real min-open sizing never goes
+below ~2.35bb) -- included for completeness, expect 0 divergent, real
+signal (if any) should come from medium/wide. Results pending.
 
 ### Regressors / features NOT currently used anywhere (raised 2026-08-11)
 
