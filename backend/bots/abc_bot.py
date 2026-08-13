@@ -379,9 +379,16 @@ script's docstring). Revision history, each one a real measured finding:
   / +35.33 without (CI +/-3.31); with +23.54 / +34.57 (CI +/-3.03 / +/-3.33).
   Delta +1.76 with rake, -0.76 without -- inside the combined CI both ways,
   sign even flips between the two rake conditions on the same seed. Not a
-  demonstrated effect. Shipped False, per this file's standing policy of not
-  carrying unproven complexity (same call made for behavior_clone.py's
-  reverted 4th monster-pot refinement the same day).
+  demonstrated effect at the time. Shipped False, per this file's standing
+  policy of not carrying unproven complexity (same call made for behavior_
+  clone.py's reverted 4th monster-pot refinement the same day).
+
+  r20 (2026-08-13): re-tested with the chance-enumeration probe instead of
+  the old whole-game method -- the whole-game test above was simply too
+  imprecise to see this, not evidence of no effect. Result: +4.00+/-1.89
+  bb/100 @ seed42, +3.05+/-1.44 bb/100 @ seed777 (combined-CI-in-quadrature
+  2.38 vs a 0.95 delta between them -- well inside, confirmed). Shipped
+  True.
 
   v20 (2026-08-07 pm): follow-up on the monster-pot investigation -- see
   behavior_clone.py's "Monster-pot fix, follow-up" docstring section for the
@@ -644,7 +651,7 @@ CALL_VPIP_NARROW_MULTIPLIER = 0.7
 # Candidate: make cold-call ranges depend on the raiser's position, not only
 # hero's seat. An UTG/MP open represents a stronger range than a CO/BTN/SB
 # steal, so the same hero hand should not be treated identically in both spots.
-CALL_RANGE_BY_RAISER_POSITION = False
+CALL_RANGE_BY_RAISER_POSITION = False  # r17v (2026-08-13): tested, not demonstrated -- +0.07+/-0.99 bb/100 @ seed42, -0.98+/-0.99 @ seed777 (both inconclusive_small_effect, combined-CI 1.40 vs 1.05 delta, consistent with true-zero). Kept off.
 EARLY_RAISER_POSITIONS = {"UTG", "MP"}
 LATE_STEAL_RAISER_POSITIONS = {"CO", "BTN", "SB"}
 
@@ -851,7 +858,7 @@ ISO_WIDER_RANGE_OVER_LIMPERS = True  # 2026-08-12/13: doubly confirmed positive 
 # range's sizing the same so it isn't readable" argument, worth checking
 # empirically rather than assuming either way given how this file's other
 # theory-first guesses (A1/A2/B1/B2) mostly measured as noise.
-SIZE_UP_PREMIUM_OPENS = False  # flip False to A/B-test against flat sizing regardless of hand strength
+SIZE_UP_PREMIUM_OPENS = True  # 2026-08-13: v19b's old whole-game test (+1.76/-0.76, inside CI, sign flip) was too imprecise. Re-tested with the chance-enumeration probe (r20): +4.00+/-1.89 @ seed42, +3.05+/-1.44 @ seed777, combined-CI-in-quadrature 2.38 vs a 0.95 delta between them -- well inside, confirmed. Shipped True.
 PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
 
 # v17, C2: archetype_facing_bet_by_initiative.csv (new this session --

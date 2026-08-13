@@ -121,7 +121,10 @@ def test_tight_big_iso_folds_plain_open_hands_outside_tight_iso_range():
 def test_tight_big_iso_raises_bigger_with_tight_iso_hand():
     _, _, _, tight_iso_ranges, *_ = abc_bot._ranges()
     position = "BTN"
-    test_hand = next(iter(tight_iso_ranges[position]))
+    # picked deterministically and excluding VALUE_3BET_TIGHT so this test
+    # isn't sensitive to SIZE_UP_PREMIUM_OPENS's extra sizing bonus (which
+    # only applies to premium hands) or to set-iteration hash randomization
+    test_hand = next(h for h in sorted(tight_iso_ranges[position]) if h not in abc_bot.VALUE_3BET_TIGHT)
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -148,9 +151,10 @@ def test_utg_opens_a_premium_hand():
     hand.players[actor].hole_cards = ["As", "Ah"]
     action, amount = choose_abc_action(hand, actor)
     assert action == "raise"
-    # v19: SIZE_UP_PREMIUM_OPENS tested and measured as noise (see abc_bot.py
-    # changelog), shipped off -- standard 2.5bb open regardless of hand strength.
-    assert amount == 5.0
+    # v19/r20: SIZE_UP_PREMIUM_OPENS shipped True 2026-08-13 (confirmed via
+    # chance-enumeration, see abc_bot.py changelog) -- AA gets the standard
+    # 2.5bb open plus the 1.5bb premium bonus.
+    assert amount == 8.0
 
 
 def test_utg_folds_a_trash_hand():
