@@ -27,6 +27,157 @@ isn't present at that relative path.
 
 Run via `python3 run_app.py` → `http://127.0.0.1:8001/`.
 
+## CURRENT STATUS SUMMARY (2026-08-13, read this section first)
+
+This section is the up-to-date answer to "where are we and what's left" --
+everything below it is historical detail/evidence for these claims. If
+this section and something further down disagree, trust this one and fix
+the other.
+
+### How testing actually works here
+
+Every rule in `backend/bots/abc_bot.py` is a flag (`SOME_FLAG = True/False`)
+read at decision time. Nothing ships `True` without being measured first
+(exceptions are called out explicitly when it happens). The measurement
+tool is `scripts/probe_chance_enumeration.py`:
+
+1. Run baseline and treatment in lockstep on the same dealt hand (common
+   random numbers via `_common_seed(base_seed, hand_index, stream, ...)`).
+2. The instant hero's action first differs between the two arms, average
+   the rest of the hand over every possible next board card instead of one
+   random continuation -- cuts CI width ~2-6x per hand at the same sample
+   size.
+3. A result only counts as **"confirmed real"** if `|delta| > sqrt(CI_a² +
+   CI_b²)` against a SECOND, independently-seeded run (`--base-seed 777`
+   after the default 42) -- one good-looking sample is never enough.
+4. `--adaptive` runs chunks until it hits `confirmed_positive`,
+   `confirmed_negative`, `inconclusive_small_effect`, or a hard cap
+   (`no_divergent_hands`/`max_hands`/`max_divergent`).
+
+Run it as: `.venv/bin/python3 scripts/probe_chance_enumeration.py <preset>
+<n_hands> --comparison current --adaptive --base-seed 42` (then `777` for
+cross-check). Every rule discussed below already has a preset wired in --
+check `RULE_TEST_GROUPS`/`PARAMETER_VARIANTS`/`EXTRA_TEST_GROUPS` in that
+file for the exact name. **Never launch a batch of these without the
+user's explicit go-ahead first** -- this machine is shared and runs tight
+on RAM (check `vm_stat` before launching, `nice -n 15`, one heavy job at a
+time, `caffeinate -i` for anything long).
+
+### Preflop: what's confirmed and shipped True
+
+`OPPONENT_AWARE_ARCHETYPES` (v10, +16.05 bb/100 -- the single biggest
+lever), `DONK_BLUFF_VS_TIGHT`, `BLUFF_3BET_VS_TIGHT` (v24), `STEAL_WIDER_
+VS_NIT`, `TIGHT_BIG_ISO_RAISE_LIMPERS`, `ISO_WIDER_RANGE_OVER_LIMPERS`
+(v29), `BARREL_BLUFF_VS_TIGHT` (v25, postflop but preflop-adjacent),
+`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28), `SIZE_UP_PREMIUM_OPENS` (r20,
+shipped 2026-08-13 after re-testing the old imprecise v19b result).
+
+### Preflop: confirmed NOT real (tested properly, correctly kept off)
+
+`SQUEEZE_WIDER_RANGE`/`SQUEEZE_SIZE_UP_PER_CALLER` (v21, 300k/arm, real
+null result), `SIZE_SCALED_CALL_RANGE` (v30, confirmed negative -6.46/
+-5.67 -- but see below, a real bug was found in its implementation AFTER
+this result, re-test pending), `CALL_RANGE_BY_RAISER_POSITION` (r17v, both
+seeds land at true-zero), `MULTIWAY_AWARE`, `VALUE_RAISE_FACING_BET`
+(-9.66 bb/100), several older v9/v14/v15/v16 range-widening theories (all
+plateaued at breakeven even at 500k-2M hands).
+
+### Preflop: built, off, JUST needs the A/B run (no more code work needed)
+
+These are fully implemented and wired into the probe harness already --
+the only remaining step is running `--adaptive --base-seed 42` then `777`
+and recording the result:
+
+- **`r21-tight-iso-real-data-floor`** (`TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR`)
+  -- first pass gave +7.72+/-3.82 @ seed42, +25.60+/-10.55 @ seed777 (both
+  individually "confirmed_positive" but the two DON'T agree with each
+  other -- combined CI 11.22 vs a 17.88 delta between them). Sign is real,
+  magnitude isn't pinned down yet. **Needs a bigger precision run** (try
+  `--min-hands 20000 --max-hands 200000`), not a from-scratch retest.
+- **`v30-size-scaled-call`** (`SIZE_SCALED_CALL_RANGE`) -- the narrow-tier
+  bug (missing `REAL_DATA_CALL_RANGE_ADDITIONS` union) that likely CAUSED
+  the old -6.46/-5.67 result is now fixed (2026-08-13 commit). The old
+  negative number is stale evidence against a version of the code that no
+  longer exists -- needs a full re-test from scratch, plus the three
+  milder-multiplier variants already built (`v30v-mild-narrow`,
+  `v30v-no-narrow`, `v30v-mild-both`).
+- **`r19v-bb-defend-steal-medium`/`-wide`** (`BB_DEFEND_VS_STEAL_MINRAISE`)
+  -- never tested at all. This is the single most-likely-underexplored
+  real gap in preflop: BB defense vs a late-position steal is a common,
+  fundamental spot, not a rare corner case like r13/v26. (`-tight` variant
+  reuses a threshold known-dead from v30's history, low priority.)
+- **`r13-shove-aa-kk-vs-3bet-plus`**, **`r18v-shove-qq-plus`**, **`r18v-
+  shove-qq-ak`** -- the honest (unforced, `--hero-hand-filter` only, NO
+  `--force-opponent-reraise`) natural-incidence version. Previous forced
+  numbers (~+3.3/+4.2/+4.3 bb/100) are not trustworthy (forced opponent's
+  cards to a fixed range, biasing magnitude even after frequency-rescaling
+  -- see the r13/v26 section below for the full story). Could take a long
+  time even at 2M hands since the target spot is naturally rare.
+- **`r22` through `r29`** (8 flags, 2026-08-13, see that section below) --
+  position-dependent 3-bet sizing, late-position bluff polarization,
+  MDF-scaled BB defense, blocker-based bluff range, limp-trap, implied-
+  odds set-mining, rake-adjusted opens, fold-vs-3bet-from-passive. NONE of
+  these have been run even once -- genuinely raw hypotheses, not
+  "leaning positive."
+- **`v26-fold-premium-extreme`** (`FOLD_PREMIUM_VS_EXTREME_AGGRO`) --
+  probably PERMANENTLY untestable via self-play: its full compound
+  condition occurred 0 times in 500k natural hands. Not worth further
+  investment unless the approach changes (e.g. testing sub-conditions
+  separately rather than the full AND).
+
+### Postflop: what's confirmed and shipped True
+
+The Tier-1 unconditional flop c-bet with initiative, value-betting
+top-pair-or-better on every street (regardless of initiative -- this was a
+measured fix for a real -51.79 bb/100 leak from checking hands down),
+opponent-archetype-aware wider calling (part of v10 above),
+`HERO_PROGRESSIVE_POT_DAMPING` (dropping the flat ~55%-pot sizing as the
+pot grows past 8bb), `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28),
+`BARREL_BLUFF_VS_TIGHT` (v25, turn/river scare-card bluff vs known tight
+opponents).
+
+### Postflop: confirmed NOT real
+
+`VALUE_RAISE_FACING_BET` (v22, raising two-pair+ instead of calling,
+-9.66 bb/100 -- real, checked twice), `MULTIWAY_AWARE`'s original test
+(measured worse, though its sub-flags like `MULTIWAY_DISABLE_AIR_CBET`
+were never separately re-tested at real power).
+
+### Postflop: what's MISSING entirely (not even built yet)
+
+Unlike preflop's r22-r29, **none of the ten postflop ideas below have any
+code written for them yet** -- this is a research record only, from a
+2026-08-13 pass (14 search queries, 100+ sources, see that section
+further down for the full writeup + links). User explicitly said don't
+implement yet this round:
+
+1. Board-texture-dependent c-bet sizing/frequency (currently one flat
+   ~55% pot regardless of dry/wet)
+2. Multiway c-bet frequency reduction (partially exists as the untested
+   `MULTIWAY_DISABLE_AIR_CBET` candidate -- closest thing to a head start)
+3. Check-raising / semi-bluff raising with draws (doesn't exist as a
+   decision category at all -- the bot only ever calls draws or raises
+   two-pair+)
+4. Range/nut-advantage-based sizing (only has binary `had_initiative`,
+   no board-fit-vs-range concept)
+5. Turn probe betting after a checked-through flop (no such reactive
+   branch exists)
+6. Pot control / checking back marginal made hands (the bot never checks
+   back a made hand, by design -- no slowplay category at all)
+7. SPR-based hand-value thresholds (all thresholds are static)
+8. Block bets / small river sizing tier (only standard ~55% and v27's
+   ~150% overbet exist, no small ~25-33% tier)
+9. Blocker-based river bluff hand selection (v25 picks by archetype +
+   scare card only, ignores which specific cards block value/unblock
+   folds)
+10. Delayed c-bet (check flop, bet turn if checked to again -- no such
+    line exists; the bot's c-bet is immediate-flop-only or nothing)
+
+**Next step, when authorized**: implement all ten as off-by-default flags
+the same way r22-r29 were done for preflop, smoke-test for crashes only,
+wire into the probe harness, do NOT run any A/B validation without
+separate explicit go-ahead.
+
 ## What's actually being worked on right now
 
 The live thread of work is **not** the practice-app UI — it's a long
