@@ -104,6 +104,10 @@ RULE_TEST_GROUPS = {
     "r13-shove-aa-kk-vs-3bet-plus": (["SHOVE_AA_KK_VS_3BET_PLUS"], "r13 shove AA/KK vs 3bet+"),
     "r14-bluff-3bet-vs-tight": (["BLUFF_3BET_VS_TIGHT"], "r14 bluff 3bet vs tight"),
     "r20-size-up-premium-opens": (["SIZE_UP_PREMIUM_OPENS"], "r20 size up premium opens (re-test of v19b w/ chance-enum)"),
+    "r21-tight-iso-real-data-floor": (
+        ["TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR"],
+        "r21 tight-iso range unions REAL_DATA_RANGE_ADDITIONS (currently omitted, unlike open/steal ranges)",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -336,6 +340,7 @@ ALL_COMPARISON_FLAGS = [
     "LIMP_BEHIND_VPIP_MULTIPLIER",
     "CALL_RANGE_BY_RAISER_POSITION",
     "SIZE_UP_PREMIUM_OPENS",
+    "TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR",
     "CALL_VPIP_WIDE_MULTIPLIER",
     "CALL_VPIP_NARROW_MULTIPLIER",
     "SMALL_RAISE_BB_THRESHOLD",
@@ -505,7 +510,7 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical", 
 
 
 def _invalidate_cached_ranges_if_needed(state: dict[str, object]) -> None:
-    if "TIGHT_ISO_VPIP_MULTIPLIER" in state:
+    if {"TIGHT_ISO_VPIP_MULTIPLIER", "TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR"} & state.keys():
         abc_bot._tight_iso_range_cache = {}
     if "LIMP_BEHIND_VPIP_MULTIPLIER" in state:
         abc_bot._limp_behind_range_cache = {}

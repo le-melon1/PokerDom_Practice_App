@@ -796,6 +796,17 @@ TIGHT_BIG_ISO_RAISE_LIMPERS = True
 TIGHT_ISO_VPIP_MULTIPLIER = 0.85
 TIGHT_ISO_BASE_SIZING_BB = 5.5
 TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
+# 2026-08-13: the strategy card describes this as "70/85% of the normal open
+# VPIP" and "normal open range" is itself defined elsewhere as the synthetic
+# VPIP range UNION REAL_DATA_RANGE_ADDITIONS (the real-showdown-data floor) --
+# but _tight_iso_range_cache below never actually unions that floor set,
+# unlike _open_range_cache and _steal_range_cache which both do. Never tested
+# with it included. Same class of gap as the SIZE_SCALED_CALL_RANGE narrow-
+# tier bug found earlier tonight (a precomputed alternate tier silently
+# missing a union the "parent" range includes) -- off by default here since,
+# unlike that case, this flag is untested and TIGHT_BIG_ISO_RAISE_LIMPERS is
+# a currently-shipped True rule, so the standing policy is test first.
+TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = False
 
 # Candidate: limp behind instead of iso/fold with hands that play well
 # multiway and are too weak for the tight-big-iso range. This is deliberately
@@ -1145,6 +1156,7 @@ def _ranges():
     if not _tight_iso_range_cache:
         _tight_iso_range_cache = {
             pos: set(implied_range(vpip * TIGHT_ISO_VPIP_MULTIPLIER, _rankings_cache))
+            | (REAL_DATA_RANGE_ADDITIONS.get(pos, set()) if TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR else set())
             for pos, vpip in OPEN_VPIP_BY_POSITION.items()
         }
     if not _call_range_wide_cache:
