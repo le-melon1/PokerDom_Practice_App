@@ -579,6 +579,70 @@ testing investment relative to its plausible ceiling impact; the
 plain-language strategy card's existing v26 entry can stay untested/off
 without real cost.
 
+### 2026-08-13: postflop research pass (reviewed only, NOT implemented yet)
+
+Same exercise as the preflop one below, but for postflop, with more source
+breadth per the user's request (~14 search queries, 100+ distinct pages,
+including GTO Wizard, Upswing, PokerCoaching, Red Chip Poker, SplitSuit,
+888poker, and several poker-theory forum threads). **User explicitly
+cancelled implementation this round ("отмена, не делай") -- this is a
+research record only, to implement later, not code yet.** Ten gaps found:
+
+1. **Board-texture-dependent c-bet sizing/frequency** -- dry boards small
+   (solvers favor 25-40% pot), wet boards bigger and less often. The bot
+   uses one flat ~55% pot size (`STANDARD_SIZING_POT_FRACTION`) regardless
+   of texture.
+2. **Multiway c-bet frequency reduction** -- MDF splits across defenders,
+   bluffing multiway is a default loser. Partially already in the codebase
+   as `MULTIWAY_DISABLE_AIR_CBET` (candidate, off, never tested) -- not a
+   new idea, just an existing untested one worth prioritizing.
+3. **Check-raising with draws (semi-bluff raise)** -- the bot has no
+   mechanism to raise a draw when facing a bet at all; it only calls draws
+   (pot-odds gated) or raises with two-pair+ (`VALUE_RAISE_FACING_BET`,
+   off). Semi-bluff raising doesn't exist as a decision category.
+4. **Range/nut-advantage-based sizing** -- not just board wetness, but
+   WHO the board favors given the preflop action (e.g. PFR usually favored
+   on dry A-high boards, caller favored on low connected boards). The bot
+   only has a binary `had_initiative`, no board-fit-vs-range concept.
+5. **Turn probe betting after a checked-through flop** -- when the
+   aggressor checks back, the OOP non-aggressor should often bet the turn
+   (~31% solver frequency) since two checks caps a range hard. No such
+   branch exists; the bot only takes the betting lead through its own
+   barrel logic (v25), never as a reaction to an opponent's skipped c-bet.
+6. **Pot control / checking back marginal made hands** -- the bot always
+   value-bets top-pair-or-better, every time, by design (see the "Don't
+   auto-barrel" note in its own strategy card). No slowplay/pot-control
+   category exists at all.
+7. **SPR-based hand-value thresholds** -- continuing/raising thresholds
+   are static regardless of stack-to-pot ratio; real strategy widens the
+   commitment range as SPR drops.
+8. **Block bets (small river sizing)** -- only two sizing tiers exist
+   (standard ~55% and the v27 overbet ~150%); no small ~25-33% "block bet"
+   tier for thin value against a defender's default range.
+9. **Blocker-based river bluff/hand selection** -- `BARREL_BLUFF_VS_TIGHT`
+   (v25) picks bluffs by archetype + scare-card only, never by whether the
+   specific hand blocks the defender's value combos / unblocks their
+   folding combos.
+10. **Delayed c-bet** -- check flop with a marginal/unclear hand, bet turn
+    instead if checked to again (two checks caps the opponent's range).
+    The bot's Tier-1 c-bet is immediate-flop-only or nothing; no
+    check-flop-then-bet-turn line exists.
+
+**Already covered, not a real gap**: donk-betting WITH a made hand is
+already structural (the bot's `to_call <= 0: bet top-pair-or-better`
+branch fires "regardless of whether you had preflop initiative," which
+functionally is leading into the raiser) -- only donk-*bluffing* on narrow
+low-connected-board textures is missing, and that's a much smaller-value
+idea than the ten above. Nut-advantage overbetting is partially covered
+by v27 but restricted to trips+ vs loose archetypes only, not a general
+any-street nut-advantage rule.
+
+**Next step, when authorized**: implement all ten as off-by-default flags
+the same way r22-r29 were done for preflop (see that section below),
+smoke-test for crashes only, wire into `probe_chance_enumeration.py`
+presets, document in this file -- do NOT run any A/B validation without
+separate explicit go-ahead.
+
 ### 2026-08-13: 8 new preflop rules from published-theory research (built, NOT tested)
 
 User asked for a web/book research pass on preflop advice the bot doesn't
