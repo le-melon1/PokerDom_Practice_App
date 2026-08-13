@@ -103,6 +103,7 @@ RULE_TEST_GROUPS = {
     "r12-tight-big-iso-limpers": (["TIGHT_BIG_ISO_RAISE_LIMPERS"], "r12 tight big iso-raise limpers"),
     "r13-shove-aa-kk-vs-3bet-plus": (["SHOVE_AA_KK_VS_3BET_PLUS"], "r13 shove AA/KK vs 3bet+"),
     "r14-bluff-3bet-vs-tight": (["BLUFF_3BET_VS_TIGHT"], "r14 bluff 3bet vs tight"),
+    "r20-size-up-premium-opens": (["SIZE_UP_PREMIUM_OPENS"], "r20 size up premium opens (re-test of v19b w/ chance-enum)"),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -260,6 +261,21 @@ PARAMETER_VARIANTS: dict[str, tuple[list[str], dict[str, object], str]] = {
         {"BB_DEFEND_VS_STEAL_MINRAISE": True, "BB_DEFEND_MAX_RAISE_BB": 2.5, "BB_DEFEND_VPIP_MULTIPLIER": 2.0},
         "r19v BB defend vs steal wide",
     ),
+    "v30v-mild-narrow": (
+        ["SIZE_SCALED_CALL_RANGE", "CALL_VPIP_NARROW_MULTIPLIER"],
+        {"SIZE_SCALED_CALL_RANGE": True, "CALL_VPIP_NARROW_MULTIPLIER": 0.85},
+        "v30v size-scaled call, milder narrow (0.85x vs current 0.7x)",
+    ),
+    "v30v-no-narrow": (
+        ["SIZE_SCALED_CALL_RANGE", "CALL_VPIP_NARROW_MULTIPLIER"],
+        {"SIZE_SCALED_CALL_RANGE": True, "CALL_VPIP_NARROW_MULTIPLIER": 1.0},
+        "v30v size-scaled call, widen-only (narrow tier == base range, never actually narrows)",
+    ),
+    "v30v-mild-both": (
+        ["SIZE_SCALED_CALL_RANGE", "CALL_VPIP_WIDE_MULTIPLIER", "CALL_VPIP_NARROW_MULTIPLIER"],
+        {"SIZE_SCALED_CALL_RANGE": True, "CALL_VPIP_WIDE_MULTIPLIER": 1.15, "CALL_VPIP_NARROW_MULTIPLIER": 0.85},
+        "v30v size-scaled call, milder both tiers (1.15x/0.85x vs current 1.3x/0.7x)",
+    ),
 }
 
 PARAMETER_VARIANT_GROUPS = {
@@ -319,6 +335,11 @@ ALL_COMPARISON_FLAGS = [
     "LIMP_BEHIND_OVER_LIMPERS",
     "LIMP_BEHIND_VPIP_MULTIPLIER",
     "CALL_RANGE_BY_RAISER_POSITION",
+    "SIZE_UP_PREMIUM_OPENS",
+    "CALL_VPIP_WIDE_MULTIPLIER",
+    "CALL_VPIP_NARROW_MULTIPLIER",
+    "SMALL_RAISE_BB_THRESHOLD",
+    "BIG_RAISE_BB_THRESHOLD",
     "BB_DEFEND_VS_STEAL_MINRAISE",
     "BB_DEFEND_MAX_RAISE_BB",
     "BB_DEFEND_VPIP_MULTIPLIER",
@@ -490,6 +511,10 @@ def _invalidate_cached_ranges_if_needed(state: dict[str, object]) -> None:
         abc_bot._limp_behind_range_cache = {}
     if "BB_DEFEND_VPIP_MULTIPLIER" in state:
         abc_bot._bb_defend_range_cache = {}
+    if {"CALL_VPIP_WIDE_MULTIPLIER"} & state.keys():
+        abc_bot._call_range_wide_cache = {}
+    if {"CALL_VPIP_NARROW_MULTIPLIER"} & state.keys():
+        abc_bot._call_range_narrow_cache = {}
 
 
 def _apply_flag_state(state: dict[str, object]) -> None:

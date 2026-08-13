@@ -1159,8 +1159,15 @@ def _ranges():
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
     if not _call_range_narrow_cache:
+        # 2026-08-13: previously omitted the `| REAL_DATA_CALL_RANGE_ADDITIONS`
+        # union that both the base call range and the wide tier include --
+        # meant the narrow tier dropped every real-population-observed calling
+        # hand outright (10-20+ hands/position) on top of the VPIP shrink,
+        # an unintended double-penalty likely responsible for SIZE_SCALED_
+        # CALL_RANGE's measured -6.46/-5.67 bb/100 (see CLAUDE.md). Fixed to
+        # match the other two tiers' construction.
         _call_range_narrow_cache = {
-            pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache))
+            pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
     if not _limp_behind_range_cache:
