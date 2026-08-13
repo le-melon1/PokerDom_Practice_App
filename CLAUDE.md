@@ -516,9 +516,14 @@ shipping, but no longer a total unknown.
 
 **r18v-shove-qq-plus/qq-ak and v26, extended measurement (500,000 hands)**:
 QQ+ (AA/KK/QQ): 0.1206% of hands. QQ+/AK (AA/KK/QQ/AKs/AKo): 0.2298% of
-hands. Neither has a forced-sample magnitude run yet (only r13's AA/KK
-variant was actually measured with `--force-opponent-reraise`) -- the
-incidence rate alone is ready whenever that's done.
+hands.
+
+**r18v-shove-qq-plus, forced-sample magnitude now measured** (2000 hands,
+`--hero-hand-filter AA,KK,QQ --force-opponent-reraise`): `+3487.15 bb/100`
+raw. Rescaled by true incidence (0.1206%): `3487.15 * 0.001206 ≈ +4.21
+bb/100` -- plausible, same order of magnitude as r13's rescaled estimate
+(+3.29) and this file's other confirmed narrow-target rules. One-sample
+rough estimate, same caveats as r13's.
 
 **v26's FULL compound condition -- ZERO occurrences in 500,000 hands.**
 Tracked precisely: hero holds a `FOLDABLE_PREMIUM_VS_EXTREME_AGGRO` hand
