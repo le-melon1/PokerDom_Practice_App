@@ -579,6 +579,46 @@ testing investment relative to its plausible ceiling impact; the
 plain-language strategy card's existing v26 entry can stay untested/off
 without real cost.
 
+### 2026-08-13: 8 new preflop rules from published-theory research (built, NOT tested)
+
+User asked for a web/book research pass on preflop advice the bot doesn't
+cover, then to implement everything found as off-by-default flags without
+running the A/B validation yet (machine needed for other work). All eight
+are gated False, existing 191 tests pass unchanged, and a manual
+crash-only smoke test (flip each flag True, run 1500 hands) found no
+exceptions -- but **none of these have been statistically tested at all,
+treat every one as a raw hypothesis, not even at the "leaning positive"
+stage.** Each has a preset already wired into
+`scripts/probe_chance_enumeration.py` (`r22` through `r29`), ready to run
+whenever authorized:
+
+| Preset | Flag | Idea (source) |
+|---|---|---|
+| `r22-threebet-size-by-position` | `THREEBET_SIZE_BY_POSITION` | 3-bet ~4x OOP / ~3x IP instead of a flat 3x multiplier |
+| `r23-threebet-bluff-late-position` | `THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT` | polarized late-position bluff-3bet regardless of raiser archetype |
+| `r24-bb-defend-mdf-scaled` | `BB_DEFEND_MDF_SCALED` | MDF-driven BB widening vs ANY raiser position, gated on actual pot odds |
+| `r25-bluff-3bet-blocker-range` | `BLUFF_3BET_BLOCKER_RANGE_FLAG` | blocker-theory bluff-3bet hands (wheel aces) instead of the current playability-based set |
+| `r26-limp-trap-monsters` | `LIMP_TRAP_WITH_MONSTERS` | limp-reraise trap with AA/KK from an unopened pot (deterministic crc32-hashed frequency, not RNG, so it doesn't disturb common-random pairing) |
+| `r27-set-mine-implied-odds` | `SET_MINE_IMPLIED_ODDS` | explicit 15/25/35-rule implied-odds cold-call for pairs/suited connectors |
+| `r28-rake-adjusted-open-sizing` | `RAKE_ADJUSTED_OPEN_SIZING` | smaller UTG/MP open (2.2bb) for high-rake low-stakes |
+| `r29-fold-vs-3bet-passive` | `FOLD_VS_3BET_FROM_PASSIVE` | fold QQ/AKs/AKo vs a 3bet+ specifically from a known loose-passive raiser |
+
+Researched but judged **already covered** by existing (tested) mechanics,
+not re-implemented: linear-vs-polarized-by-hero-position is the value side
+already handled by `WIDER_3BET_VS_LOOSE`; exploiting passive players via
+wider isolation is `STEAL_WIDER_VS_NIT`/`TIGHT_BIG_ISO_RAISE_LIMPERS`;
+opponent-archetype-aware calling generally is `OPPONENT_AWARE_ARCHETYPES`
+(the biggest confirmed lever in the file). At 100bb effective (this sim's
+actual depth -- corrected from an earlier mistaken "200bb" claim in this
+file), the researched limp-reraise and cold-call/set-mine sources' example
+figures apply close to as-written (100bb is the standard assumption most
+cited solver charts use).
+
+**Next step, when authorized**: run each `r22`-`r29` preset the same way
+r20/r21/etc. were tested tonight -- `--comparison current --adaptive
+--base-seed 42` then a second independent seed for cross-check, combined-
+CI-in-quadrature before calling anything real.
+
 ### 2026-08-13 round: honest r13/r18v re-test + bug audit + new confirmed/negative flags
 
 User asked to (1) get an honest r13/r18v-shove-* verdict using natural
