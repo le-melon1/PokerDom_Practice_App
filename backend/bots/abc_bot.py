@@ -601,6 +601,7 @@ strategy card, not just inferred from code):
 """
 
 import sys
+import zlib
 from pathlib import Path
 
 import pandas as pd
@@ -654,6 +655,23 @@ CALL_VPIP_NARROW_MULTIPLIER = 0.7
 CALL_RANGE_BY_RAISER_POSITION = False  # r17v (2026-08-13): tested, not demonstrated -- +0.07+/-0.99 bb/100 @ seed42, -0.98+/-0.99 @ seed777 (both inconclusive_small_effect, combined-CI 1.40 vs 1.05 delta, consistent with true-zero). Kept off.
 EARLY_RAISER_POSITIONS = {"UTG", "MP"}
 LATE_STEAL_RAISER_POSITIONS = {"CO", "BTN", "SB"}
+
+# r27 (2026-08-13, untested): explicit implied-odds/set-mining rule (the
+# published "15/25/35" rule of thumb), a genuinely different mechanism from
+# the fixed VPIP call range above -- it's gated on effective STACK DEPTH
+# relative to the call amount, not hand-strength percentile. A small pocket
+# pair or suited connector outside the normal call range can still be a
+# profitable cold-call if there's enough money behind to get paid when it
+# hits (set-mining a pair needs ~15x the call in implied odds, a suited
+# connector needs ~25x -- the "35x" tier is for weaker speculative hands
+# this bot doesn't otherwise consider calling with, so it's omitted here).
+# Only extends the call decision to hands NOT already in the fixed call
+# range; never narrows it.
+SET_MINE_IMPLIED_ODDS = False
+SET_MINE_POCKET_PAIRS = {"22", "33", "44", "55", "66", "77", "88", "99"}
+SET_MINE_SUITED_CONNECTORS = {"54s", "65s", "76s", "87s", "98s", "T9s", "JTs"}
+SET_MINE_PAIR_IMPLIED_ODDS_MULTIPLE = 15.0
+SET_MINE_CONNECTOR_IMPLIED_ODDS_MULTIPLE = 25.0
 
 # v14, part 1 (STEAL_WIDER_VS_NIT): PokerDom_Microlimits_Analysis's
 # archetype_vs_raise.csv shows Nit folds to a preflop raise 90-93% of the
@@ -711,6 +729,41 @@ REAL_DATA_CALL_RANGE_ADDITIONS = {
 
 OPEN_SIZING_BB = 2.5  # "2.5-3bb" in the guide; picking the low end, fixed, as the one sizing Tier 1 calls for
 THREEBET_MULTIPLIER = 3.0  # standard "make it 3x" value 3-bet sizing
+
+# r28 (2026-08-13, untested): rake-adjusted early-position open sizing.
+# Published low-stakes/high-rake advice: a smaller open (down to ~2.2bb from
+# UTG/MP) offers a cheaper price to steal blinds or get heads-up in position
+# while hedging against 3-bets/cold-calls, since "no flop no drop" rake
+# structures (this sim's RAKE_PERCENT/RAKE_CAP_BB) mean pots that die
+# preflop pay no rake at all -- makes ending the pot preflop relatively more
+# attractive than the flat 2.5bb-everywhere policy above. Untested here;
+# only applies to UTG/MP if the flag fires (CO/BTN/SB already open wider,
+# not smaller, per the same sources).
+RAKE_ADJUSTED_OPEN_SIZING = False
+RAKE_ADJUSTED_OPEN_SIZING_BB = 2.2
+RAKE_ADJUSTED_OPEN_POSITIONS = {"UTG", "MP"}
+
+# r22 (2026-08-13, untested): position-dependent 3-bet sizing instead of one
+# flat multiplier. Published theory: ~3-3.5x in position (deeper post-flop
+# play available, less reliant on folds), ~4-4.5x out of position (harder to
+# realize equity post-flop, so the 3-bet leans more on fold equity and wants
+# a bigger price). Applied via _threebet_multiplier(hand, seat, raiser_seat)
+# below wherever THREEBET_MULTIPLIER is currently used directly (value
+# 3-bet, bluff 3-bet, squeeze).
+THREEBET_SIZE_BY_POSITION = False
+THREEBET_MULTIPLIER_IP = 3.0
+THREEBET_MULTIPLIER_OOP = 4.0
+
+
+def _threebet_multiplier(hand: Hand, seat: int) -> float:
+    if not THREEBET_SIZE_BY_POSITION:
+        return THREEBET_MULTIPLIER
+    raiser_seat = _last_preflop_raiser_seat(hand)
+    if raiser_seat is None:
+        return THREEBET_MULTIPLIER
+    if _is_hero_in_position_vs_raiser(hand, seat, raiser_seat):
+        return THREEBET_MULTIPLIER_IP
+    return THREEBET_MULTIPLIER_OOP
 
 # v14, A2: archetype_facing_bet.csv's "large" bucket shows fold% to a big bet
 # scales with how tight the archetype is (Nit 73-75%, TAG 66-72%) but barely
@@ -814,6 +867,23 @@ TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 # unlike that case, this flag is untested and TIGHT_BIG_ISO_RAISE_LIMPERS is
 # a currently-shipped True rule, so the standing policy is test first.
 TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = False
+
+# r26 (2026-08-13, untested): limp-reraise trap. Published theory: limping
+# the very top of hero's range (AA/KK) from an UNOPENED pot instead of
+# raising, then re-raising if someone behind raises over the limp, extracts
+# more money than a standard open against opponents who over-attack limpers
+# -- but it's a transparent, low-frequency play (real sources note it's
+# "rarely used by good players" and mostly seen at small stakes), and more
+# viable the deeper the effective stacks (100bb+; this sim runs right at
+# 100bb, the low end of where sources say it's still worth it). Applied with
+# a fixed frequency (not every time, or the limp itself becomes a tell) via
+# a per-hand deterministic hash rather than hero's hole cards, so the same
+# AA doesn't always limp or always raise. If no one raises behind the limp,
+# hero just open-limped a premium hand for that orbit -- no reraise trap
+# fires, same downside real players accept with this play.
+LIMP_TRAP_WITH_MONSTERS = False
+LIMP_TRAP_HAND_SET = {"AA", "KK"}
+LIMP_TRAP_FREQUENCY = 0.3  # limp (instead of raise) this fraction of the time with a LIMP_TRAP_HAND_SET hand
 
 # Candidate: limp behind instead of iso/fold with hands that play well
 # multiway and are too weak for the tight-big-iso range. This is deliberately
@@ -1121,12 +1191,69 @@ BLUFF_3BET_VS_TIGHT = True
 BLUFF_3BET_TARGET_ARCHETYPES = {"Nit", "TAG", "LAG"}
 BLUFF_3BET_RANGE = {"A9o", "A8o", "A5s", "A4s", "KQo", "KJs", "QJs", "JTs", "T9s", "98s"}
 
+# r25 (2026-08-13, untested): alternate bluff-3bet hand selection built
+# purely from blocker theory instead of BLUFF_3BET_RANGE's playability-based
+# picks. Published theory: the best 4/5-bet-bluff-style hands are suited
+# wheel aces (A5s-A2s) because holding an ace removes AA/AKs/AKo combos from
+# the opponent's continuing range, shrinking the part of their range that
+# dominates the bluff -- BLUFF_3BET_RANGE already includes A5s/A4s but also
+# several broadway/suited-connector hands (KQo, KJs, QJs, JTs, T9s, 98s)
+# chosen for playability, not blocker value. This flag swaps in a pure
+# blocker-based set when on; does not change WHEN the bot bluff-3bets
+# (still gated by BLUFF_3BET_VS_TIGHT/BLUFF_3BET_TARGET_ARCHETYPES), only
+# WHICH hands it uses.
+BLUFF_3BET_BLOCKER_RANGE_FLAG = False
+BLUFF_3BET_BLOCKER_RANGE = {"A5s", "A4s", "A3s", "A2s", "ATo", "AJo"}
+
+# r23 (2026-08-13, untested): published theory says a 3-bet range should be
+# roughly linear (top-of-range only) from early/mid position and polarized
+# (value + bluffs, skipping the middle) from late position, since late
+# position already has more natural fold equity and postflop position to
+# realize a bluff's equity if called. BLUFF_3BET_VS_TIGHT above only bluffs
+# against a known tight/loose-aggressive raiser archetype regardless of
+# hero's own position -- this flag additionally allows the bluff-3bet from
+# hero's own late position against ANY opponent archetype (not just the
+# targeted ones), the polarization half of the theory that's currently
+# missing entirely.
+THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT = False
+LATE_THREEBET_BLUFF_POSITIONS = {"CO", "BTN", "SB"}
+
+# r29 (2026-08-13, untested): published exploit advice says the best way to
+# exploit a loose-passive player is to bet big for value and "exploitatively
+# overfold when they show aggression" -- since a passive player raising is a
+# much stronger signal than the same raise from a naturally aggressive one.
+# PREMIUM_VS_3BET (facing 2+ raises) currently continues with the same
+# {AA,KK,QQ,AKs,AKo} regardless of who's doing the raising. This flag folds
+# the non-nut portion of that set (QQ/AKs/AKo, never AA/KK -- reuses
+# FOLDABLE_PREMIUM_VS_EXTREME_AGGRO's hand set, same "never fold the actual
+# nuts" floor as v26) specifically when the raiser is a known loose-passive
+# archetype -- v26 already folds vs Nit/TAG on an extreme-sized bet; this is
+# the mirror case (a normally-passive player suddenly 3-betting), independent
+# of bet size.
+FOLD_VS_3BET_FROM_PASSIVE = False
+PASSIVE_ARCHETYPES_FOR_3BET_FOLD = {"Station"}
+
 # Candidate: defend the BB more specifically against cheap late-position
 # steals. This is separate from SIZE_SCALED_CALL_RANGE because a BTN minraise
 # into BB is a narrower tactical spot than "any small raise anywhere".
 BB_DEFEND_VS_STEAL_MINRAISE = False
 BB_DEFEND_MAX_RAISE_BB = 2.5
 BB_DEFEND_VPIP_MULTIPLIER = 1.6
+
+# r24 (2026-08-13, untested): Minimum Defense Frequency (MDF = pot / (pot +
+# bet)) as an explicit floor for the BB's continuing range, instead of
+# BB_DEFEND_VS_STEAL_MINRAISE's static "late-position raiser + small raise"
+# gate. MDF says the cheaper the bet relative to the pot, the wider the
+# whole continuing range needs to be to stay unexploitable -- this fires
+# against ANY raiser position (not just LATE_STEAL_RAISER_POSITIONS) as long
+# as the pot odds are cheap enough (MDF at or above the trigger), which is
+# the actual published mechanism rather than a position-based proxy for it.
+# Reuses bb_defend_ranges (BB_DEFEND_VPIP_MULTIPLIER) as the wide tier since
+# building a fresh continuous-multiplier range per decision isn't worth the
+# added complexity here -- same "a few discrete tiers, not a continuous
+# function" tradeoff as every other range in this file.
+BB_DEFEND_MDF_SCALED = False
+BB_DEFEND_MDF_TRIGGER = 0.35  # widen when pot/(pot+bet) at or above this (a cheap-enough price)
 
 _rankings_cache = None
 _open_range_cache: dict[str, set] = {}
@@ -1248,6 +1375,35 @@ def _last_preflop_raiser_seat(hand: Hand) -> int | None:
 def _last_preflop_raiser_position(hand: Hand) -> str | None:
     raiser_seat = _last_preflop_raiser_seat(hand)
     return _seat_position(hand, raiser_seat) if raiser_seat is not None else None
+
+
+# 2026-08-13 (r22): postflop acting order, earliest to latest -- SB acts
+# first every street except preflop, BTN acts last every street including
+# preflop after the first round. Used to tell whether hero will have
+# position on the raiser for the rest of the hand (published theory: bigger
+# 3-bet sizing out of position since OOP relies more on folds, smaller in
+# position since deeper post-flop play is more available -- see CLAUDE.md's
+# preflop-research notes).
+POSTFLOP_ACTION_ORDER = ["SB", "BB", "UTG", "MP", "CO", "BTN"]
+
+
+def _limp_trap_should_limp(player) -> bool:
+    """Deterministic (not random-state-consuming, so it doesn't disturb the
+    common-random-number pairing the A/B probe scripts rely on) stand-in for
+    a LIMP_TRAP_FREQUENCY-ish limp rate: hashes the exact hole-card combo via
+    crc32 (stable across processes, unlike Python's randomized str hash).
+    With only 12 possible AA/KK combos this lands on a coarse a/12 rate, not
+    a smooth LIMP_TRAP_FREQUENCY -- acceptable for an untested candidate."""
+    key = ",".join(sorted(player.hole_cards)).encode()
+    return (zlib.crc32(key) % 1000) / 1000.0 < LIMP_TRAP_FREQUENCY
+
+
+def _is_hero_in_position_vs_raiser(hand: Hand, seat: int, raiser_seat: int) -> bool:
+    hero_pos = _seat_position(hand, seat)
+    raiser_pos = _seat_position(hand, raiser_seat)
+    if hero_pos not in POSTFLOP_ACTION_ORDER or raiser_pos not in POSTFLOP_ACTION_ORDER:
+        return False
+    return POSTFLOP_ACTION_ORDER.index(hero_pos) > POSTFLOP_ACTION_ORDER.index(raiser_pos)
 
 
 def _n_live_opponents(hand: Hand, seat: int) -> int:
@@ -1619,6 +1775,14 @@ def choose_abc_action(
             else:
                 open_range = steal_ranges.get(position) if (use_steal or use_iso_wide) else open_ranges.get(position)
             if open_range and notation in open_range:
+                # r26 (LIMP_TRAP_WITH_MONSTERS): before the normal raise --
+                # limp the very top of the range some of the time instead,
+                # to set up a limp-reraise if someone raises behind. Only
+                # from a genuinely unopened pot (n_limpers==0) -- limping
+                # behind an existing limper is LIMP_BEHIND_OVER_LIMPERS's
+                # job, a different rule with a different purpose.
+                if LIMP_TRAP_WITH_MONSTERS and n_limpers == 0 and notation in LIMP_TRAP_HAND_SET and _limp_trap_should_limp(player):
+                    return ("call", None)
                 # v16, C1 (see ISO_RAISE_OVER_LIMPERS above): size up over
                 # already-limped-in callers instead of the flat open size.
                 sizing_bb = OPEN_SIZING_BB
@@ -1634,6 +1798,12 @@ def choose_abc_action(
                 # it rather than assuming either direction.
                 if SIZE_UP_PREMIUM_OPENS and notation in VALUE_3BET_TIGHT:
                     sizing_bb += PREMIUM_OPEN_SIZING_BONUS_BB
+                # r28 (RAKE_ADJUSTED_OPEN_SIZING): smaller open from early
+                # position, see the constant's comment above. Only touches
+                # the plain flat-open case (not isolating a limper, which
+                # already uses its own bigger sizing_bb base above).
+                if RAKE_ADJUSTED_OPEN_SIZING and not use_tight_big_iso and not ISO_RAISE_OVER_LIMPERS and position in RAKE_ADJUSTED_OPEN_POSITIONS:
+                    sizing_bb = RAKE_ADJUSTED_OPEN_SIZING_BB
                 amount = hand.big_blind * sizing_bb
                 amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                 return ("raise", amount)
@@ -1662,6 +1832,20 @@ def choose_abc_action(
                     raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
                     if raiser_archetype in TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD:
                         return ("fold", None)
+                # r29 (FOLD_VS_3BET_FROM_PASSIVE): a normally-passive player
+                # 3-betting is a stronger signal than the same 3-bet from a
+                # naturally aggressive one -- see the constant's comment
+                # above. Checked independently of v26's bet-size gate (this
+                # one's trigger is the raiser's archetype alone).
+                if (
+                    FOLD_VS_3BET_FROM_PASSIVE
+                    and notation in FOLDABLE_PREMIUM_VS_EXTREME_AGGRO
+                    and opponent_archetypes
+                ):
+                    raiser_seat = _last_preflop_raiser_seat(hand)
+                    raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
+                    if raiser_archetype in PASSIVE_ARCHETYPES_FOR_3BET_FOLD:
+                        return ("fold", None)
                 return ("call", None)
             return ("fold", None)
 
@@ -1680,7 +1864,10 @@ def choose_abc_action(
         if SQUEEZE_WIDER_RANGE and n_callers_in > 0:
             value_3bet_range = VALUE_3BET_VS_LOOSE
         if notation in value_3bet_range:
-            amount = hand.current_bet * THREEBET_MULTIPLIER
+            # r22 (THREEBET_SIZE_BY_POSITION): position-dependent multiplier
+            # instead of the flat THREEBET_MULTIPLIER -- see the constant's
+            # comment above. No-op (returns THREEBET_MULTIPLIER) when off.
+            amount = hand.current_bet * _threebet_multiplier(hand, seat)
             # v21 (SQUEEZE_SIZE_UP_PER_CALLER): size the squeeze bigger than a
             # flat 3x to actually price out the extra caller(s) -- see the
             # constant's comment above.
@@ -1703,13 +1890,29 @@ def choose_abc_action(
         # here is specifically +EV BECAUSE these opponents fold so much, not
         # because the hand is strong enough to profitably call with, so it
         # should win over just calling when both would otherwise apply.
+        # r25 (BLUFF_3BET_BLOCKER_RANGE_FLAG): swap in the blocker-based hand
+        # set instead of the playability-based one -- see the constant's
+        # comment above. Only changes WHICH hands bluff, not when.
+        bluff_3bet_range = BLUFF_3BET_BLOCKER_RANGE if BLUFF_3BET_BLOCKER_RANGE_FLAG else BLUFF_3BET_RANGE
         if BLUFF_3BET_VS_TIGHT and opponent_archetypes:
             raiser_seat = _last_preflop_raiser_seat(hand)
             raiser_archetype = opponent_archetypes.get(raiser_seat) if raiser_seat is not None else None
-            if raiser_archetype in BLUFF_3BET_TARGET_ARCHETYPES and notation in BLUFF_3BET_RANGE:
-                amount = hand.current_bet * THREEBET_MULTIPLIER
+            if raiser_archetype in BLUFF_3BET_TARGET_ARCHETYPES and notation in bluff_3bet_range:
+                amount = hand.current_bet * _threebet_multiplier(hand, seat)
                 amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                 return ("raise", amount)
+        # r23 (THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT): the
+        # polarization half of the published theory -- bluff-3bet from
+        # hero's own late position regardless of the raiser's archetype,
+        # not just against the targeted tight/loose-aggressive set above.
+        # Checked after the archetype-targeted version so a known-tight
+        # raiser is still handled by BLUFF_3BET_TARGET_ARCHETYPES's own
+        # (already-tested) logic first; this only adds NEW bluff spots this
+        # bot wouldn't otherwise take.
+        if THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT and position in LATE_THREEBET_BLUFF_POSITIONS and notation in bluff_3bet_range:
+            amount = hand.current_bet * _threebet_multiplier(hand, seat)
+            amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+            return ("raise", amount)
 
         # ALLOW_CALLING_RAISES: earlier versions found calling a raise (with
         # ANY range) under a fit-or-fold postflop plan (no draws, no value
@@ -1744,8 +1947,34 @@ def choose_abc_action(
                 raise_bb = hand.current_bet / hand.big_blind if hand.big_blind else 0.0
                 if raiser_position in LATE_STEAL_RAISER_POSITIONS and raise_bb <= BB_DEFEND_MAX_RAISE_BB:
                     call_range = bb_defend_ranges.get(position)
+            # r24 (BB_DEFEND_MDF_SCALED): MDF-driven widening against ANY
+            # raiser position, gated on pot odds instead of raiser position
+            # -- see the constant's comment above. pot_before_the_bet
+            # follows the same "subtract to_call from the already-inclusive
+            # pot_before" pattern as FOLD_TOP_PAIR_VS_OVERBET's 2026-08-12
+            # bug fix elsewhere in this file.
+            if BB_DEFEND_MDF_SCALED and position == "BB" and to_call > 0:
+                pot_before = sum(p.total_contributed for p in hand.players.values())
+                pot_before_the_bet = pot_before - to_call
+                denom = pot_before_the_bet + to_call
+                mdf = pot_before_the_bet / denom if denom > 0 else 0.0
+                if mdf >= BB_DEFEND_MDF_TRIGGER:
+                    call_range = bb_defend_ranges.get(position)
             if call_range and notation in call_range:
                 return ("call", None)
+            # r27 (SET_MINE_IMPLIED_ODDS): explicit stack-depth-gated extra
+            # continue for pocket pairs / suited connectors outside the
+            # normal call range -- see the constant's comment above. Checked
+            # only after the normal range misses, so it only ever WIDENS.
+            if SET_MINE_IMPLIED_ODDS and to_call > 0:
+                raiser_seat = _last_preflop_raiser_seat(hand)
+                if raiser_seat is not None:
+                    effective_stack = min(player.stack, hand.players[raiser_seat].stack)
+                    implied_odds_multiple = (effective_stack - to_call) / to_call
+                    if notation in SET_MINE_POCKET_PAIRS and implied_odds_multiple >= SET_MINE_PAIR_IMPLIED_ODDS_MULTIPLE:
+                        return ("call", None)
+                    if notation in SET_MINE_SUITED_CONNECTORS and implied_odds_multiple >= SET_MINE_CONNECTOR_IMPLIED_ODDS_MULTIPLE:
+                        return ("call", None)
         return ("fold", None)
 
     # postflop

@@ -108,6 +108,38 @@ RULE_TEST_GROUPS = {
         ["TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR"],
         "r21 tight-iso range unions REAL_DATA_RANGE_ADDITIONS (currently omitted, unlike open/steal ranges)",
     ),
+    "r22-threebet-size-by-position": (
+        ["THREEBET_SIZE_BY_POSITION"],
+        "r22 3-bet sizing bigger OOP / smaller IP instead of a flat 3x multiplier",
+    ),
+    "r23-threebet-bluff-late-position": (
+        ["THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT"],
+        "r23 bluff-3bet from late position regardless of raiser archetype (polarization)",
+    ),
+    "r24-bb-defend-mdf-scaled": (
+        ["BB_DEFEND_MDF_SCALED"],
+        "r24 BB continuing range scaled by minimum defense frequency (MDF), any raiser position",
+    ),
+    "r25-bluff-3bet-blocker-range": (
+        ["BLUFF_3BET_BLOCKER_RANGE_FLAG"],
+        "r25 bluff-3bet hand selection built from blocker theory (wheel aces) instead of playability",
+    ),
+    "r26-limp-trap-monsters": (
+        ["LIMP_TRAP_WITH_MONSTERS"],
+        "r26 limp-reraise trap with AA/KK from an unopened pot",
+    ),
+    "r27-set-mine-implied-odds": (
+        ["SET_MINE_IMPLIED_ODDS"],
+        "r27 explicit 15/25/35-rule implied-odds cold-call for pocket pairs / suited connectors",
+    ),
+    "r28-rake-adjusted-open-sizing": (
+        ["RAKE_ADJUSTED_OPEN_SIZING"],
+        "r28 smaller UTG/MP open size (2.2bb) reflecting rake-adjustment theory",
+    ),
+    "r29-fold-vs-3bet-passive": (
+        ["FOLD_VS_3BET_FROM_PASSIVE"],
+        "r29 fold QQ/AKs/AKo facing a 3bet+ specifically from a known loose-passive raiser",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -348,6 +380,19 @@ ALL_COMPARISON_FLAGS = [
     "BB_DEFEND_VS_STEAL_MINRAISE",
     "BB_DEFEND_MAX_RAISE_BB",
     "BB_DEFEND_VPIP_MULTIPLIER",
+    "BB_DEFEND_MDF_SCALED",
+    "BB_DEFEND_MDF_TRIGGER",
+    "RAKE_ADJUSTED_OPEN_SIZING",
+    "RAKE_ADJUSTED_OPEN_SIZING_BB",
+    "THREEBET_SIZE_BY_POSITION",
+    "THREEBET_MULTIPLIER_IP",
+    "THREEBET_MULTIPLIER_OOP",
+    "BLUFF_3BET_BLOCKER_RANGE_FLAG",
+    "THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT",
+    "FOLD_VS_3BET_FROM_PASSIVE",
+    "LIMP_TRAP_WITH_MONSTERS",
+    "LIMP_TRAP_FREQUENCY",
+    "SET_MINE_IMPLIED_ODDS",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
