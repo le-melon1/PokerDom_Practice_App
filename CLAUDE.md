@@ -525,6 +525,23 @@ bb/100` -- plausible, same order of magnitude as r13's rescaled estimate
 (+3.29) and this file's other confirmed narrow-target rules. One-sample
 rough estimate, same caveats as r13's.
 
+**r18v-shove-qq-ak, forced-sample magnitude also measured** (2000 hands,
+`--hero-hand-filter AA,KK,QQ,AKs,AKo --force-opponent-reraise`):
+`+1855.59 bb/100` raw -- about half of qq-plus's raw delta (adding AK
+dilutes the average edge per occurrence, since AK is weaker than QQ
+against a 4-betting range). Rescaled by true incidence (0.2298%, almost
+exactly double qq-plus's): `1855.59 * 0.002298 ≈ +4.26 bb/100` -- nearly
+IDENTICAL to qq-plus's +4.21 despite the very different raw numbers: the
+wider range's smaller per-occurrence edge is compensated by its roughly
+doubled frequency. Same pattern as tonight's r16v finding (the exact tier
+boundary doesn't matter much for total contribution) -- **whichever
+SHOVE_VS_3BET_PLUS_RANGE tier ships, expect roughly the same ~+4 bb/100
+real-world contribution.** This closes out the r13/v26/r18v-shove-*
+investigation thread for tonight: r13 ~+3.3, r18v-shove-qq-plus ~+4.2,
+r18v-shove-qq-ak ~+4.3, v26 negligible. All rough one-sample estimates,
+real enough to be worth a proper confirmatory pass before shipping, not
+yet at the v25/v28/v29 confidence bar.
+
 **v26's FULL compound condition -- ZERO occurrences in 500,000 hands.**
 Tracked precisely: hero holds a `FOLDABLE_PREMIUM_VS_EXTREME_AGGRO` hand
 (QQ/AKs/AKo) AND faces a bet >= `EXTREME_AGGRO_STACK_FRACTION` (50%) of
