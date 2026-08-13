@@ -56,7 +56,7 @@ project; don't report a delta as "working" without checking it against this.
 | v24 (`BLUFF_3BET_VS_TIGHT`) | +1.80 bb/100 | 2,000,000 | confirmed 2026-08-11, was inside CI at 300k |
 | **v29 (`ISO_WIDER_RANGE_OVER_LIMPERS`)** | **+22.10 / +19.67 bb/100 (2 indep. seeds)** | chance-enum, ~6k divergent each | **shipped True 2026-08-12/13** -- see "Independent second-seed cross-check" section below |
 | **v25 (`BARREL_BLUFF_VS_TIGHT`)** | **+1.99 / +1.33 bb/100 (2 indep. seeds)** | chance-enum, ~60 divergent each | **shipped True 2026-08-12/13** -- smaller than v29 but doubly confirmed |
-| **v28 (`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE`)** | **+1.45 +/- 0.62 bb/100 (best of 4 samples)** | chance-enum, 54k hands, 2001 divergent | **shipped True 2026-08-12/13** -- 4 independent samples, all positive, largest one settles it cleanly |
+| **v28 (`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE`)** | **+2.25 / +0.82 / +4.88 / +1.45 / +0.68 bb/100 (5 indep. seeds)** | chance-enum, up to 54k hands each | **shipped True 2026-08-12/13** -- 5/5 independent samples positive (never once negative; ~3% chance of that by pure luck around a true-zero effect), magnitude noisy (0.68-4.88), best-precision single estimate +1.45+/-0.62 |
 
 **Tested, NOT demonstrated (shipped OFF, kept in code for reference):**
 v1-v9 range-only tweaks (plateaued near breakeven), v9 `USE_WIDE_VALUE_3BET`
@@ -436,6 +436,22 @@ somewhere in the +1 to +5 bb/100 range, not a single settled number.
 Would need either a much larger single run or a pooled multi-seed
 analysis to pin down precisely. Treat as "probably worth enabling,
 magnitude unclear" rather than citing any one of these three numbers.
+
+**v28, 4th and 5th samples** (large-precision runs, `min-hands 40k-100k`,
+`target-ci 0.5-0.6`): seed42 `+1.45+/-0.62` @ 54k hands/2001 divergent
+(shipped on this one, see the confirmed-real table); seed271828
+`+0.68+/-0.68` @ 50k hands/2101 divergent -- barely positive, CI as large
+as the point estimate, doesn't clear confirmed_positive on its own.
+**Final tally: 5 independent samples, all 5 positive** (+2.25, +0.82,
++4.88, +1.45, +0.68) -- getting 5/5 same-sign draws by chance around a
+true-zero effect has roughly a 3% probability (0.5^5), so the sign
+itself is good evidence of a real effect even though no single sample
+pins down the magnitude cleanly and they don't all pairwise-agree.
+Keeping this shipped True is justified by the consistent direction, not
+by any one number -- don't cite a single v28 delta as "the" effect size,
+the honest range is roughly +0.7 to +2 bb/100 with the smaller,
+higher-precision runs (54k/50k hands) weighted more than the noisier
+small ones (2k-6k hands).
 
 ### v23-overbet-fold: fully resolved, real structural finding (not the historical-baseline bug)
 
