@@ -143,44 +143,38 @@ opponents).
 (measured worse, though its sub-flags like `MULTIWAY_DISABLE_AIR_CBET`
 were never separately re-tested at real power).
 
-### Postflop: built 2026-08-14, NOT tested (pf1-pf10)
+### Postflop: pf1-pf10, built AND tested 2026-08-14
 
-All ten postflop ideas below are now implemented as off-by-default flags in
-`abc_bot.py` (same pattern as r22-r29), presets registered in
-`scripts/probe_chance_enumeration.py` (`pf1`, `pf3`-`pf10` -- pf2 reuses the
-existing `MULTIWAY_DISABLE_AIR_CBET` multiway bundle, no new preset needed).
-Existing 191 tests pass unchanged; a manual smoke test (each flag True
-individually, then all nine together, 400-600 hands each through
-`scripts/simulate_abc_bot.py`'s real Table/dossier/ML-bot loop) threw no
-exceptions. **None statistically tested -- same "raw hypothesis" status as
-r22-r29, do not run the A/B validation without separate explicit go-ahead.**
+All ten postflop ideas were implemented as off-by-default flags in
+`abc_bot.py` (same pattern as r22-r29), then statistically validated the same
+day (user gave explicit go-ahead) via `scripts/pf_batch_confirm.sh` --
+adaptive chance-enumeration, `--comparison current`, both base-seed 42 and
+777, log `/tmp/pf_batch_confirm_20260814_164343.log`. Full per-flag numbers
+are in `abc_bot.py`'s own changelog docstring (search "pf1-pf10 validation").
 
-1. `TEXTURE_DEPENDENT_CBET_SIZING` -- smaller (~33% pot) flop air c-bet on a
-   dry board (`not _is_wet_board`), standard sizing on wet boards.
-2. `MULTIWAY_DISABLE_AIR_CBET` -- unchanged, pre-existing, still untested.
+**Shipped True** (confirmed positive both seeds):
 3. `SEMI_BLUFF_RAISE_DRAWS` -- raise (not just call) a flush/open-ended
-   straight draw facing a bet, flop only, heads-up only.
+   straight draw facing a bet, flop only, heads-up only. +1.70/+2.79 bb/100.
 4. `NUT_ADVANTAGE_SIZING` -- size up a value bet when the board favors
-   hero's own preflop-raiser range (simplified proxy: top card >= Q and dry).
-5. `PROBE_BET_TURN_AFTER_CHECK` -- bet the turn without a hand, without
-   initiative, after a checked-through flop (frequency-gated).
-6. `POT_CONTROL_MARGINAL_HANDS` -- check back a marginal made hand OOP,
-   multiway, on a wet board instead of always value-betting it.
+   hero's own preflop-raiser range. +1.95/+2.00 bb/100 (very consistent).
 7. `SPR_SCALED_THRESHOLDS` -- widen the calling bar to any-pair-or-better
-   when stack-to-pot ratio is already low (<=3.0).
-8. `BLOCK_BET_RIVER` -- a small ~30%-pot river sizing tier for thin value
-   with a marginal hand, OOP, no initiative.
-9. `BLOCKER_BASED_RIVER_BLUFF` -- narrows (never widens) the existing
-   `BARREL_BLUFF_VS_TIGHT` to require hero's hand to hold a simplified
-   "blocker" (an Ace, or a card matching the scare card's rank).
-10. `DELAYED_CBET_MARGINAL` -- delay the flop air c-bet some of the time,
-    bet the turn instead if checked to again (shares check-check detection
-    with pf5 via `_street_was_checked_through`).
+   when SPR is already low (<=3.0). +15.32/+26.20 bb/100 (real but noisy
+   magnitude).
 
-**Next step, when authorized**: run each `pf*` preset the same way
-r22-r29/r20/r21 were tested -- `--comparison current --adaptive --base-seed
-42` then a second independent seed, combined-CI-in-quadrature before calling
-anything real.
+**Stays False -- confirmed negative, do not revisit without a new angle**:
+1. `TEXTURE_DEPENDENT_CBET_SIZING` -- -4.80/-6.53 bb/100.
+6. `POT_CONTROL_MARGINAL_HANDS` -- -7.48/-5.91 bb/100.
+9. `BLOCKER_BASED_RIVER_BLUFF` -- -1.24/-3.93 bb/100.
+10. `DELAYED_CBET_MARGINAL` -- -12.57/-21.69 bb/100.
+
+**Stays False -- inconclusive, effect too small vs. CI on both seeds**:
+5. `PROBE_BET_TURN_AFTER_CHECK` -- +0.21/+0.17 bb/100.
+8. `BLOCK_BET_RIVER` -- +0.22/+0.43 bb/100.
+
+2. `MULTIWAY_DISABLE_AIR_CBET` -- unchanged, pre-existing, still untested
+   (pf2 reused this flag rather than getting its own).
+
+191 tests re-run after flipping pf3/pf4/pf7 to True: still all pass.
 
 ## What's actually being worked on right now
 

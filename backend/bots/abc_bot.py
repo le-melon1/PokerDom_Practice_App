@@ -527,6 +527,33 @@ script's docstring). Revision history, each one a real measured finding:
   unconfirmed hypothesis, same status as r22-r29. Do not run the A/B
   validation without separate explicit go-ahead.**
 
+  pf1-pf10 validation (2026-08-14, same day, user gave explicit go-ahead to
+  test): all nine wired presets (pf2 excluded, see above) run adaptive
+  chance-enumeration, --comparison current, both base-seed 42 and 777,
+  scripts/pf_batch_confirm.sh, log /tmp/pf_batch_confirm_20260814_164343.log.
+  Three confirmed positive on both seeds -- **shipped True**:
+    - pf3 SEMI_BLUFF_RAISE_DRAWS: +1.70 +/-0.83 (seed42, 20k hands) / +2.79
+      +/-1.29 (seed777, 10k hands).
+    - pf4 NUT_ADVANTAGE_SIZING: +1.95 +/-0.96 (seed42, 16k hands) / +2.00
+      +/-0.99 (seed777, 14k hands) -- unusually consistent magnitude across
+      seeds.
+    - pf7 SPR_SCALED_THRESHOLDS: +15.32 +/-7.26 (seed42, 18k hands) / +26.20
+      +/-12.58 (seed777, 14k hands) -- large and clearly positive on both
+      seeds, but the magnitude itself is noisy; treat the direction as solid,
+      the size as a rough estimate only.
+  Four confirmed NEGATIVE on both seeds -- **stay False, do not revisit
+  without a new angle**, the published theories behind them do not hold up
+  against this bot's actual population mix/other rules:
+    - pf1 TEXTURE_DEPENDENT_CBET_SIZING: -4.80 +/-2.57 / -6.53 +/-4.66.
+    - pf6 POT_CONTROL_MARGINAL_HANDS: -7.48 +/-3.63 / -5.91 +/-3.86.
+    - pf9 BLOCKER_BASED_RIVER_BLUFF: -1.24 +/-1.15 / -3.93 +/-2.36.
+    - pf10 DELAYED_CBET_MARGINAL: -12.57 +/-4.77 / -21.69 +/-7.23.
+  Two inconclusive (effect too small relative to CI on both seeds) --
+  **stay False**, not worth the added complexity for an unconfirmed effect:
+    - pf5 PROBE_BET_TURN_AFTER_CHECK: +0.21 +/-0.17 / +0.17 +/-0.09.
+    - pf8 BLOCK_BET_RIVER: +0.22 +/-0.69 / +0.43 +/-0.96.
+  191 tests re-run after flipping pf3/pf4/pf7 to True: still all pass.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1789,7 +1816,7 @@ DRY_CBET_POT_FRACTION = 0.33
 # when hero was NOT already the one who bet this street (raising your own
 # bet makes no sense). Sizing mirrors VALUE_RAISE_MULTIPLIER's existing "3x
 # the bet" convention rather than inventing a new number.
-SEMI_BLUFF_RAISE_DRAWS = False
+SEMI_BLUFF_RAISE_DRAWS = True
 SEMI_BLUFF_RAISE_STREETS = {"flop"}
 SEMI_BLUFF_RAISE_MULTIPLIER = 3.0
 
@@ -1807,7 +1834,7 @@ SEMI_BLUFF_RAISE_MULTIPLIER = 3.0
 # a cheap stand-in. Only fires on hero's own VALUE bet (`made`), only with
 # initiative -- deliberately does not touch the air-cbet sizing pf1 already
 # owns, to keep the two testable independently.
-NUT_ADVANTAGE_SIZING = False
+NUT_ADVANTAGE_SIZING = True
 NUT_ADVANTAGE_MIN_TOP_RANK = "Q"
 NUT_ADVANTAGE_POT_FRACTION = 0.75  # same number as BIG_VALUE_SIZING_POT_FRACTION, kept as its own constant so the two can diverge later
 
@@ -1880,7 +1907,7 @@ def _should_pot_control(hand: Hand, seat: int, had_initiative: bool, n_live_opps
 # approximated as hero's own remaining `player.stack` (not the true
 # effective = min(all live stacks) -- a disclosed simplification; this bot
 # has no per-opponent stack tracking anywhere else either).
-SPR_SCALED_THRESHOLDS = False
+SPR_SCALED_THRESHOLDS = True
 SPR_LOW_THRESHOLD = 3.0
 
 
