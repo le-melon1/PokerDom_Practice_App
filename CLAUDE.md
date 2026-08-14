@@ -143,40 +143,44 @@ opponents).
 (measured worse, though its sub-flags like `MULTIWAY_DISABLE_AIR_CBET`
 were never separately re-tested at real power).
 
-### Postflop: what's MISSING entirely (not even built yet)
+### Postflop: built 2026-08-14, NOT tested (pf1-pf10)
 
-Unlike preflop's r22-r29, **none of the ten postflop ideas below have any
-code written for them yet** -- this is a research record only, from a
-2026-08-13 pass (14 search queries, 100+ sources, see that section
-further down for the full writeup + links). User explicitly said don't
-implement yet this round:
+All ten postflop ideas below are now implemented as off-by-default flags in
+`abc_bot.py` (same pattern as r22-r29), presets registered in
+`scripts/probe_chance_enumeration.py` (`pf1`, `pf3`-`pf10` -- pf2 reuses the
+existing `MULTIWAY_DISABLE_AIR_CBET` multiway bundle, no new preset needed).
+Existing 191 tests pass unchanged; a manual smoke test (each flag True
+individually, then all nine together, 400-600 hands each through
+`scripts/simulate_abc_bot.py`'s real Table/dossier/ML-bot loop) threw no
+exceptions. **None statistically tested -- same "raw hypothesis" status as
+r22-r29, do not run the A/B validation without separate explicit go-ahead.**
 
-1. Board-texture-dependent c-bet sizing/frequency (currently one flat
-   ~55% pot regardless of dry/wet)
-2. Multiway c-bet frequency reduction (partially exists as the untested
-   `MULTIWAY_DISABLE_AIR_CBET` candidate -- closest thing to a head start)
-3. Check-raising / semi-bluff raising with draws (doesn't exist as a
-   decision category at all -- the bot only ever calls draws or raises
-   two-pair+)
-4. Range/nut-advantage-based sizing (only has binary `had_initiative`,
-   no board-fit-vs-range concept)
-5. Turn probe betting after a checked-through flop (no such reactive
-   branch exists)
-6. Pot control / checking back marginal made hands (the bot never checks
-   back a made hand, by design -- no slowplay category at all)
-7. SPR-based hand-value thresholds (all thresholds are static)
-8. Block bets / small river sizing tier (only standard ~55% and v27's
-   ~150% overbet exist, no small ~25-33% tier)
-9. Blocker-based river bluff hand selection (v25 picks by archetype +
-   scare card only, ignores which specific cards block value/unblock
-   folds)
-10. Delayed c-bet (check flop, bet turn if checked to again -- no such
-    line exists; the bot's c-bet is immediate-flop-only or nothing)
+1. `TEXTURE_DEPENDENT_CBET_SIZING` -- smaller (~33% pot) flop air c-bet on a
+   dry board (`not _is_wet_board`), standard sizing on wet boards.
+2. `MULTIWAY_DISABLE_AIR_CBET` -- unchanged, pre-existing, still untested.
+3. `SEMI_BLUFF_RAISE_DRAWS` -- raise (not just call) a flush/open-ended
+   straight draw facing a bet, flop only, heads-up only.
+4. `NUT_ADVANTAGE_SIZING` -- size up a value bet when the board favors
+   hero's own preflop-raiser range (simplified proxy: top card >= Q and dry).
+5. `PROBE_BET_TURN_AFTER_CHECK` -- bet the turn without a hand, without
+   initiative, after a checked-through flop (frequency-gated).
+6. `POT_CONTROL_MARGINAL_HANDS` -- check back a marginal made hand OOP,
+   multiway, on a wet board instead of always value-betting it.
+7. `SPR_SCALED_THRESHOLDS` -- widen the calling bar to any-pair-or-better
+   when stack-to-pot ratio is already low (<=3.0).
+8. `BLOCK_BET_RIVER` -- a small ~30%-pot river sizing tier for thin value
+   with a marginal hand, OOP, no initiative.
+9. `BLOCKER_BASED_RIVER_BLUFF` -- narrows (never widens) the existing
+   `BARREL_BLUFF_VS_TIGHT` to require hero's hand to hold a simplified
+   "blocker" (an Ace, or a card matching the scare card's rank).
+10. `DELAYED_CBET_MARGINAL` -- delay the flop air c-bet some of the time,
+    bet the turn instead if checked to again (shares check-check detection
+    with pf5 via `_street_was_checked_through`).
 
-**Next step, when authorized**: implement all ten as off-by-default flags
-the same way r22-r29 were done for preflop, smoke-test for crashes only,
-wire into the probe harness, do NOT run any A/B validation without
-separate explicit go-ahead.
+**Next step, when authorized**: run each `pf*` preset the same way
+r22-r29/r20/r21 were tested -- `--comparison current --adaptive --base-seed
+42` then a second independent seed, combined-CI-in-quadrature before calling
+anything real.
 
 ## What's actually being worked on right now
 

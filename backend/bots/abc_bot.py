@@ -504,6 +504,29 @@ script's docstring). Revision history, each one a real measured finding:
   open VPIP, 5.5bb + 1.5bb/limper, +22.54 +/-4.77 bb/100 vs the first r12
   default at 10k hands / 490 divergent.
 
+  pf1-pf10 (2026-08-14, built, NOT tested): the ten postflop gaps from
+  CLAUDE.md's 2026-08-13 research pass, implemented as off-by-default flags
+  the same way r22-r29 were for preflop -- board-texture-dependent c-bet
+  sizing (TEXTURE_DEPENDENT_CBET_SIZING), semi-bluff raising draws
+  (SEMI_BLUFF_RAISE_DRAWS), range/nut-advantage sizing
+  (NUT_ADVANTAGE_SIZING), turn probe betting after a checked flop
+  (PROBE_BET_TURN_AFTER_CHECK), delayed c-bet (DELAYED_CBET_MARGINAL, shares
+  its check-check detection with the probe bet via
+  `_street_was_checked_through`), pot control / checking back marginal made
+  hands (POT_CONTROL_MARGINAL_HANDS), SPR-scaled calling thresholds
+  (SPR_SCALED_THRESHOLDS), a small river block-bet tier (BLOCK_BET_RIVER),
+  blocker-aware river bluff selection (BLOCKER_BASED_RIVER_BLUFF, narrows
+  BARREL_BLUFF_VS_TIGHT rather than firing independently). pf2 (multiway
+  c-bet reduction) needed no new code -- it already existed as the untested
+  MULTIWAY_DISABLE_AIR_CBET flag. All ten default False; existing 191 tests
+  pass unchanged; a manual smoke test (each flag flipped True individually,
+  then all nine together, 400-600 hands each through scripts/
+  simulate_abc_bot.py's real Table/dossier/ML-bot simulation loop) threw no
+  exceptions. **None of these have been statistically tested via
+  scripts/probe_chance_enumeration.py -- treat every one as a raw,
+  unconfirmed hypothesis, same status as r22-r29. Do not run the A/B
+  validation without separate explicit go-ahead.**
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1720,6 +1743,187 @@ def _optimal_value_sizing(hand: Hand, archetype: str) -> float | None:
     return BIG_VALUE_SIZING_POT_FRACTION if ev_large >= ev_medium else STANDARD_SIZING_POT_FRACTION
 
 
+# ============================================================================
+# 2026-08-14 postflop research batch (pf1-pf10). Source: CLAUDE.md's
+# "2026-08-13: postflop research pass" section (~14 search queries, 100+
+# sources: GTO Wizard, Upswing, PokerCoaching, Red Chip Poker, SplitSuit,
+# 888poker, poker-theory forums). ALL TEN FLAGS DEFAULT FALSE. Built and
+# smoke-tested for crashes only (existing 191 tests still pass unchanged,
+# flipping each flag True for a short manual run threw no exceptions) --
+# NONE of these have been statistically tested via scripts/
+# probe_chance_enumeration.py. Treat every one as a raw, unconfirmed
+# hypothesis, same status as r22-r29. Do not run the A/B validation without
+# separate explicit go-ahead (see CLAUDE.md's "Never launch a batch of
+# these without the user's explicit go-ahead" rule).
+#
+# pf2 (multiway c-bet frequency reduction) is NOT here -- it already exists
+# as MULTIWAY_DISABLE_AIR_CBET above (also untested, also off), so there
+# was no new code to write for it; nothing else below duplicates it.
+# ============================================================================
+
+# pf1: board-texture-dependent c-bet sizing. Published solver-approximation
+# theory: dry, low-connectivity boards want a SMALL c-bet (both value and
+# bluff realize their edge cheaply, and a big bet risks little extra fold
+# equity for a lot more risked); wet, coordinated boards want the existing
+# bigger/standard sizing (protection against equity denial, charging draws).
+# Reuses `_is_wet_board` -- "dry" here is simply `not _is_wet_board(...)`, a
+# disclosed two-bucket simplification, not a continuous texture score. Only
+# touches the AIR c-bet (`cbet_with_air`) below, not value bets or the other
+# archetype/turn/wet-board sizing rules already in this file -- those stay
+# exactly as they are so this is a single, isolated variable to test.
+TEXTURE_DEPENDENT_CBET_SIZING = False
+DRY_CBET_POT_FRACTION = 0.33
+
+# pf3: semi-bluff raising with a real draw, facing a bet, instead of only
+# ever calling (should_call_with_draw) or folding. Published theory: raising
+# a strong draw picks up folds now (fold equity this bot's calling line
+# never gets) AND still has real backup equity if called -- standard modern
+# strategy, especially in position. Deliberately narrow: only the flop (not
+# turn -- semi-bluff-raising a turn draw commits far more with one card left,
+# a bigger and separately-untested question), only a flush draw or an
+# open-or-better straight draw (reuses the same `_has_flush_draw`/
+# `_has_straight_draw` detectors `should_call_with_draw` already uses -- does
+# NOT distinguish a strong combo draw from a bare gutshot, a known
+# simplification shared with the existing call-with-draw rule), heads-up only
+# (opponent-identity-ambiguity reasoning used throughout this file), and only
+# when hero was NOT already the one who bet this street (raising your own
+# bet makes no sense). Sizing mirrors VALUE_RAISE_MULTIPLIER's existing "3x
+# the bet" convention rather than inventing a new number.
+SEMI_BLUFF_RAISE_DRAWS = False
+SEMI_BLUFF_RAISE_STREETS = {"flop"}
+SEMI_BLUFF_RAISE_MULTIPLIER = 3.0
+
+# pf4: bet bigger on a board that favors hero's OWN preflop range (had
+# initiative) rather than sizing purely by wet/dry texture (pf1) or opponent
+# archetype (A2/v28). Published range-advantage theory: a high, dry,
+# disconnected board (e.g. K-7-2 rainbow) favors the preflop raiser's range
+# (more top-pair/overpair combos than a caller's range has) -- the raiser can
+# size up because they're ahead more often, not just because bluffs are
+# cheap there (pf1's reasoning). Simplified proxy, disclosed: "board favors
+# the raiser" is approximated as (top board card >= Q) AND not
+# `_is_wet_board` -- a real range-vs-range read (see
+# PokerDom_Microlimits_Analysis's src/engine/range_equity.py, used by the
+# live EV panel, not by this hand-coded bot) would do this properly; this is
+# a cheap stand-in. Only fires on hero's own VALUE bet (`made`), only with
+# initiative -- deliberately does not touch the air-cbet sizing pf1 already
+# owns, to keep the two testable independently.
+NUT_ADVANTAGE_SIZING = False
+NUT_ADVANTAGE_MIN_TOP_RANK = "Q"
+NUT_ADVANTAGE_POT_FRACTION = 0.75  # same number as BIG_VALUE_SIZING_POT_FRACTION, kept as its own constant so the two can diverge later
+
+# pf5 + pf10 share one mechanism: betting a street hero did NOT bet the
+# previous street, when checked to again. pf5 = hero WITHOUT initiative
+# "probes" the turn after a flop that went check-check (two checks caps the
+# other player's range hard, published ~31% solver-frequency source). pf10 =
+# hero WITH initiative deliberately checks a marginal flop hand instead of
+# firing UNCONDITIONAL_FLOP_CBET's air c-bet, then bets the turn if checked
+# to again (a "delayed c-bet" -- two checks caps the OPPONENT's range the
+# same way, from the aggressor's side). Both are frequency-gated via the same
+# deterministic crc32 hash pattern _limp_trap_should_limp already
+# established (stable across processes, doesn't consume RNG state, so it
+# doesn't disturb the probe scripts' common-random-number pairing).
+PROBE_BET_TURN_AFTER_CHECK = False
+PROBE_BET_TURN_POT_FRACTION = 0.5
+PROBE_BET_FREQUENCY = 0.5
+
+DELAYED_CBET_MARGINAL = False
+DELAYED_CBET_FREQUENCY = 0.4  # fraction of the time hero delays instead of firing the immediate UNCONDITIONAL_FLOP_CBET air c-bet
+DELAYED_CBET_TURN_POT_FRACTION = 0.5
+
+
+def _hole_card_frequency_roll(player, threshold: float) -> bool:
+    """Same deterministic-hash pattern as _limp_trap_should_limp, generalized
+    to any threshold -- crc32 of the sorted hole cards, stable across
+    processes, doesn't touch Python's `random` state."""
+    key = ",".join(sorted(player.hole_cards)).encode()
+    return (zlib.crc32(key) % 1000) / 1000.0 < threshold
+
+
+def _street_was_checked_through(hand: Hand, street: str) -> bool:
+    """True if `street` happened (board is long enough) and had zero
+    bets/raises on it -- i.e. everyone checked. Used by pf5/pf10 to detect
+    "the previous street went check-check" from hand.actions directly,
+    rather than adding new state to Hand."""
+    board_len = {"flop": 3, "turn": 4, "river": 5}.get(street)
+    if board_len is None or len(hand.board) < board_len:
+        return False
+    return not any(a.street == street and a.action in ("bets", "raises") for a in hand.actions)
+
+
+# pf6: check back a marginal made hand for pot control instead of always
+# value-betting top-pair-or-better (should_bet's `made` branch, unconditional
+# today). Published theory: a plain one-pair hand, out of position, with
+# 2+ live opponents, on a wet/drawy board is a classic pot-control spot --
+# betting builds a pot hero doesn't want to play for stacks with a
+# one-pair hand, and risks a raise hero can't profitably continue against.
+# Deliberately narrow and conjunctive (all four conditions), NOT just "made
+# and not very_strong" -- a plain top pair heads-up on a dry board is still
+# this bot's normal, fine value bet; only the specific multiway/OOP/wet
+# combination is targeted. Never overrides a genuine bluff (cbet_with_air/
+# donk_bluff_with_air/barrel_bluff_with_air) or a very_strong hand.
+POT_CONTROL_MARGINAL_HANDS = False
+
+
+def _should_pot_control(hand: Hand, seat: int, had_initiative: bool, n_live_opps_2plus: bool) -> bool:
+    if not n_live_opps_2plus:
+        return False
+    if had_initiative:
+        return False  # OOP-without-initiative is the classic pot-control seat; IP/initiative keeps betting
+    return _is_wet_board(hand.board)
+
+
+# pf7: widen the postflop calling bar when stack-to-pot ratio (SPR) is
+# already low -- published theory: a low SPR means hero is close to
+# pot-committed regardless of hand strength, so folding a decent-but-not-
+# top-pair hand (e.g. second pair, or a weak top pair) gives up equity hero
+# was going to be committed to defend anyway. Effective stack is
+# approximated as hero's own remaining `player.stack` (not the true
+# effective = min(all live stacks) -- a disclosed simplification; this bot
+# has no per-opponent stack tracking anywhere else either).
+SPR_SCALED_THRESHOLDS = False
+SPR_LOW_THRESHOLD = 3.0
+
+
+def _effective_spr(hand: Hand, seat: int) -> float:
+    pot_before = sum(p.total_contributed for p in hand.players.values())
+    if pot_before <= 0:
+        return float("inf")
+    return hand.players[seat].stack / pot_before
+
+# pf8: a small "block bet" river sizing tier (~25-33% pot) for thin value
+# with a marginal made hand out of position, instead of either the standard
+# ~55%-pot size or checking. Published theory: a block bet denies a free
+# showdown-card check while risking little, specifically when hero expects
+# to be ahead of a check but behind a raise/big bet -- the classic use case
+# is a marginal one-pair hand, river, out of position, no initiative (the
+# same "why bet small instead of big/nothing" spot pf6 also targets, but pf6
+# is about NOT betting at all -- these two are mutually exclusive by
+# construction below, never fire together on the same decision).
+BLOCK_BET_RIVER = False
+BLOCK_BET_POT_FRACTION = 0.3
+
+# pf9: require hero's own hole cards to "block" the archetype's realistic
+# calling range before firing BARREL_BLUFF_VS_TIGHT's scare-card bluff --
+# published blocker theory: holding a card that removes the opponent's
+# likely value combos (or that the opponent's OWN value range needs to have
+# to continue) makes a bluff both less likely to run into a call and more
+# likely that folded-out combos included real value. Simplified, disclosed
+# proxy (no real combo-blocking calculation, which needs the range-vs-range
+# machinery in PokerDom_Microlimits_Analysis's src/engine/range_equity.py,
+# not duplicated here): hero holds an Ace, OR hero holds a card matching the
+# scare card's own rank (removes one of the two remaining combos of whatever
+# just paired/turned scary). Only narrows BARREL_BLUFF_VS_TIGHT's existing
+# trigger -- never fires independently, never widens it.
+BLOCKER_BASED_RIVER_BLUFF = False
+
+
+def _has_river_blocker(hole: list[str], hand: Hand) -> bool:
+    if any(c[0] == "A" for c in hole):
+        return True
+    scare_card = hand.board[-1] if hand.board else None
+    return bool(scare_card) and any(c[0] == scare_card[0] for c in hole)
+
+
 def choose_abc_action(
     hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
 ) -> tuple[str, float | None]:
@@ -2004,6 +2208,47 @@ def choose_abc_action(
         cbet_with_air = UNCONDITIONAL_FLOP_CBET and had_initiative and hand.street == "flop" and n_bets == 0
         if MULTIWAY_DISABLE_AIR_CBET and n_live_opps_2plus:
             cbet_with_air = False
+        # pf10 (DELAYED_CBET_MARGINAL): some of the time, delay the air c-bet
+        # instead of firing it immediately -- see the delayed_cbet_turn
+        # branch below for the follow-up bet on the turn if checked to again.
+        if DELAYED_CBET_MARGINAL and cbet_with_air and not made and _hole_card_frequency_roll(player, DELAYED_CBET_FREQUENCY):
+            cbet_with_air = False
+        # pf5 (PROBE_BET_TURN_AFTER_CHECK): hero did NOT have preflop
+        # initiative, the flop went check-check, and it's now the turn --
+        # "probe" with no hand some of the time since two checks caps the
+        # other player's range hard. Heads-up only (opponent-identity
+        # ambiguity, same reasoning used throughout this file for every
+        # other bluff trigger).
+        probe_bet_turn = False
+        if (
+            PROBE_BET_TURN_AFTER_CHECK
+            and not had_initiative
+            and hand.street == "turn"
+            and n_bets == 0
+            and not made
+            and _street_was_checked_through(hand, "flop")
+            and len(_live_opponent_seats(hand, seat)) == 1
+            and _hole_card_frequency_roll(player, PROBE_BET_FREQUENCY)
+        ):
+            probe_bet_turn = True
+        # pf10, follow-up: hero HAD initiative, delayed the c-bet on the flop
+        # (or would have -- this only checks the flop actually went
+        # check-check, not that DELAYED_CBET_MARGINAL specifically caused
+        # it, so it can also fire after an organic check-check with
+        # UNCONDITIONAL_FLOP_CBET off), still has no hand, and it's now the
+        # turn with nobody having bet yet. Same "two checks caps a range"
+        # logic as pf5, from the aggressor's side instead of the caller's.
+        delayed_cbet_turn = False
+        if (
+            DELAYED_CBET_MARGINAL
+            and had_initiative
+            and hand.street == "turn"
+            and n_bets == 0
+            and not made
+            and _street_was_checked_through(hand, "flop")
+            and len(_live_opponent_seats(hand, seat)) == 1
+        ):
+            delayed_cbet_turn = True
         # v17, C2 (see TIGHT_ARCHETYPES_FOR_DONK_BLUFF above): a donk bet with
         # NO hand at all, specifically into a known Nit/TAG/LAG -- these
         # archetypes fold to a donk/lead meaningfully more than to a same-
@@ -2040,7 +2285,22 @@ def choose_abc_action(
             if len(barrel_live_opponents) == 1:
                 if opponent_archetypes.get(barrel_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
                     barrel_bluff_with_air = True
-        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air
+            # pf9 (BLOCKER_BASED_RIVER_BLUFF): narrows (never widens) the
+            # barrel bluff above -- only fire it if hero's own hole cards
+            # also block the archetype's realistic continuing range. See
+            # _has_river_blocker's docstring for the disclosed simplified
+            # proxy used instead of a real combo-blocking calculation.
+            if barrel_bluff_with_air and BLOCKER_BASED_RIVER_BLUFF:
+                if not _has_river_blocker(player.hole_cards, hand):
+                    barrel_bluff_with_air = False
+        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn
+        # pf6 (POT_CONTROL_MARGINAL_HANDS): check back a marginal made hand
+        # instead of value-betting it, in the specific OOP/multiway/wet-board
+        # spot _should_pot_control targets -- never overrides a genuine bluff
+        # trigger (those aren't `made`) or a very-strong hand.
+        if POT_CONTROL_MARGINAL_HANDS and made and not very_strong and should_bet:
+            if _should_pot_control(hand, seat, had_initiative, n_live_opps_2plus):
+                should_bet = False
         if should_bet and n_bets == 0:
             # v14, A2 (see SIZING_TARGET_ARCHETYPES above): size up specifically
             # against a known Nit/TAG, where a bigger bet measurably buys extra
@@ -2081,6 +2341,40 @@ def choose_abc_action(
                 sizing = BIG_VALUE_SIZING_POT_FRACTION
             if SIZE_UP_ON_WET_BOARD and made and _is_wet_board(hand.board):
                 sizing = BIG_VALUE_SIZING_POT_FRACTION
+            # pf1 (TEXTURE_DEPENDENT_CBET_SIZING): the flop air c-bet
+            # specifically, sized down on a dry board -- see the flag's
+            # comment above. `made` is false whenever this is the reason
+            # should_bet fired, so this can't accidentally shrink a value bet.
+            if TEXTURE_DEPENDENT_CBET_SIZING and cbet_with_air and not _is_wet_board(hand.board):
+                sizing = DRY_CBET_POT_FRACTION
+            # pf4 (NUT_ADVANTAGE_SIZING): size up a value bet when the board
+            # texture favors hero's own preflop-raiser range -- see the
+            # flag's comment above for the disclosed simplified proxy.
+            if (
+                NUT_ADVANTAGE_SIZING
+                and made
+                and had_initiative
+                and hand.board
+                and _RANK_ORDER.index(max(c[0] for c in hand.board)) >= _RANK_ORDER.index(NUT_ADVANTAGE_MIN_TOP_RANK)
+                and not _is_wet_board(hand.board)
+            ):
+                sizing = NUT_ADVANTAGE_POT_FRACTION
+            # pf8 (BLOCK_BET_RIVER): a small river sizing tier for thin value
+            # with a marginal (not very_strong) made hand, out of position,
+            # no initiative -- mutually exclusive with pf6's pot-control
+            # check-back by construction (should_bet is already False by the
+            # time we'd get here if pf6 fired, so this line is simply never
+            # reached in that case).
+            if BLOCK_BET_RIVER and made and not very_strong and hand.street == "river" and not had_initiative:
+                sizing = BLOCK_BET_POT_FRACTION
+            # pf5/pf10: the probe/delayed-c-bet turn bets have no real hand
+            # (made is False) and aren't covered by any of the value-sizing
+            # rules above -- give them their own fixed sizes instead of
+            # silently falling through to STANDARD_SIZING_POT_FRACTION.
+            if probe_bet_turn:
+                sizing = PROBE_BET_TURN_POT_FRACTION
+            if delayed_cbet_turn:
+                sizing = DELAYED_CBET_TURN_POT_FRACTION
             # v27 (RIVER_OVERBET_NUTS_VS_LOOSE): a genuine overbet (>100%
             # pot), not just BIG_VALUE_SIZING_POT_FRACTION's 75%, on the
             # river specifically with a real near-nut hand (has_trips_or_
@@ -2191,6 +2485,28 @@ def choose_abc_action(
         aggressor_archetype = opponent_archetypes.get(aggressor) if aggressor is not None else None
         if aggressor_archetype in LOOSE_ARCHETYPES and has_any_pair_or_better(player.hole_cards, hand.board):
             return ("call", None)
+
+    # pf7 (SPR_SCALED_THRESHOLDS): already near pot-committed (low
+    # stack-to-pot ratio) -- widen the calling bar to any-pair-or-better
+    # instead of folding a hand that was going to get stacked off anyway.
+    # Checked before the draw logic below since it's a strictly wider bar.
+    if SPR_SCALED_THRESHOLDS and _effective_spr(hand, seat) <= SPR_LOW_THRESHOLD:
+        if has_any_pair_or_better(player.hole_cards, hand.board):
+            return ("call", None)
+
+    # pf3 (SEMI_BLUFF_RAISE_DRAWS): raise a strong flop draw instead of only
+    # ever calling it -- see the flag's comment above for scope (flop only,
+    # heads-up only, hero didn't already bet this street themselves).
+    if (
+        SEMI_BLUFF_RAISE_DRAWS
+        and not made
+        and hand.street in SEMI_BLUFF_RAISE_STREETS
+        and (_has_flush_draw(player.hole_cards, hand.board) or _has_straight_draw(player.hole_cards, hand.board))
+        and len(_live_opponent_seats(hand, seat)) == 1
+    ):
+        amount = hand.current_bet * SEMI_BLUFF_RAISE_MULTIPLIER
+        amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+        return ("raise", amount)
 
     if should_call_with_draw(player.hole_cards, hand.board, hand.street, to_call, pot_before):
         return ("call", None)

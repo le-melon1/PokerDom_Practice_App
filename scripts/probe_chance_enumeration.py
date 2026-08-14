@@ -140,6 +140,44 @@ RULE_TEST_GROUPS = {
         ["FOLD_VS_3BET_FROM_PASSIVE"],
         "r29 fold QQ/AKs/AKo facing a 3bet+ specifically from a known loose-passive raiser",
     ),
+    # pf1-pf10 (2026-08-14 postflop research batch, see CLAUDE.md and abc_bot.py's
+    # docstring): built + smoke-tested for crashes only, none statistically tested.
+    "pf1-texture-dependent-cbet-sizing": (
+        ["TEXTURE_DEPENDENT_CBET_SIZING"],
+        "pf1 smaller flop air c-bet on a dry board",
+    ),
+    "pf3-semi-bluff-raise-draws": (
+        ["SEMI_BLUFF_RAISE_DRAWS"],
+        "pf3 raise (not just call) a strong flop draw, heads-up",
+    ),
+    "pf4-nut-advantage-sizing": (
+        ["NUT_ADVANTAGE_SIZING"],
+        "pf4 size up a value bet when the board favors hero's own preflop-raiser range",
+    ),
+    "pf5-probe-bet-turn-after-check": (
+        ["PROBE_BET_TURN_AFTER_CHECK"],
+        "pf5 probe-bet the turn after a checked-through flop, without initiative",
+    ),
+    "pf6-pot-control-marginal-hands": (
+        ["POT_CONTROL_MARGINAL_HANDS"],
+        "pf6 check back a marginal made hand OOP, multiway, wet board",
+    ),
+    "pf7-spr-scaled-thresholds": (
+        ["SPR_SCALED_THRESHOLDS"],
+        "pf7 widen the calling bar to any-pair-or-better when SPR is already low",
+    ),
+    "pf8-block-bet-river": (
+        ["BLOCK_BET_RIVER"],
+        "pf8 small ~30% pot river block-bet tier for thin value OOP",
+    ),
+    "pf9-blocker-based-river-bluff": (
+        ["BLOCKER_BASED_RIVER_BLUFF"],
+        "pf9 require a blocker card before firing the existing BARREL_BLUFF_VS_TIGHT",
+    ),
+    "pf10-delayed-cbet-marginal": (
+        ["DELAYED_CBET_MARGINAL"],
+        "pf10 delay the flop air c-bet some of the time, bet turn instead if checked to again",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
