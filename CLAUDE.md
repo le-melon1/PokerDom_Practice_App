@@ -792,29 +792,43 @@ smoke-test for crashes only, wire into `probe_chance_enumeration.py`
 presets, document in this file -- do NOT run any A/B validation without
 separate explicit go-ahead.
 
-### 2026-08-13: 8 new preflop rules from published-theory research (built, NOT tested)
+### 2026-08-13/15: 8 new preflop rules from published-theory research -- built AND tested
 
 User asked for a web/book research pass on preflop advice the bot doesn't
-cover, then to implement everything found as off-by-default flags without
-running the A/B validation yet (machine needed for other work). All eight
-are gated False, existing 191 tests pass unchanged, and a manual
-crash-only smoke test (flip each flag True, run 1500 hands) found no
-exceptions -- but **none of these have been statistically tested at all,
-treat every one as a raw hypothesis, not even at the "leaning positive"
-stage.** Each has a preset already wired into
-`scripts/probe_chance_enumeration.py` (`r22` through `r29`), ready to run
-whenever authorized:
+cover, implemented as off-by-default flags on 2026-08-13, then (2026-08-15,
+user asked to test everything still untested) statistically validated via
+`scripts/r22_29_batch_confirm.sh` -- adaptive chance-enumeration, both
+base-seed 42 and 777, log `/tmp/r22_29_batch_confirm_20260815_130025.log`.
+Full numbers in `abc_bot.py`'s own changelog docstring (search "r22-r29
+validation").
 
-| Preset | Flag | Idea (source) |
+**Shipped True** (confirmed positive both seeds):
+| Preset | Flag | Idea | seed42 / seed777 (bb/100) |
+|---|---|---|---|
+| `r22-threebet-size-by-position` | `THREEBET_SIZE_BY_POSITION` | 3-bet ~4x OOP / ~3x IP instead of flat 3x | +6.10±2.72 / +6.91±3.16 |
+| `r23-threebet-bluff-late-position` | `THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT` | polarized late-position bluff-3bet vs any archetype | +9.18±4.22 / +8.34±3.44 |
+| `r24-bb-defend-mdf-scaled` | `BB_DEFEND_MDF_SCALED` | MDF-driven BB widening vs any raiser position | +20.78±7.42 / +13.74±5.22 (noisy magnitude, solid direction) |
+| `r27-set-mine-implied-odds` | `SET_MINE_IMPLIED_ODDS` | 15/25/35-rule implied-odds cold-call | +6.50±3.00 / +9.61±4.39 |
+
+**Stays False** (confirmed negative both seeds):
+| Preset | Flag | seed42 / seed777 |
 |---|---|---|
-| `r22-threebet-size-by-position` | `THREEBET_SIZE_BY_POSITION` | 3-bet ~4x OOP / ~3x IP instead of a flat 3x multiplier |
-| `r23-threebet-bluff-late-position` | `THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT` | polarized late-position bluff-3bet regardless of raiser archetype |
-| `r24-bb-defend-mdf-scaled` | `BB_DEFEND_MDF_SCALED` | MDF-driven BB widening vs ANY raiser position, gated on actual pot odds |
-| `r25-bluff-3bet-blocker-range` | `BLUFF_3BET_BLOCKER_RANGE_FLAG` | blocker-theory bluff-3bet hands (wheel aces) instead of the current playability-based set |
-| `r26-limp-trap-monsters` | `LIMP_TRAP_WITH_MONSTERS` | limp-reraise trap with AA/KK from an unopened pot (deterministic crc32-hashed frequency, not RNG, so it doesn't disturb common-random pairing) |
-| `r27-set-mine-implied-odds` | `SET_MINE_IMPLIED_ODDS` | explicit 15/25/35-rule implied-odds cold-call for pairs/suited connectors |
-| `r28-rake-adjusted-open-sizing` | `RAKE_ADJUSTED_OPEN_SIZING` | smaller UTG/MP open (2.2bb) for high-rake low-stakes |
-| `r29-fold-vs-3bet-passive` | `FOLD_VS_3BET_FROM_PASSIVE` | fold QQ/AKs/AKo vs a 3bet+ specifically from a known loose-passive raiser |
+| `r25-bluff-3bet-blocker-range` | `BLUFF_3BET_BLOCKER_RANGE_FLAG` | -6.94±5.07 / -4.13±3.49 |
+
+**Stays False** (inconclusive both seeds):
+| Preset | Flag | seed42 / seed777 |
+|---|---|---|
+| `r28-rake-adjusted-open-sizing` | `RAKE_ADJUSTED_OPEN_SIZING` | -0.02±1.00 / -0.29±1.00 |
+
+**Stays False** (didn't clear the two-seed bar, special cases):
+- `r26-limp-trap-monsters` (`LIMP_TRAP_WITH_MONSTERS`) -- +0.45±0.36
+  (inconclusive) / +0.77±0.38 (confirmed) -- same sign, genuinely tiny
+  effect (unopened AA/KK is a naturally rare spot), split verdict.
+- `r29-fold-vs-3bet-passive` (`FOLD_VS_3BET_FROM_PASSIVE`) -- seed42
+  confirmed negative (-2.15±1.22, 84k hands), seed777 had **zero**
+  divergent hands in 50k (the exact spot never occurred naturally in that
+  seed's sample) -- can't cross-validate, same `untestable_by_self_play`
+  situation as r13 above. Suggestive but not confirmed.
 
 Researched but judged **already covered** by existing (tested) mechanics,
 not re-implemented: linear-vs-polarized-by-hero-position is the value side
@@ -827,10 +841,7 @@ file), the researched limp-reraise and cold-call/set-mine sources' example
 figures apply close to as-written (100bb is the standard assumption most
 cited solver charts use).
 
-**Next step, when authorized**: run each `r22`-`r29` preset the same way
-r20/r21/etc. were tested tonight -- `--comparison current --adaptive
---base-seed 42` then a second independent seed for cross-check, combined-
-CI-in-quadrature before calling anything real.
+191 tests re-run after flipping r22/r23/r24/r27 to True: still all pass.
 
 ### 2026-08-13 round: honest r13/r18v re-test + bug audit + new confirmed/negative flags
 

@@ -554,6 +554,45 @@ script's docstring). Revision history, each one a real measured finding:
     - pf8 BLOCK_BET_RIVER: +0.22 +/-0.69 / +0.43 +/-0.96.
   191 tests re-run after flipping pf3/pf4/pf7 to True: still all pass.
 
+  r22-r29 validation (2026-08-15, user asked to test everything still
+  untested): same method as pf1-pf10 above, both base-seed 42 and 777,
+  scripts/r22_29_batch_confirm.sh, log
+  /tmp/r22_29_batch_confirm_20260815_130025.log. Four confirmed positive on
+  BOTH seeds -- **shipped True**:
+    - r22 THREEBET_SIZE_BY_POSITION: +6.10 +/-2.72 (seed42) / +6.91 +/-3.16
+      (seed777).
+    - r23 THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT: +9.18 +/-4.22 /
+      +8.34 +/-3.44.
+    - r24 BB_DEFEND_MDF_SCALED: +20.78 +/-7.42 / +13.74 +/-5.22 -- large
+      effect both times, magnitude noisy like pf7 was.
+    - r27 SET_MINE_IMPLIED_ODDS: +6.50 +/-3.00 / +9.61 +/-4.39.
+  One confirmed negative on both seeds -- **stays False**:
+    - r25 BLUFF_3BET_BLOCKER_RANGE_FLAG: -6.94 +/-5.07 / -4.13 +/-3.49.
+  One inconclusive on both seeds -- **stays False**:
+    - r28 RAKE_ADJUSTED_OPEN_SIZING: -0.02 +/-1.00 / -0.29 +/-1.00.
+  Two special cases, **both stay False**, neither cleared the two-
+  independent-seed bar:
+    - r26 LIMP_TRAP_WITH_MONSTERS: seed42 stopped `inconclusive_small_effect`
+      (+0.45 +/-0.36 at 56k hands), seed777 stopped `confirmed_positive`
+      (+0.77 +/-0.38 at 64k hands) -- same sign both times, genuinely tiny
+      magnitude either way (this is the natural incidence of unopened
+      AA/KK, an inherently rare spot). Split verdict -- one seed didn't
+      clear the bar, so this does NOT get shipped True on the strict
+      both-seeds-confirmed rule used everywhere else in this file. Worth a
+      bigger dedicated sample later if revisited, not urgent.
+    - r29 FOLD_VS_3BET_FROM_PASSIVE: seed42 confirmed_negative (-2.15
+      +/-1.22 at 84k hands, 30 divergent), but seed777 hit
+      `no_divergent_hands` at the 50k cap -- zero divergent hero hands, this
+      exact spot (QQ/AKs/AKo facing a 3bet+ specifically from a known
+      loose-passive raiser) simply never came up naturally in that seed's
+      population sample. Same `untestable_by_self_play`-style situation as
+      r13's shove-vs-3bet spot noted above -- can't cross-validate a rule
+      that only one seed ever exercised. The seed42 result is suggestive
+      (real negative) but not confirmed by this file's own two-seed
+      standard, so stays False rather than being shipped on a single
+      sample.
+  191 tests re-run after flipping r22/r23/r24/r27 to True: still all pass.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -717,7 +756,7 @@ LATE_STEAL_RAISER_POSITIONS = {"CO", "BTN", "SB"}
 # this bot doesn't otherwise consider calling with, so it's omitted here).
 # Only extends the call decision to hands NOT already in the fixed call
 # range; never narrows it.
-SET_MINE_IMPLIED_ODDS = False
+SET_MINE_IMPLIED_ODDS = True
 SET_MINE_POCKET_PAIRS = {"22", "33", "44", "55", "66", "77", "88", "99"}
 SET_MINE_SUITED_CONNECTORS = {"54s", "65s", "76s", "87s", "98s", "T9s", "JTs"}
 SET_MINE_PAIR_IMPLIED_ODDS_MULTIPLE = 15.0
@@ -800,7 +839,7 @@ RAKE_ADJUSTED_OPEN_POSITIONS = {"UTG", "MP"}
 # a bigger price). Applied via _threebet_multiplier(hand, seat, raiser_seat)
 # below wherever THREEBET_MULTIPLIER is currently used directly (value
 # 3-bet, bluff 3-bet, squeeze).
-THREEBET_SIZE_BY_POSITION = False
+THREEBET_SIZE_BY_POSITION = True
 THREEBET_MULTIPLIER_IP = 3.0
 THREEBET_MULTIPLIER_OOP = 4.0
 
@@ -1265,7 +1304,7 @@ BLUFF_3BET_BLOCKER_RANGE = {"A5s", "A4s", "A3s", "A2s", "ATo", "AJo"}
 # hero's own late position against ANY opponent archetype (not just the
 # targeted ones), the polarization half of the theory that's currently
 # missing entirely.
-THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT = False
+THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT = True
 LATE_THREEBET_BLUFF_POSITIONS = {"CO", "BTN", "SB"}
 
 # r29 (2026-08-13, untested): published exploit advice says the best way to
@@ -1302,7 +1341,7 @@ BB_DEFEND_VPIP_MULTIPLIER = 1.6
 # building a fresh continuous-multiplier range per decision isn't worth the
 # added complexity here -- same "a few discrete tiers, not a continuous
 # function" tradeoff as every other range in this file.
-BB_DEFEND_MDF_SCALED = False
+BB_DEFEND_MDF_SCALED = True
 BB_DEFEND_MDF_TRIGGER = 0.35  # widen when pot/(pot+bet) at or above this (a cheap-enough price)
 
 _rankings_cache = None
