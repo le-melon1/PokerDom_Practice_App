@@ -648,6 +648,40 @@ script's docstring). Revision history, each one a real measured finding:
       SHOVE_AA_KK_VS_3BET_PLUS explicitly (see test_abc_bot.py).
   191 tests re-run after flipping the four winners: still all pass.
 
+  2026-08-16, later same day -- bigger-sample retest of every remaining
+  split-verdict/inconclusive flag, per explicit user request
+  ("перепроверь стратегии в которых не уверен на большей выборке"). Same
+  method, tighter target-CI (0.5 instead of 1.0), hand cap raised to 1M
+  (`scripts/borderline_bigger_sample_confirm.sh`, log
+  /tmp/borderline_bigger_sample_confirm_20260816_183316.log):
+    - v27 RIVER_OVERBET_NUTS_VS_LOOSE: seed42 confirmed_positive +1.12
+      +/-0.54 (288k hands -- needed real power to resolve), seed777
+      confirmed_positive +4.04 +/-2.00 (36k hands). Both confirmed --
+      **shipped True.**
+    - r17v CALL_RANGE_BY_RAISER_POSITION: at bigger sample, BOTH seeds now
+      confirmed_negative (-0.64 +/-0.63 @ 56k hands, -1.46 +/-1.11 @ 32k
+      hands) -- the earlier verdict ("both land at true-zero," +0.07/-0.98
+      at 1x sample) undersold it; more power reveals a real small negative,
+      not a null result. **Stays False, now for a stronger reason.**
+    - pf5 PROBE_BET_TURN_AFTER_CHECK: +0.24 +/-0.14 / +0.22 +/-0.13, both
+      still `inconclusive_small_effect` even with target-CI halved --
+      confirms this is genuinely a near-zero effect, not an
+      under-powered measurement. **Stays False.**
+    - pf8 BLOCK_BET_RIVER: seed42 confirmed_negative -0.78 +/-0.77 (164k
+      hands), seed777 inconclusive_small_effect -0.38 +/-0.50 (348k
+      hands) -- leans mildly negative now (flipped from the earlier
+      +0.22 lean) but doesn't clear the bar on both seeds. **Stays
+      False.**
+    - r26 LIMP_TRAP_WITH_MONSTERS: seed42 inconclusive_small_effect +0.16
+      +/-0.32 (92k hands), seed777 confirmed_positive +0.70 +/-0.34 (160k
+      hands) -- still a split verdict even at 2-3x the earlier sample
+      size. Genuinely on the edge of measurability for this rare a spot.
+      **Stays False.**
+  191 tests re-run after flipping RIVER_OVERBET_NUTS_VS_LOOSE: still all
+  pass. This closes out the last open question from the two prior
+  validation rounds -- every flag in this file now has a real, adequately-
+  powered test result behind its True/False state.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -924,7 +958,7 @@ STANDARD_SIZING_POT_FRACTION = 0.525
 # v27: see the RIVER_OVERBET_NUTS_VS_LOOSE comment in choose_abc_action's
 # checked-to branch. A genuine overbet (>100% pot) -- BIG_VALUE_SIZING_
 # POT_FRACTION's 0.75 never crosses the pot itself.
-RIVER_OVERBET_NUTS_VS_LOOSE = False  # flip True to A/B-test against the baseline (flat sizing tiers only)
+RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog
 RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
 
 # v28 (OPTIMAL_VALUE_SIZING_PER_ARCHETYPE): A2 above hardcodes "big sizing

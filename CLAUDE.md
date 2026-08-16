@@ -117,12 +117,11 @@ seeds, log `/tmp/remaining_untested_confirm_20260816_124429.log`):
 - `SIZE_UP_WITH_VERY_STRONG_HAND` / `SIZE_UP_ON_WET_BOARD` (v23, never run
   before): +7.97/+7.22 and +14.65/+12.18 bb/100 respectively -- both
   confirmed both seeds. **Shipped True.**
-- `RIVER_OVERBET_NUTS_VS_LOOSE` (v27) -- had no preset at all, added
-  `v27-river-overbet-nuts-vs-loose`. Split verdict: seed42
-  `inconclusive_small_effect` (+0.98+/-0.99 @ 92k hands), seed777
-  `confirmed_positive` (+3.21+/-1.52 @ 52k hands). Leaning real, doesn't
-  clear the strict bar yet -- **stays False**, queued for a bigger-sample
-  retest along with the other borderline flags (see next section).
+- `RIVER_OVERBET_NUTS_VS_LOOSE` (v27, postflop -- listed here since it was
+  part of this same never-tested batch) -- had no preset at all, added
+  `v27-river-overbet-nuts-vs-loose`. First pass was a split verdict; the
+  bigger-sample retest below resolved it to confirmed positive both seeds.
+  **Shipped True.**
 - `BB_DEFEND_VS_STEAL_MINRAISE`: the "medium" parameterization
   (multiplier 1.6) got 0 divergent hands both seeds -- a dead swept
   parameter, same class of bug as `SIZE_SCALED_CALL_RANGE`/`LIMP_BEHIND`'s
@@ -153,6 +152,34 @@ seeds, log `/tmp/remaining_untested_confirm_20260816_124429.log`):
 assumptions the `SHOVE_AA_KK_VS_3BET_PLUS` range widening broke): still
 all pass.
 
+### The last 5 borderline flags, re-tested at bigger sample (2026-08-16)
+
+User explicitly asked to re-check every still-uncertain result at higher
+power. `scripts/borderline_bigger_sample_confirm.sh` -- both seeds, hand
+cap raised to 1M, target-CI halved to 0.5 (log
+`/tmp/borderline_bigger_sample_confirm_20260816_183316.log`):
+
+- `RIVER_OVERBET_NUTS_VS_LOOSE` (v27): +1.12+/-0.54 (288k hands) /
+  +4.04+/-2.00 (36k hands) -- now confirmed both seeds. **Shipped True.**
+- `CALL_RANGE_BY_RAISER_POSITION` (r17v): -0.64+/-0.63 (56k) /
+  -1.46+/-1.11 (32k) -- now confirmed NEGATIVE both seeds. The earlier
+  "true-zero" read (1x sample) undersold a real small negative effect.
+  **Stays False**, for a stronger reason than before.
+- `PROBE_BET_TURN_AFTER_CHECK` (pf5): +0.24+/-0.14 / +0.22+/-0.13 --
+  still inconclusive even with the CI target halved. Genuinely near-zero,
+  not under-powered. **Stays False.**
+- `BLOCK_BET_RIVER` (pf8): -0.78+/-0.77 confirmed negative (164k hands) /
+  -0.38+/-0.50 inconclusive (348k hands) -- leans mildly negative now,
+  doesn't clear the bar on both seeds. **Stays False.**
+- `LIMP_TRAP_WITH_MONSTERS` (r26): +0.16+/-0.32 inconclusive (92k) /
+  +0.70+/-0.34 confirmed (160k) -- still a split verdict at 2-3x the
+  earlier sample. Genuinely on the edge of measurability for this rare a
+  spot (unopened AA/KK). **Stays False.**
+
+This closes out every open question from the 2026-08-14/15/16 validation
+rounds -- every flag in `abc_bot.py` now has an adequately-powered test
+result behind its current True/False state. 191 tests pass.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting
@@ -165,7 +192,8 @@ pot grows past 8bb), `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28),
 opponents), `SEMI_BLUFF_RAISE_DRAWS`/`NUT_ADVANTAGE_SIZING`/`SPR_SCALED_
 THRESHOLDS` (pf3/pf4/pf7, shipped 2026-08-14), `SIZE_UP_WITH_VERY_STRONG_
 HAND`/`SIZE_UP_ON_WET_BOARD` (v23, shipped 2026-08-16, +7.97/+7.22 and
-+14.65/+12.18 bb/100).
++14.65/+12.18 bb/100), `RIVER_OVERBET_NUTS_VS_LOOSE` (v27, shipped
+2026-08-16 after a bigger-sample retest, +1.12/+4.04 bb/100).
 
 ### Postflop: confirmed NOT real
 
