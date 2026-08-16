@@ -165,7 +165,11 @@ def test_parameter_variant_updates_bluff_3bet_targets_against_current_default():
 def test_parameter_variant_can_add_candidate_rule_from_current_default():
     comparison = probe._build_comparison("r19v-bb-defend-steal-medium", "current")
 
-    assert comparison.baseline["BB_DEFEND_VS_STEAL_MINRAISE"] is False
+    # BB_DEFEND_VS_STEAL_MINRAISE shipped True 2026-08-16 (wide params:
+    # MAX_RAISE_BB=2.5, VPIP_MULTIPLIER=2.0) -- baseline now reflects that
+    # current default, and this "medium" variant (multiplier 1.6) overlays
+    # its own value on top the same way any parameter variant does.
+    assert comparison.baseline["BB_DEFEND_VS_STEAL_MINRAISE"] is True
     assert comparison.treatment["BB_DEFEND_VS_STEAL_MINRAISE"] is True
     assert comparison.treatment["BB_DEFEND_MAX_RAISE_BB"] == 2.5
     assert comparison.treatment["BB_DEFEND_VPIP_MULTIPLIER"] == 1.6

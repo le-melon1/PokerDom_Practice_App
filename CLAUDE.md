@@ -70,7 +70,20 @@ lever), `DONK_BLUFF_VS_TIGHT`, `BLUFF_3BET_VS_TIGHT` (v24), `STEAL_WIDER_
 VS_NIT`, `TIGHT_BIG_ISO_RAISE_LIMPERS`, `ISO_WIDER_RANGE_OVER_LIMPERS`
 (v29), `BARREL_BLUFF_VS_TIGHT` (v25, postflop but preflop-adjacent),
 `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28), `SIZE_UP_PREMIUM_OPENS` (r20,
-shipped 2026-08-13 after re-testing the old imprecise v19b result).
+shipped 2026-08-13 after re-testing the old imprecise v19b result),
+`THREEBET_SIZE_BY_POSITION`/`THREEBET_BLUFF_FROM_LATE_POSITION_ANY_
+OPPONENT`/`BB_DEFEND_MDF_SCALED`/`SET_MINE_IMPLIED_ODDS` (r22/r23/r24/r27,
+shipped 2026-08-15), `LIMP_BEHIND_OVER_LIMPERS` (confirmed since 2026-08-12
+r16v but never actually flipped -- fixed 2026-08-16),
+`TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR` (r21, +7.90/+23.26 bb/100),
+`BB_DEFEND_VS_STEAL_MINRAISE` (r19v wide params, MAX_RAISE_BB=2.5/
+VPIP_MULTIPLIER=2.0, +5.72/+4.15 bb/100 -- stacks on top of MDF above),
+`SHOVE_AA_KK_VS_3BET_PLUS` (r18v, widened to `{AA,KK,QQ,AKs,AKo}`,
++31.41/+15.54 bb/100 -- see the note under "confirmed NOT real" below,
+this makes `FOLD_PREMIUM_VS_EXTREME_AGGRO`/`FOLD_VS_3BET_FROM_PASSIVE`
+structurally unreachable for their whole target hand set now). All
+2026-08-16 numbers from `scripts/remaining_untested_confirm.sh`, log
+`/tmp/remaining_untested_confirm_20260816_124429.log`.
 
 ### Preflop: confirmed NOT real (tested properly, correctly kept off)
 
@@ -80,50 +93,65 @@ null result), `SIZE_SCALED_CALL_RANGE` (v30, confirmed negative -6.46/
 this result, re-test pending), `CALL_RANGE_BY_RAISER_POSITION` (r17v, both
 seeds land at true-zero), `MULTIWAY_AWARE`, `VALUE_RAISE_FACING_BET`
 (-9.66 bb/100), several older v9/v14/v15/v16 range-widening theories (all
-plateaued at breakeven even at 500k-2M hands).
+plateaued at breakeven even at 500k-2M hands), `BLUFF_3BET_BLOCKER_RANGE_
+FLAG` (r25, -6.94/-4.13), `RAKE_ADJUSTED_OPEN_SIZING` (r28, inconclusive
+-0.02/-0.29), `FOLD_VS_3BET_FROM_PASSIVE` (r29, -2.15 on seed42 only,
+second seed got 0 divergent hands, unconfirmable), `r19v-bb-defend-
+minraise-tight` parameterization (confirmed negative -4.15/-2.11 -- only
+the wide parameterization above is shipped), `FOLD_PREMIUM_VS_EXTREME_
+AGGRO` (r15v, all 4 hand-set/archetype/stack-fraction variants got 0
+divergent hands on both seeds in the 2026-08-16 run -- see below, it's now
+also structurally dead code for QQ/AKs/AKo since the widened shove range
+intercepts those hands first).
 
-### Preflop: built, off, JUST needs the A/B run (no more code work needed)
+### Preflop: everything that was still untested is now resolved (2026-08-16)
 
-These are fully implemented and wired into the probe harness already --
-the only remaining step is running `--adaptive --base-seed 42` then `777`
-and recording the result:
+As of 2026-08-15 the section above listed a handful of genuinely never-run
+flags plus a couple of imprecise first-pass numbers. All of them were run
+to a clean adaptive stop (`scripts/remaining_untested_confirm.sh`, both
+seeds, log `/tmp/remaining_untested_confirm_20260816_124429.log`):
 
-- **`r21-tight-iso-real-data-floor`** (`TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR`)
-  -- first pass gave +7.72+/-3.82 @ seed42, +25.60+/-10.55 @ seed777 (both
-  individually "confirmed_positive" but the two DON'T agree with each
-  other -- combined CI 11.22 vs a 17.88 delta between them). Sign is real,
-  magnitude isn't pinned down yet. **Needs a bigger precision run** (try
-  `--min-hands 20000 --max-hands 200000`), not a from-scratch retest.
-- **`v30-size-scaled-call`** (`SIZE_SCALED_CALL_RANGE`) -- the narrow-tier
-  bug (missing `REAL_DATA_CALL_RANGE_ADDITIONS` union) that likely CAUSED
-  the old -6.46/-5.67 result is now fixed (2026-08-13 commit). The old
-  negative number is stale evidence against a version of the code that no
-  longer exists -- needs a full re-test from scratch, plus the three
-  milder-multiplier variants already built (`v30v-mild-narrow`,
-  `v30v-no-narrow`, `v30v-mild-both`).
-- **`r19v-bb-defend-steal-medium`/`-wide`** (`BB_DEFEND_VS_STEAL_MINRAISE`)
-  -- never tested at all. This is the single most-likely-underexplored
-  real gap in preflop: BB defense vs a late-position steal is a common,
-  fundamental spot, not a rare corner case like r13/v26. (`-tight` variant
-  reuses a threshold known-dead from v30's history, low priority.)
-- **`r13-shove-aa-kk-vs-3bet-plus`**, **`r18v-shove-qq-plus`**, **`r18v-
-  shove-qq-ak`** -- the honest (unforced, `--hero-hand-filter` only, NO
-  `--force-opponent-reraise`) natural-incidence version. Previous forced
-  numbers (~+3.3/+4.2/+4.3 bb/100) are not trustworthy (forced opponent's
-  cards to a fixed range, biasing magnitude even after frequency-rescaling
-  -- see the r13/v26 section below for the full story). Could take a long
-  time even at 2M hands since the target spot is naturally rare.
-- **`r22` through `r29`** (8 flags, 2026-08-13, see that section below) --
-  position-dependent 3-bet sizing, late-position bluff polarization,
-  MDF-scaled BB defense, blocker-based bluff range, limp-trap, implied-
-  odds set-mining, rake-adjusted opens, fold-vs-3bet-from-passive. NONE of
-  these have been run even once -- genuinely raw hypotheses, not
-  "leaning positive."
-- **`v26-fold-premium-extreme`** (`FOLD_PREMIUM_VS_EXTREME_AGGRO`) --
-  probably PERMANENTLY untestable via self-play: its full compound
-  condition occurred 0 times in 500k natural hands. Not worth further
-  investment unless the approach changes (e.g. testing sub-conditions
-  separately rather than the full AND).
+- `TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR` (r21): +7.90+/-3.89 / +23.26+/-10.11
+  -- confirmed both seeds (the earlier imprecise +7.72/+25.60 numbers were
+  in the right ballpark). **Shipped True.**
+- `SIZE_UP_WITH_VERY_STRONG_HAND` / `SIZE_UP_ON_WET_BOARD` (v23, never run
+  before): +7.97/+7.22 and +14.65/+12.18 bb/100 respectively -- both
+  confirmed both seeds. **Shipped True.**
+- `RIVER_OVERBET_NUTS_VS_LOOSE` (v27) -- had no preset at all, added
+  `v27-river-overbet-nuts-vs-loose`. Split verdict: seed42
+  `inconclusive_small_effect` (+0.98+/-0.99 @ 92k hands), seed777
+  `confirmed_positive` (+3.21+/-1.52 @ 52k hands). Leaning real, doesn't
+  clear the strict bar yet -- **stays False**, queued for a bigger-sample
+  retest along with the other borderline flags (see next section).
+- `BB_DEFEND_VS_STEAL_MINRAISE`: the "medium" parameterization
+  (multiplier 1.6) got 0 divergent hands both seeds -- a dead swept
+  parameter, same class of bug as `SIZE_SCALED_CALL_RANGE`/`LIMP_BEHIND`'s
+  multiplier. "Tight" (max_raise_bb=2.0, multiplier 1.3) confirmed
+  NEGATIVE both seeds. "Wide" (max_raise_bb=2.5, multiplier 2.0) confirmed
+  POSITIVE both seeds (+5.72/+4.15) -- **shipped True with the wide
+  params**, stacking on top of the already-True `BB_DEFEND_MDF_SCALED`.
+- `SHOVE_AA_KK_VS_3BET_PLUS`: the original AA/KK-only range (r13) is still
+  untestable (0 divergent even forced). The wider r18v variants aren't:
+  QQ+ range +14.66/+9.51 bb/100, QQ+/AK range +31.41/+15.54 bb/100 -- both
+  confirmed both seeds, and the widest range gave the cleanest, largest
+  result. **Shipped True with `SHOVE_VS_3BET_PLUS_RANGE =
+  {AA,KK,QQ,AKs,AKo}`.** Side effect: this range exactly equals
+  `FOLDABLE_PREMIUM_VS_EXTREME_AGGRO`, and the shove check runs first in
+  `choose_abc_action`, so `FOLD_PREMIUM_VS_EXTREME_AGGRO` and
+  `FOLD_VS_3BET_FROM_PASSIVE` can now never fire for their whole target
+  hand set regardless of their own flag state -- effectively superseded,
+  since shoving that range is now confirmed to beat calling it, so folding
+  it was never going to win either. Tests updated to isolate
+  `SHOVE_AA_KK_VS_3BET_PLUS=False` when testing those two flags in
+  isolation (see `tests/test_abc_bot.py`).
+- `FOLD_PREMIUM_VS_EXTREME_AGGRO` (r15v, all 4 variants): 0 divergent
+  hands, both seeds, every variant -- genuinely untestable at natural
+  incidence, now also structurally dead per the shove note above.
+  **Stays False.**
+
+191 tests re-run after all the flips above (plus fixing the 8 tests whose
+assumptions the `SHOVE_AA_KK_VS_3BET_PLUS` range widening broke): still
+all pass.
 
 ### Postflop: what's confirmed and shipped True
 
@@ -134,7 +162,10 @@ opponent-archetype-aware wider calling (part of v10 above),
 `HERO_PROGRESSIVE_POT_DAMPING` (dropping the flat ~55%-pot sizing as the
 pot grows past 8bb), `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28),
 `BARREL_BLUFF_VS_TIGHT` (v25, turn/river scare-card bluff vs known tight
-opponents).
+opponents), `SEMI_BLUFF_RAISE_DRAWS`/`NUT_ADVANTAGE_SIZING`/`SPR_SCALED_
+THRESHOLDS` (pf3/pf4/pf7, shipped 2026-08-14), `SIZE_UP_WITH_VERY_STRONG_
+HAND`/`SIZE_UP_ON_WET_BOARD` (v23, shipped 2026-08-16, +7.97/+7.22 and
++14.65/+12.18 bb/100).
 
 ### Postflop: confirmed NOT real
 

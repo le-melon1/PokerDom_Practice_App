@@ -178,6 +178,10 @@ RULE_TEST_GROUPS = {
         ["DELAYED_CBET_MARGINAL"],
         "pf10 delay the flop air c-bet some of the time, bet turn instead if checked to again",
     ),
+    "v27-river-overbet-nuts-vs-loose": (
+        ["RIVER_OVERBET_NUTS_VS_LOOSE"],
+        "v27 genuine river overbet (150% pot) with trips-or-better vs a known loose/weak archetype",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [

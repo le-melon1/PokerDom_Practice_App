@@ -593,6 +593,61 @@ script's docstring). Revision history, each one a real measured finding:
       sample.
   191 tests re-run after flipping r22/r23/r24/r27 to True: still all pass.
 
+  2026-08-16 -- LIMP_BEHIND_OVER_LIMPERS shipped True: found during a full
+  re-audit that this flag was confirmed positive back in the 2026-08-12
+  r16v test (+10.3 to +10.5 bb/100 across two seeds -- see that comment
+  above) but never actually flipped. Nothing about the rule changed; the
+  flag itself was just wrong.
+
+  2026-08-16 -- last remaining never-tested flags, both seeds
+  (scripts/remaining_untested_confirm.sh, log
+  /tmp/remaining_untested_confirm_20260816_124429.log):
+  Four confirmed positive on both seeds -- **shipped True**:
+    - r21 TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR: +7.90 +/-3.89 (seed42) /
+      +23.26 +/-10.11 (seed777) -- noisy magnitude, solid direction.
+    - v23 SIZE_UP_WITH_VERY_STRONG_HAND: +7.97 +/-3.00 / +7.22 +/-3.52.
+    - v23 SIZE_UP_ON_WET_BOARD: +14.65 +/-4.44 / +12.18 +/-5.56.
+    - r18v SHOVE_AA_KK_VS_3BET_PLUS, widened to
+      SHOVE_VS_3BET_PLUS_RANGE={AA,KK,QQ,AKs,AKo}: +31.41 +/-14.19 /
+      +15.54 +/-7.76 -- the widest tested range gave the largest and
+      cleanest result; the original AA/KK-only r13 preset stays documented
+      above as untestable (0 divergent even forced), the wider range is
+      what actually gets exercised naturally.
+    - r19v BB_DEFEND_VS_STEAL_MINRAISE, wide parameterization
+      (BB_DEFEND_MAX_RAISE_BB=2.5, BB_DEFEND_VPIP_MULTIPLIER=2.0): +5.72
+      +/-2.80 / +4.15 +/-1.96. The "medium" parameterization (multiplier
+      1.6) got ZERO divergent hands on both seeds -- same class of dead-
+      swept-parameter bug as SIZE_SCALED_CALL_RANGE and LIMP_BEHIND's
+      multiplier -- and the "tight" parameterization (max_raise_bb=2.0,
+      multiplier 1.3) was confirmed NEGATIVE (-4.15 +/-2.36 / -2.11
+      +/-1.41). Only the wide config is shipped; this stacks on top of the
+      already-True BB_DEFEND_MDF_SCALED (r24), tested against that as the
+      current baseline.
+  One split verdict, **stays False** -- flagged for a bigger-sample retest:
+    - v27 RIVER_OVERBET_NUTS_VS_LOOSE: seed42 inconclusive_small_effect
+      (+0.98 +/-0.99 at 92k hands), seed777 confirmed_positive (+3.21
+      +/-1.52 at 52k hands). Leaning real but doesn't clear the strict
+      both-seeds bar yet.
+  One flag, all 4 parameter variants tested, **stays False** -- genuinely
+  untestable at natural incidence:
+    - r15v FOLD_PREMIUM_VS_EXTREME_AGGRO (fold-qq-vs-nit-tag-50,
+      fold-ak-vs-nit-tag-50, fold-qq-ak-vs-nit-50, fold-qq-ak-vs-nit-tag-75):
+      every variant got 0 divergent hands in 50k on both seeds. This exact
+      combination (facing 2+ raises already at >=50% of hero's stack, with
+      QQ/AK, against a known Nit/TAG) simply doesn't occur naturally in
+      this population/stack-depth's self-play -- same situation as r13's
+      AA/KK shove and r29's second-seed miss. That earlier finding is now
+      also structurally true by construction, not just empirically rare:
+      SHOVE_AA_KK_VS_3BET_PLUS's widened range ({AA,KK,QQ,AKs,AKo}, shipped
+      True above) is checked BEFORE this branch in choose_abc_action and
+      exactly covers FOLDABLE_PREMIUM_VS_EXTREME_AGGRO's hand set, so those
+      hands now always shove facing 3bet+ and never reach the fold check at
+      all. Effectively superseded: the data says shoving that range beats
+      calling it, so folding it was never going to beat shoving it either.
+      Tests updated to isolate FOLD_PREMIUM_VS_EXTREME_AGGRO by disabling
+      SHOVE_AA_KK_VS_3BET_PLUS explicitly (see test_abc_bot.py).
+  191 tests re-run after flipping the four winners: still all pass.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -925,8 +980,8 @@ SIZE_UP_ON_TURN = False  # full-model ablation: +0.46 +/- 0.59, no proven benefi
 # and size UP on wet/drawy boards to charge draws properly instead of giving
 # a cheap price. Both independently toggleable, same lesson as v15 B1/B2:
 # a bundled test can't tell you which part helped.
-SIZE_UP_WITH_VERY_STRONG_HAND = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard with two-pair-or-better (has_very_strong_hand)
-SIZE_UP_ON_WET_BOARD = False  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard on a two-tone/monotone/well-connected board
+SIZE_UP_WITH_VERY_STRONG_HAND = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard with two-pair-or-better (has_very_strong_hand)
+SIZE_UP_ON_WET_BOARD = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard on a two-tone/monotone/well-connected board
 
 # v16, C1: the bot currently treats "someone already limped" identically to
 # "unopened pot" -- always OPEN_SIZING_BB flat. Standard live convention is
@@ -955,7 +1010,7 @@ TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 # missing a union the "parent" range includes) -- off by default here since,
 # unlike that case, this flag is untested and TIGHT_BIG_ISO_RAISE_LIMPERS is
 # a currently-shipped True rule, so the standing policy is test first.
-TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = False
+TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = True
 
 # r26 (2026-08-13, untested): limp-reraise trap. Published theory: limping
 # the very top of hero's range (AA/KK) from an UNOPENED pot instead of
@@ -974,10 +1029,9 @@ LIMP_TRAP_WITH_MONSTERS = False
 LIMP_TRAP_HAND_SET = {"AA", "KK"}
 LIMP_TRAP_FREQUENCY = 0.3  # limp (instead of raise) this fraction of the time with a LIMP_TRAP_HAND_SET hand
 
-# Candidate: limp behind instead of iso/fold with hands that play well
-# multiway and are too weak for the tight-big-iso range. This is deliberately
-# off until tested because open-limping/over-limping can be rake-sensitive.
-LIMP_BEHIND_OVER_LIMPERS = False
+# Limp behind instead of iso/fold with hands that play well multiway and are
+# too weak for the tight-big-iso range.
+LIMP_BEHIND_OVER_LIMPERS = True
 LIMP_BEHIND_VPIP_MULTIPLIER = 0.55
 LIMP_BEHIND_EXTRA_HANDS = {
     "22", "33", "44", "55", "66",
@@ -997,12 +1051,16 @@ LIMP_BEHIND_EXTRA_HANDS = {
 # this population's actual self-play dynamics, the multiplier parameter
 # has NO measurable effect -- the entire benefit comes from the fixed
 # small-pairs/suited-connectors/small-suited-aces core, not from how much
-# wider or narrower the swept tier is around it. If this flag is ever
-# shipped True, the multiplier value doesn't matter for THIS population;
-# don't spend more time tuning it without first checking whether the
-# swept region is ever actually reached (the same class of dead-parameter
+# wider or narrower the swept tier is around it. The multiplier value doesn't
+# matter for THIS population; don't spend more time tuning it without first
+# checking whether the swept region is ever actually reached (the same
+# class of dead-parameter
 # bug found and fixed for v30/r19v-tight this same night, just resolved
 # here as "confirmed genuinely inert" instead of "off by a factor").
+# 2026-08-16: the confirmed-positive result above was never actually shipped
+# at the time -- found and fixed during a full re-audit of every remaining
+# untested/unshipped flag. Shipped True now; nothing else about the rule
+# changed.
 
 # v29: see the ISO_WIDER_RANGE_OVER_LIMPERS comment at its use site above
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
@@ -1084,8 +1142,8 @@ TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 # never-fold preflop pair bucket instead of flat-calling and letting worse
 # hands realize equity cheaply. QQ/AK stay in the older call/fold branch until
 # separately tested.
-SHOVE_AA_KK_VS_3BET_PLUS = False
-SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK"}
+SHOVE_AA_KK_VS_3BET_PLUS = True
+SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK", "QQ", "AKs", "AKo"}
 
 # v15, B1: archetype_vs_raise.csv / archetype_facing_bet.csv show Maniac and
 # Station continue/call facing aggression far more than the population
@@ -1325,9 +1383,9 @@ PASSIVE_ARCHETYPES_FOR_3BET_FOLD = {"Station"}
 # Candidate: defend the BB more specifically against cheap late-position
 # steals. This is separate from SIZE_SCALED_CALL_RANGE because a BTN minraise
 # into BB is a narrower tactical spot than "any small raise anywhere".
-BB_DEFEND_VS_STEAL_MINRAISE = False
+BB_DEFEND_VS_STEAL_MINRAISE = True
 BB_DEFEND_MAX_RAISE_BB = 2.5
-BB_DEFEND_VPIP_MULTIPLIER = 1.6
+BB_DEFEND_VPIP_MULTIPLIER = 2.0
 
 # r24 (2026-08-13, untested): Minimum Defense Frequency (MDF = pot / (pot +
 # bet)) as an explicit floor for the BB's continuing range, instead of

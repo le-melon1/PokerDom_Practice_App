@@ -361,7 +361,13 @@ def test_only_premium_continues_vs_a_3bet():
     action, _ = choose_abc_action(hand, 4)
     assert action == "fold"
     hand.players[4].hole_cards = ["Qd", "Qs"]  # QQ -- is in the premium set
-    action, _ = choose_abc_action(hand, 4)
+    # SHOVE_AA_KK_VS_3BET_PLUS defaults True and now includes QQ (2026-08-16),
+    # so isolate it to keep testing the plain premium-continues call path.
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
+    try:
+        action, _ = choose_abc_action(hand, 4)
+    finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
     assert action == "call"
 
 
@@ -385,7 +391,11 @@ def test_aa_kk_shove_vs_3bet_plus_when_flag_on():
     assert amount == hand.legal_actions(4)["max_raise_to"]
 
 
-def test_aa_kk_shove_flag_does_not_shove_qq():
+def test_aa_kk_shove_flag_does_not_shove_qq_with_the_narrow_range():
+    # QQ is in the shipped-default range now (2026-08-16) -- this test
+    # verifies the range gate itself, not the default: with the ORIGINAL
+    # narrow {AA,KK} range explicitly set, QQ must still fall through to a
+    # plain call rather than shoving.
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
     hand.apply_action(4, "raise", amount=5.0)
@@ -394,12 +404,15 @@ def test_aa_kk_shove_flag_does_not_shove_qq():
         hand.apply_action(hand.current_actor(), "fold")
     hand.players[4].hole_cards = ["Qd", "Qs"]
 
-    original = abc_bot.SHOVE_AA_KK_VS_3BET_PLUS
+    original_flag = abc_bot.SHOVE_AA_KK_VS_3BET_PLUS
+    original_range = set(abc_bot.SHOVE_VS_3BET_PLUS_RANGE)
     abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
+    abc_bot.SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK"}
     try:
         action, amount = choose_abc_action(hand, 4)
     finally:
-        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = original
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = original_flag
+        abc_bot.SHOVE_VS_3BET_PLUS_RANGE = original_range
 
     assert action == "call"
     assert amount is None
@@ -428,8 +441,11 @@ def test_shove_vs_3bet_plus_range_can_include_qq():
     assert amount == hand.legal_actions(4)["max_raise_to"]
 
 
-def test_aa_kk_shove_flag_defaults_off():
-    assert abc_bot.SHOVE_AA_KK_VS_3BET_PLUS is False
+def test_aa_kk_shove_flag_defaults_on():
+    # Shipped True 2026-08-16 (r18v, widened to QQ/AKs/AKo too -- confirmed
+    # positive both seeds, see abc_bot.py's changelog).
+    assert abc_bot.SHOVE_AA_KK_VS_3BET_PLUS is True
+    assert abc_bot.SHOVE_VS_3BET_PLUS_RANGE == {"AA", "KK", "QQ", "AKs", "AKo"}
 
 
 def _facing_a_near_shove_4bet(stack=40.0):
@@ -442,13 +458,26 @@ def _facing_a_near_shove_4bet(stack=40.0):
     return hand  # hero (seat 4) faces to_call=30 out of a 35bb remaining stack (~86%)
 
 
+# 2026-08-16: SHOVE_AA_KK_VS_3BET_PLUS shipped True with its range widened to
+# {AA,KK,QQ,AKs,AKo} -- exactly FOLDABLE_PREMIUM_VS_EXTREME_AGGRO's hand set,
+# and it's checked BEFORE FOLD_PREMIUM_VS_EXTREME_AGGRO in choose_abc_action,
+# so by default those hands now always shove facing 3bet+ and never reach the
+# fold-vs-extreme-aggro branch at all (that branch is still False/untested on
+# its own, but is now structurally dead for its whole target range unless a
+# future session narrows the shove range back down). These tests disable the
+# shove flag explicitly so they keep testing FOLD_PREMIUM_VS_EXTREME_AGGRO in
+# isolation, as originally intended.
+
+
 def test_folds_qq_to_an_extreme_4bet_from_a_known_nit_when_flag_on():
     hand = _facing_a_near_shove_4bet()
     hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
     abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
     try:
         action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
     finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
         abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
     assert action == "fold"
 
@@ -456,10 +485,12 @@ def test_folds_qq_to_an_extreme_4bet_from_a_known_nit_when_flag_on():
 def test_never_folds_aa_even_to_an_extreme_4bet_from_a_known_nit():
     hand = _facing_a_near_shove_4bet()
     hand.players[4].hole_cards = ["As", "Ah"]
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
     abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
     try:
         action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
     finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
         abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
     assert action == "call"
 
@@ -467,12 +498,14 @@ def test_never_folds_aa_even_to_an_extreme_4bet_from_a_known_nit():
 def test_does_not_fold_qq_to_an_extreme_4bet_from_a_known_loose_raiser():
     hand = _facing_a_near_shove_4bet()
     hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
     abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
     try:
         # Maniac isn't in TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD -- a Maniac's
         # shove range is nowhere near pure premium, so QQ keeps calling.
         action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Maniac"})
     finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
         abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
     assert action == "call"
 
@@ -481,7 +514,12 @@ def test_extreme_4bet_fold_flag_off_by_default_still_calls_qq():
     hand = _facing_a_near_shove_4bet()
     hand.players[4].hole_cards = ["Qd", "Qs"]
     # FOLD_PREMIUM_VS_EXTREME_AGGRO defaults False -- baseline behavior.
-    action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    # SHOVE_AA_KK_VS_3BET_PLUS defaults True now, so isolate it too.
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
+    try:
+        action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
+    finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
     assert action == "call"
 
 
@@ -496,10 +534,12 @@ def test_does_not_fold_qq_to_a_modest_sized_3bet_even_vs_a_known_nit():
     while hand.current_actor() != 4:
         hand.apply_action(hand.current_actor(), "fold")
     hand.players[4].hole_cards = ["Qd", "Qs"]
+    abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = False
     abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = True
     try:
         action, _ = choose_abc_action(hand, 4, opponent_archetypes={5: "Nit"})
     finally:
+        abc_bot.SHOVE_AA_KK_VS_3BET_PLUS = True
         abc_bot.FOLD_PREMIUM_VS_EXTREME_AGGRO = False
     assert action == "call"
 
