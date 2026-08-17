@@ -796,6 +796,47 @@ script's docstring). Revision history, each one a real measured finding:
   (4 more occurrences converted to a deterministic sorted() pick). 191
   tests pass across 5 different random PYTHONHASHSEED values.
 
+  2026-08-17, later same session -- 4 follow-up ideas raised while
+  explaining preflop/postflop strategy to the user, all tested via
+  scripts/followup_ideas_confirm.sh, log
+  /tmp/followup_ideas_confirm_20260817_164109.log, both seeds:
+    - SB open 3.5bb (re-testing SB_BIGGER_OPEN_SIZING at a bigger step
+      than the already-tested 3.0bb): inconclusive both seeds, +0.27
+      +/-0.15 (seed42) / +0.08 +/-0.10 (seed777) -- even tighter around
+      zero than 3.0bb. Confirms this isn't a step-size artifact. Stays
+      False.
+    - TIGHT_BIG_ISO_RAISE_LIMPERS vs ISO_WIDER_RANGE_OVER_LIMPERS, real
+      head-to-head (found while explaining the code that ISO_WIDER's own
+      branch has been structurally dead since TIGHT_BIG_ISO shipped --
+      see ISO_WIDER_RANGE_OVER_LIMPERS's own comment for the full story):
+      confirmed NEGATIVE both seeds for ISO_WIDER as the live mechanism,
+      -14.19 +/-11.63 (seed42) / -33.94 +/-17.01 (seed777). Today's
+      default (TIGHT_BIG_ISO_RAISE_LIMPERS) is genuinely better, not just
+      winning by code priority accident. ISO_WIDER_RANGE_OVER_LIMPERS
+      flipped to False (no behavior change, it was already unreachable --
+      this just makes the flag's value stop lying about being a live,
+      strong lever).
+    - SB flat-call vs fold diagnostic (does SB_THREEBET_OR_FOLD_VS_STEAL's
+      win mask a postflop game too weak to play ANY OOP continue
+      profitably?): confirmed NEGATIVE both seeds for folding, -9.58
+      +/-4.37 (seed42) / -4.82 +/-2.53 (seed777) -- i.e. flat-calling
+      clearly beats folding. SB's call range is solidly +EV against a
+      steal in absolute terms; 3-betting simply beats an already-
+      profitable call, it isn't rescuing an unprofitable one. Diagnostic-
+      only flag (SB_FOLD_VS_STEAL_DIAGNOSTIC), stays False either way.
+    - Narrow the tight-iso range further per limper beyond the first
+      (TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER, only sizing scaled with
+      n_limpers before): confirmed NEGATIVE both seeds, -5.98 +/-3.29
+      (seed42) / -14.42 +/-6.09 (seed777). Further narrowing hurts --
+      today's fixed-range-plus-bigger-sizing approach is already correct.
+      Stays False.
+  All 4 resolved cleanly on both seeds, no split verdicts. Net: 0 new
+  flags shipped True, 1 stale/misleading flag corrected (ISO_WIDER_RANGE_
+  OVER_LIMPERS), 3 honest negative findings that rule out real concerns
+  (SB open sizing isn't under-stepped, SB flat-calling isn't a symptom of
+  weak OOP postflop, tighter-per-limper isolation doesn't help). 191 tests
+  pass across multiple PYTHONHASHSEED values after these changes.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1081,6 +1122,13 @@ THREEBET_MULTIPLIER = 3.0  # standard "make it 3x" value 3-bet sizing
 #      (limped-pot isolation already has its own, bigger sizing above).
 SB_BIGGER_OPEN_SIZING = False
 SB_OPEN_SIZING_BB = 3.0
+# 2026-08-17, follow-up: also tested 3.5bb specifically (sb-open-3.5bb
+# preset), in case the original 3.0bb step (inconclusive, +0.19/+0.04) was
+# just too small to move the needle -- still inconclusive both seeds,
+# +0.27+/-0.15 (seed42) / +0.08+/-0.10 (seed777), even tighter around zero
+# than the 3.0bb result. Confirms this isn't a step-size artifact: SB open
+# sizing genuinely doesn't matter for this population in the blind-vs-
+# blind case. Stays False.
 #   2. "3-bet with your entire continue range" facing a late-position
 #      (CO/BTN) steal raise, instead of ever flat-calling -- SB is worse
 #      positioned than any other cold-caller (acts first EVERY street,
@@ -1090,6 +1138,31 @@ SB_OPEN_SIZING_BB = 3.0
 #      range as the "entire continue range" (call_ranges["SB"] | VALUE_3BET)
 #      rather than inventing a new hand list from scratch.
 SB_THREEBET_OR_FOLD_VS_STEAL = True
+
+# 2026-08-17, diagnostic-only, never meant to ship: SB_THREEBET_OR_FOLD_VS_
+# STEAL confirmed 3-bet beats flat-call, but that doesn't establish that
+# flat-calling itself is +EV -- it could be that this bot's postflop game
+# is weak enough OOP that no continue is profitable there, and 3-betting
+# only wins because it more often ends the hand outright. This flag answers
+# a different, narrower question: is SB's flat-call range positive EV
+# against a steal AT ALL, compared to simply folding it (not compared to
+# 3-betting). Only meaningful with SB_THREEBET_OR_FOLD_VS_STEAL off (that
+# flag already intercepts and returns before this point when on) -- the
+# test harness enforces that by construction (see probe_chance_
+# enumeration.py's "sb-flat-call-vs-fold-diagnostic" special-cased
+# comparison, which forces both off/on arms with SB_THREEBET_OR_FOLD_VS_
+# STEAL=False so only this flag varies).
+SB_FOLD_VS_STEAL_DIAGNOSTIC = False
+# RESULT (2026-08-17): confirmed NEGATIVE both seeds, -9.58+/-4.37
+# (seed42) / -4.82+/-2.53 (seed777) -- i.e. folding SB's call range
+# measures WORSE than flat-calling it, clearly and on both seeds. Answers
+# the diagnostic question directly: SB's flat-call range vs a steal is
+# solidly +EV in absolute terms, not just "less bad than folding." The
+# concern that SB_THREEBET_OR_FOLD_VS_STEAL's win was masking a weak OOP
+# postflop game is NOT supported by this result -- calling is a genuinely
+# profitable action on its own; 3-betting is simply even better than an
+# already-profitable call, not a rescue from an unprofitable one. Stays
+# False (diagnostic-only, was never meant to ship either way).
 
 # r28 (2026-08-13, untested): rake-adjusted early-position open sizing.
 # Published low-stakes/high-rake advice: a smaller open (down to ~2.2bb from
@@ -1234,6 +1307,29 @@ TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 # a currently-shipped True rule, so the standing policy is test first.
 TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = True
 
+# 2026-08-17, follow-up round (user's idea, untested): also narrow the
+# RANGE for each limper beyond the first, not just the sizing -- the
+# mechanism above only scales TIGHT_ISO_BASE_SIZING_BB/_PER_LIMPER_BB with
+# n_limpers; the range itself (TIGHT_ISO_VPIP_MULTIPLIER) is identical
+# whether there's 1 limper or 3. Standard live-poker isolation logic: more
+# limpers means isolating profitably to actually go heads-up is harder
+# (any of them could still call/squeeze behind), and a bigger potential
+# multiway pot wants more raw hand strength, not just a bigger price. Not
+# fit to a measured breakeven point -- testing the idea, not a derived
+# number.
+TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER = False
+TIGHT_ISO_EXTRA_LIMPER_STEP = 0.85  # each limper beyond the first multiplies the effective VPIP multiplier by this again, compounding with TIGHT_ISO_VPIP_MULTIPLIER
+# RESULT (2026-08-17): confirmed NEGATIVE both seeds, -5.98+/-3.29
+# (seed42) / -14.42+/-6.09 (seed777). Narrowing the range further per
+# extra limper measures worse than leaving it fixed (today's default:
+# only sizing scales with n_limpers, the range stays constant). Plausible
+# reading: the fixed fake-tight range is already tight enough that
+# further narrowing mostly cuts hands that were still fine to isolate
+# with, while the bigger sizing already does the real work of making
+# overcalls unattractive -- same "range-narrowing tweaks tend to lose to
+# this population" pattern as several other rejected ideas in this file.
+# Stays False.
+
 # r26 (2026-08-13, untested): limp-reraise trap. Published theory: limping
 # the very top of hero's range (AA/KK) from an UNOPENED pot instead of
 # raising, then re-raising if someone behind raises over the limp, extracts
@@ -1288,7 +1384,35 @@ LIMP_BEHIND_EXTRA_HANDS = {
 # (n_raises==0 branch). Standard live-poker convention (isolate limpers
 # wider, not just bigger) -- not fit to a measured breakeven point, same
 # disclosure as C1 itself.
-ISO_WIDER_RANGE_OVER_LIMPERS = True  # 2026-08-12/13: doubly confirmed positive via chance-enumeration probe, two independent seeds/samples (+22.10+/-5.18 @ seed42, +19.67+/-6.04 @ seed777, combined-CI-in-quadrature 7.96 vs a 2.43 delta between them -- well inside, high confidence). See CLAUDE.md's "Independent second-seed cross-check" section for the full writeup. Shipped True.
+#
+# 2026-08-12/13: doubly confirmed positive in ISOLATION via chance-
+# enumeration probe, two independent seeds/samples (+22.10+/-5.18 @
+# seed42, +19.67+/-6.04 @ seed777) -- real at the time it was measured.
+#
+# 2026-08-17 CORRECTION, found while explaining this code to the user:
+# TIGHT_BIG_ISO_RAISE_LIMPERS (v31, added the same day, also True) is
+# unconditional on n_limpers>=1 with no hand-set gate, so it always wins
+# in choose_abc_action's `use_tight_big_iso`/`use_iso_wide` branch --
+# this flag's own branch has been STRUCTURALLY DEAD CODE (unreachable)
+# ever since v31 shipped, same class of situation as SHOVE_AA_KK_VS_
+# 3BET_PLUS making FOLD_PREMIUM_VS_EXTREME_AGGRO unreachable, just never
+# caught/documented for this pair until now. The +22.10/+19.67 numbers
+# above describe this rule tested ALONE against a baseline with no
+# isolation-range change at all -- they say nothing about how it compares
+# to TIGHT_BIG_ISO_RAISE_LIMPERS specifically, which is what actually
+# governs live behavior.
+# Ran the real head-to-head (tight-iso-vs-wide-iso-headtohead preset):
+# baseline = today's actual default (both flags True, TIGHT_BIG_ISO wins
+# in practice), treatment = this flag live instead (TIGHT_BIG_ISO_RAISE_
+# LIMPERS=False, ISO_WIDER_RANGE_OVER_LIMPERS=True) -- confirmed NEGATIVE
+# both seeds, -14.19+/-11.63 (seed42) / -33.94+/-17.01 (seed777). Today's
+# default (TIGHT_BIG_ISO_RAISE_LIMPERS, narrower range + much bigger
+# sizing) is genuinely better than this rule, not just winning by code
+# priority accident. Flipped to False -- no behavior change (it was
+# already unreachable while TIGHT_BIG_ISO_RAISE_LIMPERS stayed True), but
+# now the flag's own value honestly reflects "tested worse, not shipped"
+# instead of falsely reading as "shipped True, strong lever."
+ISO_WIDER_RANGE_OVER_LIMPERS = False
 
 # v19: open bigger with a premium hand (reuses VALUE_3BET_TIGHT below as the
 # "premium" set), stacking with the C1 per-limper bonus above -- i.e. a
@@ -1729,6 +1853,32 @@ def _ranges():
         _limp_behind_range_cache,
         _bb_defend_range_cache,
     )
+
+
+_tight_iso_range_by_limpers_cache: dict[tuple[str, int], set] = {}
+
+
+def _tight_iso_range_for_limpers(position: str, n_limpers: int, tight_iso_ranges: dict[str, set]) -> set | None:
+    """TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER (see the flag's comment above):
+    narrow the tight-iso range further for each limper beyond the first,
+    instead of only scaling sizing. Falls back to the precomputed single-
+    tier `tight_iso_ranges` (cheap dict lookup) when the flag is off or
+    there's only one limper -- the common case, so this stays free then."""
+    if not TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER or n_limpers <= 1:
+        return tight_iso_ranges.get(position)
+    global _tight_iso_range_by_limpers_cache
+    key = (position, n_limpers)
+    if key not in _tight_iso_range_by_limpers_cache:
+        vpip = OPEN_VPIP_BY_POSITION.get(position)
+        if vpip is None:
+            return tight_iso_ranges.get(position)
+        extra_limpers = n_limpers - 1
+        multiplier = TIGHT_ISO_VPIP_MULTIPLIER * (TIGHT_ISO_EXTRA_LIMPER_STEP ** extra_limpers)
+        _tight_iso_range_by_limpers_cache[key] = (
+            set(implied_range(vpip * multiplier, _rankings_cache))
+            | (REAL_DATA_RANGE_ADDITIONS.get(position, set()) if TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR else set())
+        )
+    return _tight_iso_range_by_limpers_cache[key]
 
 
 def _hand_notation(hole: list[str]) -> str:
@@ -2470,7 +2620,7 @@ def choose_abc_action(
             use_tight_big_iso = TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1
             use_iso_wide = ISO_WIDER_RANGE_OVER_LIMPERS and n_limpers >= 1 and not use_tight_big_iso
             if use_tight_big_iso:
-                open_range = tight_iso_ranges.get(position)
+                open_range = _tight_iso_range_for_limpers(position, n_limpers, tight_iso_ranges)
             else:
                 open_range = steal_ranges.get(position) if (use_steal or use_iso_wide) else open_ranges.get(position)
             if open_range and notation in open_range:
@@ -2641,6 +2791,22 @@ def choose_abc_action(
                     amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
                     return ("raise", amount)
                 return ("fold", None)
+
+        # SB_FOLD_VS_STEAL_DIAGNOSTIC: see the constant's comment above --
+        # only meaningful (and only ever reached) when SB_THREEBET_OR_FOLD_
+        # VS_STEAL is off, since that flag already returns above otherwise.
+        # Deliberately targets exactly call_ranges["SB"] (not unioned with
+        # VALUE_3BET the way the 3-bet-or-fold range above is) -- VALUE_3BET
+        # hands already raised in the value-3-bet check further up and never
+        # reach this point regardless, so unioning would be a no-op; this
+        # keeps the flag's own hand set legible as "exactly what would have
+        # flat-called under the normal baseline".
+        if SB_FOLD_VS_STEAL_DIAGNOSTIC and position == "SB":
+            raiser_position = _last_preflop_raiser_position(hand)
+            if raiser_position in LATE_STEAL_RAISER_POSITIONS:
+                sb_call_range = call_ranges.get("SB")
+                if sb_call_range and notation in sb_call_range:
+                    return ("fold", None)
 
         # ALLOW_CALLING_RAISES: earlier versions found calling a raise (with
         # ANY range) under a fit-or-fold postflop plan (no draws, no value

@@ -218,6 +218,21 @@ RULE_TEST_GROUPS = {
         ["RIVER_BLUFF_MISSED_DRAW"],
         "bluff the river when checked to after a real flush/straight draw missed, vs a known tight archetype",
     ),
+    # 2026-08-17, follow-up round: diagnostic-only (never meant to ship) --
+    # see SB_FOLD_VS_STEAL_DIAGNOSTIC's comment in abc_bot.py. Answers
+    # "is SB's flat-call range vs a steal positive EV at all" (vs a pure
+    # fold), not "is 3-betting better than calling" (already answered by
+    # sb-threebet-or-fold-vs-steal above). flag_names here is unused by
+    # _build_comparison's special-cased branch for this preset -- listed
+    # only so the top-level preset lookup succeeds.
+    "sb-flat-call-vs-fold-diagnostic": (
+        ["SB_THREEBET_OR_FOLD_VS_STEAL", "SB_FOLD_VS_STEAL_DIAGNOSTIC"],
+        "diagnostic: SB's flat-call range vs a steal, compared to folding the same range (both arms force SB_THREEBET_OR_FOLD_VS_STEAL off)",
+    ),
+    "tight-iso-tightens-per-limper": (
+        ["TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER"],
+        "narrow the tight-big-iso range further for each limper beyond the first (0.85x compounding per extra limper), instead of only scaling sizing",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -398,6 +413,32 @@ PARAMETER_VARIANTS: dict[str, tuple[list[str], dict[str, object], str]] = {
         ["SIZE_SCALED_CALL_RANGE", "CALL_VPIP_WIDE_MULTIPLIER", "CALL_VPIP_NARROW_MULTIPLIER"],
         {"SIZE_SCALED_CALL_RANGE": True, "CALL_VPIP_WIDE_MULTIPLIER": 1.15, "CALL_VPIP_NARROW_MULTIPLIER": 0.85},
         "v30v size-scaled call, milder both tiers (1.15x/0.85x vs current 1.3x/0.7x)",
+    ),
+    # 2026-08-17, follow-up round: user asked to re-test SB_BIGGER_OPEN_SIZING
+    # at 3.5bb specifically -- the already-tested 3.0bb step (inconclusive,
+    # +0.19/+0.04) might have been too small to move the needle. Baseline
+    # here is the real current default (SB_BIGGER_OPEN_SIZING=False, i.e.
+    # flat 2.5bb), same as the original 3.0bb test.
+    "sb-open-3.5bb": (
+        ["SB_BIGGER_OPEN_SIZING", "SB_OPEN_SIZING_BB"],
+        {"SB_BIGGER_OPEN_SIZING": True, "SB_OPEN_SIZING_BB": 3.5},
+        "SB open to 3.5bb instead of 2.5bb, blind-vs-blind only",
+    ),
+    # 2026-08-17: real head-to-head between the two limper-isolation
+    # mechanisms. Found while explaining the code that ISO_WIDER_RANGE_OVER_
+    # LIMPERS is currently structurally dead -- TIGHT_BIG_ISO_RAISE_LIMPERS
+    # is unconditional on n_limpers>=1 (no hand-set gate), so it always wins
+    # and ISO_WIDER's own branch (`not use_tight_big_iso`) can never fire.
+    # Baseline = today's actual live default (both True in the file, but
+    # TIGHT_BIG_ISO wins in practice). Treatment = flip which one is
+    # actually live, so this measures TIGHT_BIG_ISO (narrower range, much
+    # bigger sizing) against ISO_WIDER (wider range, normal sizing) directly
+    # against each other, not against "no isolation change" like their
+    # original individual confirmations did.
+    "tight-iso-vs-wide-iso-headtohead": (
+        ["TIGHT_BIG_ISO_RAISE_LIMPERS", "ISO_WIDER_RANGE_OVER_LIMPERS"],
+        {"TIGHT_BIG_ISO_RAISE_LIMPERS": False, "ISO_WIDER_RANGE_OVER_LIMPERS": True},
+        "ISO_WIDER_RANGE_OVER_LIMPERS live instead of TIGHT_BIG_ISO_RAISE_LIMPERS (today's actual default)",
     ),
 }
 
@@ -620,6 +661,16 @@ def _historical_baseline_state(preset: str) -> dict[str, object]:
 
 def _build_comparison(preset: str, comparison: Literal["current", "historical", "ablation"]) -> ProbeComparison:
     flag_names, _ = _all_test_groups()[preset]
+    if preset == "sb-flat-call-vs-fold-diagnostic":
+        if comparison != "current":
+            raise ValueError("sb-flat-call-vs-fold-diagnostic only supports --comparison current")
+        # Both arms force SB_THREEBET_OR_FOLD_VS_STEAL off (unlike
+        # _current_state_for_flags, which would pick up its real shipped
+        # True value) so the call-range branch is actually reachable in
+        # both arms -- only SB_FOLD_VS_STEAL_DIAGNOSTIC varies.
+        baseline = {"SB_THREEBET_OR_FOLD_VS_STEAL": False, "SB_FOLD_VS_STEAL_DIAGNOSTIC": False}
+        treatment = {"SB_THREEBET_OR_FOLD_VS_STEAL": False, "SB_FOLD_VS_STEAL_DIAGNOSTIC": True}
+        return ProbeComparison("SB flat-call range vs fold, both vs a steal (3-bet-or-fold forced off both arms)", baseline, treatment)
     if preset in TIGHT_ISO_VARIANTS:
         if comparison != "current":
             raise ValueError("tight iso parameter variants only support --comparison current")
@@ -658,6 +709,8 @@ def _build_comparison(preset: str, comparison: Literal["current", "historical", 
 def _invalidate_cached_ranges_if_needed(state: dict[str, object]) -> None:
     if {"TIGHT_ISO_VPIP_MULTIPLIER", "TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR"} & state.keys():
         abc_bot._tight_iso_range_cache = {}
+    if {"TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER", "TIGHT_ISO_EXTRA_LIMPER_STEP"} & state.keys():
+        abc_bot._tight_iso_range_by_limpers_cache = {}
     if "LIMP_BEHIND_VPIP_MULTIPLIER" in state:
         abc_bot._limp_behind_range_cache = {}
     if "BB_DEFEND_VPIP_MULTIPLIER" in state:

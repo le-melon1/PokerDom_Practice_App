@@ -278,6 +278,60 @@ flag_off`) and preemptively swept the rest of `tests/test_abc_bot.py` for
 the same `next(iter(...))` pattern (4 more occurrences fixed). 191 tests
 pass across 5 different random `PYTHONHASHSEED` values.
 
+### 2026-08-17, later still: 4 follow-up ideas raised while explaining the strategy
+
+While walking the user through the full preflop/postflop decision tree,
+four concrete, testable questions came up. User said to just record them
+first ("запиши"), then later gave the go-ahead to actually build and test
+all 4: `scripts/followup_ideas_confirm.sh`, both seeds, log
+`/tmp/followup_ideas_confirm_20260817_164109.log`. All 4 resolved cleanly,
+no split verdicts:
+
+- **SB open 3.5bb** (`sb-open-3.5bb` preset) -- re-tests `SB_BIGGER_OPEN_
+  SIZING` at a bigger step than the already-tested 3.0bb (which was
+  inconclusive, +0.19/+0.04). Still inconclusive both seeds, +0.27±0.15
+  (seed42) / +0.08±0.10 (seed777) -- even tighter around zero. Not a
+  step-size artifact -- SB open sizing genuinely doesn't move this
+  population. **Stays False.**
+- **`TIGHT_BIG_ISO_RAISE_LIMPERS` vs `ISO_WIDER_RANGE_OVER_LIMPERS`, real
+  head-to-head** -- found while explaining the code: `ISO_WIDER_RANGE_
+  OVER_LIMPERS`'s own branch has been **structurally dead** since
+  `TIGHT_BIG_ISO_RAISE_LIMPERS` shipped True the same day back in
+  2026-08-12 (that flag is unconditional on `n_limpers>=1`, no hand-set
+  gate, so it always wins). The confirmed +22.10/+19.67 bb/100 numbers
+  behind `ISO_WIDER_RANGE_OVER_LIMPERS` were real for an isolated test
+  against "no isolation change at all," but never described how it
+  compares to `TIGHT_BIG_ISO_RAISE_LIMPERS` specifically. Ran the real
+  head-to-head (`tight-iso-vs-wide-iso-headtohead` preset): **confirmed
+  NEGATIVE both seeds** for `ISO_WIDER_RANGE_OVER_LIMPERS` as the live
+  mechanism, -14.19±11.63 (seed42) / -33.94±17.01 (seed777). Today's
+  default genuinely wins, not just by code-priority accident. **`ISO_
+  WIDER_RANGE_OVER_LIMPERS` flipped to `False`** (no behavior change --
+  it was already unreachable -- just stops the flag's value from lying
+  about being a live, strong lever).
+- **SB flat-call vs fold, absolute EV** (`sb-flat-call-vs-fold-
+  diagnostic` preset, new diagnostic-only flag `SB_FOLD_VS_STEAL_
+  DIAGNOSTIC`) -- user's sharp question: does `SB_THREEBET_OR_FOLD_VS_
+  STEAL`'s win mean SB's postflop game is too weak OOP to play ANY
+  continue profitably, making 3-bet/fold look artificially good? Tested
+  the absolute EV of SB's flat-call range vs a steal, against a pure
+  fold (not against 3-betting) -- **confirmed NEGATIVE both seeds** for
+  folding, -9.58±4.37 (seed42) / -4.82±2.53 (seed777). Flat-calling
+  clearly beats folding on its own. **Answer: no** -- SB's call range is
+  solidly +EV in absolute terms; 3-betting beats an already-profitable
+  call, it doesn't rescue an unprofitable one. Diagnostic-only, stays
+  `False` either way.
+- **Narrow the tight-iso range per additional limper**
+  (`TIGHT_ISO_TIGHTENS_PER_EXTRA_LIMPER`, new flag) -- today's mechanism
+  only scales sizing with `n_limpers`, not the range itself. **Confirmed
+  NEGATIVE both seeds**, -5.98±3.29 (seed42) / -14.42±6.09 (seed777).
+  Further narrowing hurts -- the fixed-range-plus-bigger-sizing approach
+  already in place is correct. **Stays False.**
+
+Net: 0 new flags shipped True, 1 stale/misleading flag corrected, 3
+honest negative findings that each rule out a real concern rather than
+just "not tested." 191 tests pass across multiple `PYTHONHASHSEED` values.
+
 Log: `/tmp/night_research_confirm_20260817_071948.log`. Also fixed a real,
 unrelated test-fragility bug found the same night: a test's
 `next(iter(a_set))` pick was hash-seed-dependent and could intermittently
