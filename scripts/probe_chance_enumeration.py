@@ -204,6 +204,20 @@ RULE_TEST_GROUPS = {
         ["FLOAT_FLOP_IN_POSITION"],
         "call a flop bet in position with no hand/draw, bet the turn if checked to again",
     ),
+    # 2026-08-17, later same day: closing the last 3 postflop gaps from the
+    # overnight audit.
+    "fold-marginal-vs-big-donk": (
+        ["FOLD_MARGINAL_VS_BIG_DONK"],
+        "fold a plain top-pair-tier hand to a BIG (>=66% pot) donk lead specifically while hero has preflop initiative",
+    ),
+    "fold-top-pair-vs-wet-board-tight": (
+        ["FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT"],
+        "fold a plain top-pair-tier hand to a real-sized bet on a wet board from a known tight archetype",
+    ),
+    "river-bluff-missed-draw": (
+        ["RIVER_BLUFF_MISSED_DRAW"],
+        "bluff the river when checked to after a real flush/straight draw missed, vs a known tight archetype",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -475,6 +489,11 @@ ALL_COMPARISON_FLAGS = [
     "FOLD_MARGINAL_VS_CHECK_RAISE",
     "FLOAT_FLOP_IN_POSITION",
     "FLOAT_FOLLOWUP_POT_FRACTION",
+    "FOLD_MARGINAL_VS_BIG_DONK",
+    "BIG_DONK_POT_FRACTION",
+    "FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT",
+    "RIVER_BLUFF_MISSED_DRAW",
+    "RIVER_BLUFF_MISSED_DRAW_POT_FRACTION",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 

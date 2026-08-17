@@ -197,7 +197,10 @@ HAND`/`SIZE_UP_ON_WET_BOARD` (v23, shipped 2026-08-16, +7.97/+7.22 and
 +14.65/+12.18 bb/100), `RIVER_OVERBET_NUTS_VS_LOOSE` (v27, shipped
 2026-08-16 after a bigger-sample retest, +1.12/+4.04 bb/100),
 `FLOAT_FLOP_IN_POSITION` (published "float" concept, first version of it
-this file has ever had, shipped 2026-08-17, +8.10/+9.35 bb/100).
+this file has ever had, shipped 2026-08-17, +8.10/+9.35 bb/100),
+`RIVER_BLUFF_MISSED_DRAW` (bluff the river with a personally-missed
+flush/straight draw vs known tight archetypes, shipped 2026-08-17,
++1.78/+2.95 bb/100).
 
 ### 2026-08-17: overnight research pass -- iso/shove sizing vs published theory, SB strategy, postflop gaps
 
@@ -242,6 +245,38 @@ changelog docstring (search "overnight research pass"); short version:
   calls a big bet on a 4-flush river the same as on a dry one), no
   give-up-or-bluff decision for a missed draw on the river. Real candidates
   for a future pass, not implemented yet.
+
+### 2026-08-17, later same day: the 3 remaining postflop gaps, closed
+
+Closed all 3 gaps flagged above. `scripts/postflop_gaps_confirm.sh`, both
+seeds, log `/tmp/postflop_gaps_confirm_20260817_140539.log`:
+
+- `FOLD_MARGINAL_VS_BIG_DONK` (fold plain top pair to a big, >=66% pot,
+  donk lead while hero has initiative) -- **confirmed NEGATIVE both
+  seeds**, -0.77±0.31 (seed42, 92k hands) / -0.70±0.28 (seed777, 108k
+  hands). **Stays False.**
+- `FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT` (fold plain top pair to a real-sized
+  bet on a wet board from a known tight archetype) -- **confirmed
+  NEGATIVE both seeds**, -1.13±0.43 (seed42, 78k hands) / -1.51±0.58
+  (seed777, 56k hands). **Stays False.**
+- `RIVER_BLUFF_MISSED_DRAW` (bluff the river, 66% pot, when checked to
+  after hero's own flush/straight draw missed, vs known tight archetypes)
+  -- **confirmed POSITIVE both seeds**, +1.78±0.88 (seed42, 218k hands) /
+  +2.95±1.45 (seed777, 94k hands). **Shipped True.**
+
+Net: 1 shipped True, 2 tested and rejected. This is now the **third and
+fourth** "add more theory-based folding" idea this same night to fail
+against this population (after `FOLD_MARGINAL_VS_CHECK_RAISE`) -- a
+consistent, real pattern, not noise: published micro-stakes folding
+advice (check-raise-aware, donk-size-aware, board-texture-aware) keeps
+not transferring to this specific ML-bot population, while new *betting*
+lines (`FLOAT_FLOP_IN_POSITION`, now `RIVER_BLUFF_MISSED_DRAW`) keep
+measuring as real wins. This closes out every postflop gap identified in
+the 2026-08-17 audit. Also fixed a second instance of the hash-seed
+test-fragility bug class (`test_does_not_isolate_a_limper_wider_when_
+flag_off`) and preemptively swept the rest of `tests/test_abc_bot.py` for
+the same `next(iter(...))` pattern (4 more occurrences fixed). 191 tests
+pass across 5 different random `PYTHONHASHSEED` values.
 
 Log: `/tmp/night_research_confirm_20260817_071948.log`. Also fixed a real,
 unrelated test-fragility bug found the same night: a test's

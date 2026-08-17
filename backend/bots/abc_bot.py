@@ -757,6 +757,45 @@ script's docstring). Revision history, each one a real measured finding:
   no bluff option either). None implemented tonight -- flagged here as real
   future candidates, not invented and forgotten.
 
+  2026-08-17, later same day -- the three postflop gaps above, closed.
+  Same discipline: research first, off-by-default flag, then A/B test both
+  seeds. `scripts/postflop_gaps_confirm.sh`, log
+  `/tmp/postflop_gaps_confirm_20260817_140539.log`:
+    - FOLD_MARGINAL_VS_BIG_DONK (fold a plain top-pair hand to a BIG,
+      >=66% pot, donk lead specifically while hero has preflop initiative --
+      published theory says a big donk into the raiser skews more toward
+      real value than a small one): confirmed NEGATIVE both seeds, -0.77
+      +/-0.31 (seed42, 92k hands) / -0.70 +/-0.28 (seed777, 108k hands).
+      **Stays False** -- third rejected "add more theory-based folding"
+      idea this same night (after FOLD_MARGINAL_VS_CHECK_RAISE), a
+      consistent pattern for this population, not a one-off.
+    - FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT (fold a plain top-pair hand to a
+      real-sized bet on a wet board specifically from a known tight
+      archetype, gated to TIGHT_ARCHETYPES_FOR_DONK_BLUFF so it can't touch
+      LOOSE_ARCHETYPES' own opposite-direction any-pair-or-better rule):
+      confirmed NEGATIVE both seeds, -1.13 +/-0.43 (seed42, 78k hands) /
+      -1.51 +/-0.58 (seed777, 56k hands). **Stays False** -- fourth
+      rejected folding idea tonight. Board-texture-aware folding, like
+      check-raise-aware folding, does not transfer to this specific ML-bot
+      population even though both are standard published advice.
+    - RIVER_BLUFF_MISSED_DRAW (bet the river as a bluff, 66% pot, when
+      checked to after a real flush/straight draw hero held just missed,
+      gated to known tight archetypes): confirmed POSITIVE both seeds,
+      +1.78 +/-0.88 (seed42, 218k hands) / +2.95 +/-1.45 (seed777, 94k
+      hands). **Shipped True** -- unlike the two folding ideas above, this
+      is a new BETTING line (a missing decision category, not a range/
+      threshold tweak), consistent with this file's long-standing pattern
+      that new lines beat range/threshold theory-matching.
+  Net for this batch: 1 shipped True (RIVER_BLUFF_MISSED_DRAW), 2 tested
+  and rejected with real numbers. Combined with the overnight pass above,
+  this closes out every postflop gap identified in the 2026-08-17 audit.
+  Fixed one more hash-seed test-fragility instance found while re-checking
+  the whole suite (test_does_not_isolate_a_limper_wider_when_flag_off had
+  the same next(iter(a_set)) issue as the one fixed earlier that night);
+  swept the rest of tests/test_abc_bot.py for the same pattern preemptively
+  (4 more occurrences converted to a deterministic sorted() pick). 191
+  tests pass across 5 different random PYTHONHASHSEED values.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -839,10 +878,18 @@ strategy card, not just inferred from code):
       a new flush possibility -- see _is_scare_card), and the single live
       opponent is a known Nit/TAG/LAG.
     - Turn ONLY, additionally (float-flop-in-position's follow-up,
-      FLOAT_FLOP_IN_POSITION, untested, 2026-08-17): bet 66% pot with no
-      hand if you called a bet on the flop this hand and got checked to --
-      the float's follow-through, independent of whether you had preflop
-      initiative (a float is a positional line, not a range-based one).
+      FLOAT_FLOP_IN_POSITION, confirmed positive both seeds, 2026-08-17):
+      bet 66% pot with no hand if you called a bet on the flop this hand
+      and got checked to -- the float's follow-through, independent of
+      whether you had preflop initiative (a float is a positional line,
+      not a range-based one).
+    - River ONLY, additionally (RIVER_BLUFF_MISSED_DRAW, confirmed positive
+      both seeds, 2026-08-17): bet 66% pot with no hand if you personally
+      held a real flush/straight draw on the turn that missed by the river,
+      against a known tight archetype (see _had_missed_draw) -- a credible
+      "drew and missed, keep firing" bluff, distinct from BARREL_BLUFF_VS_
+      TIGHT's scare-card trigger above (this one doesn't need a scare card,
+      just hero's own missed draw).
     - Otherwise: check. "Don't auto-barrel" means don't fire without a hand
       on the turn/river -- it does not mean never bet a strong hand.
 
@@ -852,12 +899,16 @@ strategy card, not just inferred from code):
       tested raising instead with two-pair-or-better (VALUE_RAISE_FACING_
       BET, has_very_strong_hand) -- measured WORSE (-9.66 bb/100, see the
       constant's comment above), shipped OFF; call-only stays the live
-      default even for a flopped set. EXCEPT (fold-marginal-vs-check-raise,
-      FOLD_MARGINAL_VS_CHECK_RAISE, untested, 2026-08-17): a plain top-pair
-      hand (never two-pair+) folds to a genuine check-raise specifically,
-      heads-up, from a non-loose aggressor -- published micro-stakes theory
-      says check-raises at this stake level skew heavily toward value (weak
-      players rarely check-raise-bluff), unlike a normal bet.
+      default even for a flopped set. Tested and rejected (both shipped
+      OFF, confirmed negative both seeds, 2026-08-17): FOLD_MARGINAL_VS_
+      CHECK_RAISE (fold a plain top-pair hand to a genuine check-raise,
+      heads-up, non-loose aggressor); FOLD_MARGINAL_VS_BIG_DONK (fold a
+      plain top-pair hand to a BIG, >=66% pot, donk lead specifically while
+      hero has preflop initiative); FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT (fold
+      a plain top-pair hand to a real-sized bet on a wet board from a known
+      tight archetype). All three are standard published micro-stakes
+      folding advice that does not transfer to this specific ML-bot
+      population -- see the changelog above for numbers.
     - Else, IF the specific opponent who bet is a known Loose-passive/
       Station/Maniac (see LOOSE_ARCHETYPES): call with ANY pair or better
       (has_any_pair_or_better) instead of the stricter top-pair bar. This is
@@ -1991,6 +2042,29 @@ def _is_scare_card(hand: Hand) -> bool:
     return _is_wet_board(board) and not _is_wet_board(board_before)
 
 
+def _facing_donk_lead(hand: Hand, had_initiative: bool) -> bool:
+    """True if hero (who has preflop initiative) is facing a single bet this
+    street that hero did NOT fire -- an opponent without initiative led into
+    the raiser instead of checking to let hero continuation-bet. Excludes
+    hero facing a raise of hero's own bet (that street would already have
+    2+ bets/raises recorded). Used by FOLD_MARGINAL_VS_BIG_DONK below."""
+    if not had_initiative:
+        return False
+    return _n_bets_or_raises_this_street(hand) == 1
+
+
+def _had_missed_draw(hole: list[str], board: list[str]) -> bool:
+    """True if hero held a real flush/straight draw as of the turn (the
+    first 4 board cards) that did NOT complete into a made hand by the
+    river. Used by RIVER_BLUFF_MISSED_DRAW to keep firing a credible "the
+    draw just missed" bluff story on the river instead of only ever
+    checking back busted equity."""
+    if len(board) < 5:
+        return False
+    turn_board = board[:4]
+    return _has_flush_draw(hole, turn_board) or _has_straight_draw(hole, turn_board)
+
+
 _facing_bet_table_cache: pd.DataFrame | None = None
 
 
@@ -2297,6 +2371,52 @@ FOLD_MARGINAL_VS_CHECK_RAISE = False
 #      per street anywhere else either).
 FLOAT_FLOP_IN_POSITION = True
 FLOAT_FOLLOWUP_POT_FRACTION = 0.66  # "bet pretty large when barreling the turn" -- published sizing convention, not fit to a measured breakeven point
+
+# 2026-08-17, later same day (continuing the postflop-gap audit): the three
+# real gaps flagged but not closed in the overnight pass above. Same
+# discipline -- researched against published sources first, built as its
+# own off-by-default flag, none of this is a guess about what "should" help.
+
+# Gap 1: no distinct response to a donk lead specifically while hero has
+# preflop initiative -- `made` just calls any bet the same way regardless of
+# who's betting. Published theory (PokerCoaching/Crush Live Poker et al.):
+# donk-bet sizing matters a lot -- large donks (roughly 2/3 pot or bigger)
+# skew meaningfully more toward real value than small ones, since a player
+# donk-leading big into the raiser is usually not doing it as a cheap bluff.
+# Fold a plain top-pair-tier hand (never very_strong) to a BIG donk lead
+# specifically -- see _facing_donk_lead's docstring for exactly what counts.
+FOLD_MARGINAL_VS_BIG_DONK = False
+BIG_DONK_POT_FRACTION = 0.66
+
+# Gap 2: `made` calls a bet the same way on a dry rainbow flop and on a
+# 4-flush river -- no board-texture discount at all when calling. Published
+# theory is genuinely split here: high-level guides say fold more on wet,
+# highly-coordinated boards; low-stakes-specific guides warn the opposite,
+# that low-stakes players over-bluff and over-folding on scary boards is a
+# common losing leak, since real low-stakes ranges don't barrel wet boards
+# as often as solver theory assumes. Deliberately gated to known TIGHT
+# archetypes only (reusing TIGHT_ARCHETYPES_FOR_DONK_BLUFF) rather than a
+# blanket rule, on the theory that a disciplined Nit/TAG/LAG betting big on
+# a wet board is a much more real signal than the same bet from the loose/
+# passive majority of this population -- LOOSE_ARCHETYPES already has its
+# own (opposite-direction, confirmed) any-pair-or-better call rule that
+# fires first and is untouched by this flag.
+FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT = False
+
+# Gap 3: should_call_with_draw correctly never calls a bet with a draw on
+# the river (no card left to come) -- but there was no way for hero to ever
+# BET the river as a bluff specifically because a real draw just missed;
+# the only existing river-bluff mechanism (BARREL_BLUFF_VS_TIGHT) requires
+# a fresh scare card, not "hero personally had real outs that whiffed".
+# Published theory: a missed draw is a better bluffing candidate than a
+# random air hand because the betting story (drew at a hand, kept the
+# pressure on) is more credible, and missed straight draws bluff better
+# than missed flush draws (per Upswing's flush-draw-bluffing piece) -- not
+# modeled here, both draw types are treated the same, a disclosed
+# simplification matching how should_call_with_draw doesn't distinguish
+# them either. Gated to known tight archetypes, same reasoning as gap 2.
+RIVER_BLUFF_MISSED_DRAW = True
+RIVER_BLUFF_MISSED_DRAW_POT_FRACTION = 0.66
 
 
 def choose_abc_action(
@@ -2713,7 +2833,25 @@ def choose_abc_action(
             if barrel_bluff_with_air and BLOCKER_BASED_RIVER_BLUFF:
                 if not _has_river_blocker(player.hole_cards, hand):
                     barrel_bluff_with_air = False
-        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn
+        # RIVER_BLUFF_MISSED_DRAW (see the flag's comment above): fire a
+        # river bluff specifically when hero's own draw just whiffed --
+        # doesn't require a fresh scare card the way BARREL_BLUFF_VS_TIGHT
+        # does, doesn't require had_initiative either (a caller whose draw
+        # missed can tell this story too, not just the preflop raiser).
+        river_bluff_missed_draw = False
+        if (
+            RIVER_BLUFF_MISSED_DRAW
+            and hand.street == "river"
+            and n_bets == 0
+            and not made
+            and opponent_archetypes
+            and _had_missed_draw(player.hole_cards, hand.board)
+        ):
+            missed_draw_live_opponents = _live_opponent_seats(hand, seat)
+            if len(missed_draw_live_opponents) == 1:
+                if opponent_archetypes.get(missed_draw_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                    river_bluff_missed_draw = True
+        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn or river_bluff_missed_draw
         # pf6 (POT_CONTROL_MARGINAL_HANDS): check back a marginal made hand
         # instead of value-betting it, in the specific OOP/multiway/wet-board
         # spot _should_pot_control targets -- never overrides a genuine bluff
@@ -2797,6 +2935,8 @@ def choose_abc_action(
                 sizing = DELAYED_CBET_TURN_POT_FRACTION
             if float_followup_turn:
                 sizing = FLOAT_FOLLOWUP_POT_FRACTION
+            if river_bluff_missed_draw:
+                sizing = RIVER_BLUFF_MISSED_DRAW_POT_FRACTION
             # v27 (RIVER_OVERBET_NUTS_VS_LOOSE): a genuine overbet (>100%
             # pot), not just BIG_VALUE_SIZING_POT_FRACTION's 75%, on the
             # river specifically with a real near-nut hand (has_trips_or_
@@ -2916,6 +3056,32 @@ def choose_abc_action(
             aggressor = _last_aggressor_this_street(hand)
             aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
             if aggressor_archetype not in LOOSE_ARCHETYPES:
+                return ("fold", None)
+        # FOLD_MARGINAL_VS_BIG_DONK: see the flag's comment above -- a plain
+        # top-pair-tier hand folds to a BIG donk lead specifically, while
+        # hero still holds preflop initiative.
+        if (
+            FOLD_MARGINAL_VS_BIG_DONK
+            and not very_strong
+            and pot_before_the_bet > 0
+            and (to_call / pot_before_the_bet) >= BIG_DONK_POT_FRACTION
+            and _facing_donk_lead(hand, had_initiative)
+        ):
+            return ("fold", None)
+        # FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT: see the flag's comment above --
+        # a plain top-pair-tier hand folds to a real-sized bet on a wet
+        # board specifically from a known tight archetype.
+        if (
+            FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT
+            and not very_strong
+            and _is_wet_board(hand.board)
+            and pot_before_the_bet > 0
+            and (to_call / pot_before_the_bet) >= STANDARD_SIZING_POT_FRACTION
+            and len(_live_opponent_seats(hand, seat)) == 1
+        ):
+            aggressor = _last_aggressor_this_street(hand)
+            aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
+            if aggressor_archetype in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
                 return ("fold", None)
         return ("call", None)
 

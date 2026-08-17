@@ -30,7 +30,7 @@ def test_isolates_a_limper_with_a_wider_range_when_flag_on():
     position = "BTN"
     extra_hands = steal_ranges[position] - open_ranges[position]
     assert extra_hands, "expected the widened range to be strictly bigger than the plain open range for BTN"
-    test_hand = next(iter(extra_hands))
+    test_hand = sorted(extra_hands)[0]  # deterministic -- not hash-seed-dependent
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -52,10 +52,16 @@ def test_isolates_a_limper_with_a_wider_range_when_flag_on():
 
 
 def test_does_not_isolate_a_limper_wider_when_flag_off():
-    open_ranges, _, steal_ranges, *_ = abc_bot._ranges()
+    open_ranges, _, steal_ranges, *_, limp_behind_ranges, _ = abc_bot._ranges()
     position = "BTN"
-    extra_hands = steal_ranges[position] - open_ranges[position]
-    test_hand = next(iter(extra_hands))
+    # Also exclude LIMP_BEHIND_OVER_LIMPERS's own hand set (confirmed True
+    # since 2026-08-12/16, same reasoning as test_tight_big_iso_folds_
+    # plain_open_hands_outside_tight_iso_range above) -- those hands are
+    # deliberately meant to limp behind, not fold, a different rule this
+    # test isn't trying to cover.
+    extra_hands = steal_ranges[position] - open_ranges[position] - limp_behind_ranges.get(position, set())
+    assert extra_hands, "expected hands outside both the widened AND limp-behind ranges for BTN"
+    test_hand = sorted(extra_hands)[0]  # deterministic -- not hash-seed-dependent
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -65,22 +71,28 @@ def test_does_not_isolate_a_limper_wider_when_flag_off():
             hand.apply_action(s, "fold")
     actor = hand.current_actor()
     hand.players[actor].hole_cards = _cards_from_notation(test_hand)
-    # ISO_WIDER_RANGE_OVER_LIMPERS defaults False -- a hand outside the
-    # plain open range still folds even facing a limper.
+    # ISO_WIDER_RANGE_OVER_LIMPERS is confirmed True by default since
+    # 2026-08-12/13 -- isolate it off explicitly (the old comment here was
+    # stale, written when it still defaulted False) so this test keeps
+    # covering what it's named for: a hand outside BOTH the plain open range
+    # AND the widened range still folds facing a limper.
     original_tight_iso = abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS
+    original_iso_wider = abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS
     abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = False
+    abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = False
     try:
         action, _ = choose_abc_action(hand, actor)
         assert action == "fold"
     finally:
         abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS = original_tight_iso
+        abc_bot.ISO_WIDER_RANGE_OVER_LIMPERS = original_iso_wider
 
 
 def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
     open_ranges, _, steal_ranges, *_ = abc_bot._ranges()
     position = "UTG"
     extra_hands = steal_ranges[position] - open_ranges[position]
-    test_hand = next(iter(extra_hands))
+    test_hand = sorted(extra_hands)[0]  # deterministic -- not hash-seed-dependent
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -209,7 +221,7 @@ def test_calls_wider_vs_a_min_raise_when_flag_on():
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
     assert wide_only, "expected the wide call tier to be strictly bigger than the standard one for MP"
-    test_hand = next(iter(wide_only))
+    test_hand = sorted(wide_only)[0]  # deterministic -- not hash-seed-dependent
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -228,7 +240,7 @@ def test_does_not_call_wider_vs_a_min_raise_when_flag_off():
     _, call_ranges, _, _, call_ranges_wide, _, *_ = abc_bot._ranges()
     position = "MP"
     wide_only = call_ranges_wide[position] - call_ranges[position]
-    test_hand = next(iter(wide_only))
+    test_hand = sorted(wide_only)[0]  # deterministic -- not hash-seed-dependent
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
