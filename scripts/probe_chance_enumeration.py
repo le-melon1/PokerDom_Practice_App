@@ -68,6 +68,27 @@ EXTRA_TEST_GROUPS = {
         ["MULTIWAY_NARROW_CALL_RANGE", "MULTIWAY_DISABLE_AIR_CBET", "MULTIWAY_DISABLE_LOOSE_CALL"],
         "v11 multiway aware",
     ),
+    # 2026-08-17: v18 (2026-08-07) already tested these three individually,
+    # but with the old whole-game simulation method (noisier CIs than
+    # chance-enumeration). Two of the three had clean separation from zero
+    # (disable-air-cbet -7.94, disable-loose-call -5.91) -- re-testing
+    # mainly to cross-check with the modern, lower-variance method, same
+    # precedent as SIZE_UP_PREMIUM_OPENS getting reversed on re-check.
+    # narrow-call-range was explicitly borderline in the old test (-3.96
+    # with rake, +1.04 without -- inside/at the edge of CI), the most
+    # likely of the three to actually change verdict here.
+    "multiway-disable-air-cbet": (
+        ["MULTIWAY_DISABLE_AIR_CBET"],
+        "flop air cbet only fires heads-up, made-hand-only in multiway (v18 sub-rule 2, re-check with chance-enumeration)",
+    ),
+    "multiway-disable-loose-call": (
+        ["MULTIWAY_DISABLE_LOOSE_CALL"],
+        "any-pair-or-better call vs a known loose archetype only applies heads-up (v18 sub-rule 3, re-check with chance-enumeration)",
+    ),
+    "multiway-narrow-call-range": (
+        ["MULTIWAY_NARROW_CALL_RANGE"],
+        "facing a raise already called by someone, only continue with VALUE_3BET-tier hands in multiway (v18 sub-rule 1, re-check with chance-enumeration -- was borderline in the old test)",
+    ),
     "v14-steal-wide": (["STEAL_WIDER_VS_NIT"], "v14 steal wider vs nit"),
     "v14-size-target": (["SIZING_TARGET_ARCHETYPES"], "v14 value size target archetypes"),
     "v15-loose-3bet": (["WIDER_3BET_VS_LOOSE"], "v15 wider 3bet vs loose"),

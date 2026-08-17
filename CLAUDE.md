@@ -344,8 +344,19 @@ hash seeds.
 
 `VALUE_RAISE_FACING_BET` (v22, raising two-pair+ instead of calling,
 -9.66 bb/100 -- real, checked twice), `MULTIWAY_AWARE`'s original test
-(measured worse, though its sub-flags like `MULTIWAY_DISABLE_AIR_CBET`
-were never separately re-tested at real power).
+(measured worse). **Correction (2026-08-17): the claim that its three
+sub-flags were "never separately re-tested at real power" was stale/
+wrong** -- v18 (2026-08-07) already tested `MULTIWAY_NARROW_CALL_RANGE`,
+`MULTIWAY_DISABLE_AIR_CBET`, and `MULTIWAY_DISABLE_LOOSE_CALL`
+individually (whole-game method); all three measured negative-or-
+borderline, no hidden winner. Re-confirmed with the modern chance-
+enumeration method 2026-08-17 (`scripts/multiway_subflags_recheck.sh`,
+log `/tmp/multiway_subflags_recheck_20260817_171917.log`, both seeds) --
+`MULTIWAY_DISABLE_AIR_CBET` -24.96±8.02/-44.70±10.93,
+`MULTIWAY_DISABLE_LOOSE_CALL` -29.70±7.94/-26.51±7.36,
+`MULTIWAY_NARROW_CALL_RANGE` (the one borderline case in the old
+whole-game test) -36.83±11.79/-29.68±8.90 -- all three confirmed
+negative on both seeds, no ambiguity left. Stay `False`.
 
 ### Postflop: pf1-pf10, built AND tested 2026-08-14
 

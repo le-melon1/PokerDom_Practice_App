@@ -837,6 +837,36 @@ script's docstring). Revision history, each one a real measured finding:
   weak OOP postflop, tighter-per-limper isolation doesn't help). 191 tests
   pass across multiple PYTHONHASHSEED values after these changes.
 
+  2026-08-17, one more round: user asked "what else globally needs
+  checking" -- answer included the three MULTIWAY_* sub-flags (MULTIWAY_
+  NARROW_CALL_RANGE, MULTIWAY_DISABLE_AIR_CBET, MULTIWAY_DISABLE_LOOSE_
+  CALL), initially described as "never individually tested" -- WRONG, v18
+  (2026-08-07, see that changelog entry) already tested all three
+  individually with the old whole-game simulation method. Corrected
+  immediately on re-reading this file's own history. Two of the three had
+  clean old-method separation from zero (disable-air-cbet -7.94, disable-
+  loose-call -5.91); MULTIWAY_NARROW_CALL_RANGE was explicitly borderline
+  (-3.96 with rake, +1.04 without -- inside/at the edge of CI), the same
+  situation as SIZE_UP_PREMIUM_OPENS before its chance-enumeration re-
+  check reversed the old imprecise verdict. Re-ran all three with the
+  modern method anyway for a clean cross-check, scripts/multiway_
+  subflags_recheck.sh, log
+  /tmp/multiway_subflags_recheck_20260817_171917.log, both seeds:
+    - MULTIWAY_DISABLE_AIR_CBET: confirmed NEGATIVE both seeds, -24.96
+      +/-8.02 (seed42) / -44.70 +/-10.93 (seed777).
+    - MULTIWAY_DISABLE_LOOSE_CALL: confirmed NEGATIVE both seeds, -29.70
+      +/-7.94 (seed42) / -26.51 +/-7.36 (seed777).
+    - MULTIWAY_NARROW_CALL_RANGE (the one borderline case): confirmed
+      NEGATIVE both seeds, -36.83 +/-11.79 (seed42) / -29.68 +/-8.90
+      (seed777) -- resolves cleanly this time, no ambiguity left.
+  Unlike SIZE_UP_PREMIUM_OPENS, the modern method did NOT reverse this
+  verdict -- v11/v18's original finding holds up under much lower
+  variance too. All three stay False; this closes the multiway-awareness
+  question with real confidence instead of one imprecise whole-game
+  sample. If multiway-specific strategy is ever revisited, per this
+  file's own C1/C2 pattern the productive angle is a genuinely NEW
+  behavior for multiway pots, not further restricting the existing three.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
