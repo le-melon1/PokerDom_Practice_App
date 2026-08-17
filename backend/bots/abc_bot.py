@@ -682,11 +682,91 @@ script's docstring). Revision history, each one a real measured finding:
   validation rounds -- every flag in this file now has a real, adequately-
   powered test result behind its True/False state.
 
+  2026-08-17, overnight research pass -- user asked to (1) check whether
+  the shipped iso-limper sizing and the AA/KK/QQ/AKs/AKo shove are actually
+  correct against published poker theory, (2) build a small-blind-specific
+  strategy (this file had never had one), (3) flatten the two ~52.5%/"~55%"
+  sizing constants to a round 50% (direct instruction, not a hypothesis --
+  see STANDARD_SIZING_POT_FRACTION's own comment), and (4) look harder at
+  postflop for missing real spots. Researched each question against
+  published sources (Upswing, PreflopWizard, 2+2, BlackRain79, PokerCoaching,
+  GTO Wizard), then built and A/B-tested every resulting candidate --
+  `scripts/night_research_confirm.sh`, both seeds, log
+  `/tmp/night_research_confirm_20260817_071948.log`. All 12 runs resolved
+  cleanly on both seeds -- no split verdicts this round:
+    - r12v-published-theory (TIGHT_ISO base=4.0bb/per-limper=1.0bb, matching
+      the "3-4bb + 1bb/limper" published convention, vs. the shipped
+      5.5bb/1.5bb): confirmed NEGATIVE both seeds, -30.24 +/-5.45 (seed42) /
+      -39.23 +/-7.21 (seed777). The shipped sizing, despite being well above
+      any published number, is genuinely better against THIS population --
+      published theory assumes real opponents adjusting to bet sizing (fewer
+      cold-calls at bigger sizes); this bot's ML opponents don't model that
+      the same way. **No change** -- TIGHT_ISO_BASE_SIZING_BB/_PER_LIMPER_BB
+      stay at 5.5/1.5.
+    - SIZED_4BET_INSTEAD_OF_SHOVE (~2.3x IP / ~2.6x OOP sized 4-bet instead
+      of shoving the SHOVE_AA_KK_VS_3BET_PLUS range all-in, matching
+      published 100bb-effective 4-bet theory): confirmed NEGATIVE both
+      seeds, -9.62 +/-5.81 (seed42) / -2.16 +/-2.02 (seed777). The all-in
+      shove -- itself already confirmed better than flat-calling -- beats a
+      smaller sized 4-bet too. **Stays False**, SHOVE_AA_KK_VS_3BET_PLUS's
+      existing all-in sizing is unchanged.
+    - SB_BIGGER_OPEN_SIZING (open 3bb instead of 2.5bb from SB in the
+      blind-vs-blind case): inconclusive both seeds, +0.19 +/-0.13 (seed42)
+      / +0.04 +/-0.09 (seed777) -- genuinely near-zero. **Stays False.**
+    - SB_THREEBET_OR_FOLD_VS_STEAL (3-bet the whole continue range facing a
+      CO/BTN/SB steal instead of ever flat-calling): confirmed POSITIVE both
+      seeds, +4.10 +/-2.00 (seed42) / +5.91 +/-2.76 (seed777). **Shipped
+      True** -- this file's first-ever SB-specific rule.
+    - FOLD_MARGINAL_VS_CHECK_RAISE (fold a plain top-pair hand to a genuine
+      check-raise, heads-up, non-loose aggressor -- published micro-stakes
+      theory says check-raises there skew value-heavy): confirmed NEGATIVE
+      both seeds, -0.37 +/-0.16 (seed42, 388k hands) / -0.56 +/-0.28
+      (seed777, 374k hands) -- both needed hundreds of thousands of hands
+      since a genuine check-raise is a rare event in this bot's self-play.
+      The published exploit doesn't transfer to this specific ML-bot
+      population -- plausibly because these bots' check-raise frequency/
+      composition isn't modeling the same real-population skew the
+      published advice is based on. **Stays False** -- same "standard
+      theory doesn't always transfer to this specific population" pattern
+      this file's history keeps returning to (MULTIWAY_AWARE,
+      UNCONDITIONAL_FLOP_CBET's own test, VALUE_RAISE_FACING_BET, etc.).
+    - FLOAT_FLOP_IN_POSITION (call a flop bet in position with no hand/draw,
+      bet the turn if checked to again): confirmed POSITIVE both seeds,
+      +8.10 +/-3.20 (seed42) / +9.35 +/-4.35 (seed777). **Shipped True.**
+  Net result: 2 new rules shipped True (SB_THREEBET_OR_FOLD_VS_STEAL,
+  FLOAT_FLOP_IN_POSITION), 4 hypotheses tested and rejected with real
+  numbers behind the rejection (not just "untested"). 191 tests re-run
+  after flipping the two winners: still all pass, checked across multiple
+  random PYTHONHASHSEED values (a real, unrelated test-fragility bug was
+  found and fixed the same night -- see test_tight_big_iso_folds_plain_
+  open_hands_outside_tight_iso_range's history in tests/test_abc_bot.py --
+  that test's `next(iter(a_set))` pick was hash-seed-dependent and could
+  land on a hand LIMP_BEHIND_OVER_LIMPERS legitimately calls with instead
+  of folding; fixed to a deterministic sorted() pick that also excludes the
+  limp-behind range explicitly).
+
+  Postflop gap audit (same night, not all acted on): reading through
+  choose_abc_action end-to-end surfaced several more real, disclosed gaps
+  beyond the two closed above -- no response to a donk lead specifically
+  while hero HAS initiative (currently identical to any other "facing a
+  bet"), no board-texture-aware discount on calling `made` hands (a plain
+  top pair calls a big bet on a 4-flush river exactly like it calls on a
+  dry one, FOLD_TOP_PAIR_VS_OVERBET only gates on bet SIZE not board
+  danger), and no "give up vs. keep firing" decision for a missed draw on
+  the river (should_call_with_draw correctly never calls there, but there's
+  no bluff option either). None implemented tonight -- flagged here as real
+  future candidates, not invented and forgotten.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
   PREFLOP, unopened:
     - BB, action folds/limps to you: check (free).
+    - SB specifically (SB_BIGGER_OPEN_SIZING, untested, 2026-08-17): open to
+      3bb instead of the flat 2.5bb everywhere else, but ONLY the genuine
+      blind-vs-blind case (folds to SB, zero limpers) -- published theory
+      says the bigger price denies BB's positional/pot-odds edge of closing
+      the action for only 0.5bb more.
     - Otherwise: raise to 2.5bb with a hand in your position's OPEN range
       (UTG 13.9% / MP 16.5% / CO 21.6% / BTN 26.6% / SB 24.5%, by VPIP-implied
       percentile -- the technique from the guide -- UNION real-showdown-data
@@ -705,18 +785,32 @@ strategy card, not just inferred from code):
     - {AA, KK, QQ, AKs, AKo}: raise (value) to 3x the previous bet if this is
       the first raise faced, or just call that same set if already 3-bet or
       deeper (going a 5th/6th bet deep on a static hand-strength bot isn't
-      worth the added complexity) -- EXCEPT (r13, SHOVE_AA_KK_VS_3BET_PLUS,
-      untested/off): AA/KK can shove instead of call; and EXCEPT (v26,
-      FOLD_PREMIUM_VS_EXTREME_AGGRO, untested): facing 2+ raises, if the
-      current to_call is already >=50% of hero's remaining stack AND the
-      raiser is a known Nit/TAG, fold QQ/AKs/AKo (never AA/KK -- see
-      NEVER_FOLD_PREFLOP).
+      worth the added complexity) -- EXCEPT (r18v, SHOVE_AA_KK_VS_3BET_PLUS,
+      confirmed True, widened to {AA,KK,QQ,AKs,AKo}): this whole set shoves
+      all-in instead of calling when already facing a 3-bet+. (sized-4bet-
+      instead-of-shove, SIZED_4BET_INSTEAD_OF_SHOVE, untested, 2026-08-17):
+      an alternative to the shove above -- 4-bet to ~2.3x (in position) or
+      ~2.6x (out of position) the 3-bet instead of shoving all-in, matching
+      published 100bb-effective 4-bet sizing theory rather than jamming;
+      and EXCEPT (v26, FOLD_PREMIUM_VS_EXTREME_AGGRO, untested, and now also
+      structurally dead while the shove range above covers the same hands
+      first): facing 2+ raises, if the current to_call is already >=50% of
+      hero's remaining stack AND the raiser is a known Nit/TAG, fold
+      QQ/AKs/AKo (never AA/KK -- see NEVER_FOLD_PREFLOP).
     - Else, if facing exactly one raise AND the raiser is in
       BLUFF_3BET_TARGET_ARCHETYPES (currently Nit/TAG/LAG, split from the
       donk-bluff target set so LAG can be tested independently here)
       AND your hand is in BLUFF_3BET_RANGE (v24, BLUFF_3BET_VS_TIGHT):
       bluff-raise (3-bet) instead of just calling; confirmed +1.80 bb/100
       at 2M hands/arm.
+    - Else, if hero is in SB facing exactly one raise from a late-position
+      steal seat (SB_THREEBET_OR_FOLD_VS_STEAL, untested, 2026-08-17):
+      3-bet the whole range that would otherwise call (call_ranges["SB"] |
+      VALUE_3BET), or fold -- no flat call. Published SB-specific theory:
+      SB is worse-positioned than any other cold-caller (acts first every
+      remaining street against a raiser who now also has position), so
+      3-betting to win preflop or play a bigger pot with initiative beats
+      calling into a tough OOP spot.
     - Else, if facing exactly one raise: call with a hand in your position's
       CALL range (half the open VPIP, e.g. UTG ~7% / BTN ~13.3% -- the
       tighter, stronger half of what you'd open) -- (v30, SIZE_SCALED_
@@ -727,7 +821,7 @@ strategy card, not just inferred from code):
     - Else: fold.
 
   POSTFLOP, checked to (to_call <= 0), any street:
-    - Bet ~55% pot if your hand is top-pair-or-better (value bet) --
+    - Bet 50% pot if your hand is top-pair-or-better (value bet) --
       regardless of whether you had preflop initiative. Sizing tiers on
       top of that base, each independently untested: (v28, OPTIMAL_VALUE_
       SIZING_PER_ARCHETYPE) a real EV comparison between the standard and
@@ -736,7 +830,7 @@ strategy card, not just inferred from code):
       Nit/TAG-only shortcut when it fires; (v27, RIVER_OVERBET_NUTS_VS_
       LOOSE) a genuine overbet (150% pot) on the river specifically with
       a near-nut hand (trips+) against a known loose/weak archetype.
-    - Flop ONLY, additionally: bet ~55% pot with ANY hand if you had preflop
+    - Flop ONLY, additionally: bet 50% pot with ANY hand if you had preflop
       initiative and haven't bet yet this street (the one Tier-1 fold-equity
       cbet -- confirmed by A/B test to be worth keeping).
     - Turn/river ONLY, additionally (v25, BARREL_BLUFF_VS_TIGHT, untested):
@@ -744,6 +838,11 @@ strategy card, not just inferred from code):
       yet this street, a real scare card just arrived (a fresh overcard or
       a new flush possibility -- see _is_scare_card), and the single live
       opponent is a known Nit/TAG/LAG.
+    - Turn ONLY, additionally (float-flop-in-position's follow-up,
+      FLOAT_FLOP_IN_POSITION, untested, 2026-08-17): bet 66% pot with no
+      hand if you called a bet on the flop this hand and got checked to --
+      the float's follow-through, independent of whether you had preflop
+      initiative (a float is a positional line, not a range-based one).
     - Otherwise: check. "Don't auto-barrel" means don't fire without a hand
       on the turn/river -- it does not mean never bet a strong hand.
 
@@ -753,7 +852,12 @@ strategy card, not just inferred from code):
       tested raising instead with two-pair-or-better (VALUE_RAISE_FACING_
       BET, has_very_strong_hand) -- measured WORSE (-9.66 bb/100, see the
       constant's comment above), shipped OFF; call-only stays the live
-      default even for a flopped set.
+      default even for a flopped set. EXCEPT (fold-marginal-vs-check-raise,
+      FOLD_MARGINAL_VS_CHECK_RAISE, untested, 2026-08-17): a plain top-pair
+      hand (never two-pair+) folds to a genuine check-raise specifically,
+      heads-up, from a non-loose aggressor -- published micro-stakes theory
+      says check-raises at this stake level skew heavily toward value (weak
+      players rarely check-raise-bluff), unlike a normal bet.
     - Else, IF the specific opponent who bet is a known Loose-passive/
       Station/Maniac (see LOOSE_ARCHETYPES): call with ANY pair or better
       (has_any_pair_or_better) instead of the stricter top-pair bar. This is
@@ -763,6 +867,12 @@ strategy card, not just inferred from code):
       price is at least as good as the draw's rough continue-equity
       (~35% w/ two cards to come on the flop, ~19% w/ one card on the turn --
       see should_call_with_draw). Never on the river (no card left to come).
+    - Else, flop only (float-flop-in-position, FLOAT_FLOP_IN_POSITION,
+      untested, 2026-08-17): call anyway with no hand and no draw IF hero is
+      in position against the single live opponent and that opponent isn't a
+      known loose archetype -- the published "float" line, planning to bet
+      the turn if checked to again (see the checked-to section's turn-bet
+      list below) rather than giving up the pot immediately.
     - Else fold.
 
   Known, disclosed simplifications (not bugs, just where "simple" stops):
@@ -770,7 +880,7 @@ strategy card, not just inferred from code):
       full 7-card evaluator -- doesn't distinguish open-ended draws from
       gutshots, doesn't handle backdoor draws, doesn't read board texture
       beyond what's needed for these two checks.
-    - Bet sizing is always ~55% pot / a single fixed preflop size -- no
+    - Bet sizing is always 50% pot / a single fixed preflop size -- no
       sizing-for-effect, no polarization, no adjusting for stack depth.
     - Opponent modeling is limited to the one postflop-calling-bar rule
       above -- ranges, sizing, and the flop cbet stay identical regardless
@@ -908,6 +1018,28 @@ REAL_DATA_CALL_RANGE_ADDITIONS = {
 OPEN_SIZING_BB = 2.5  # "2.5-3bb" in the guide; picking the low end, fixed, as the one sizing Tier 1 calls for
 THREEBET_MULTIPLIER = 3.0  # standard "make it 3x" value 3-bet sizing
 
+# 2026-08-17 (user-prompted research check): this file has never had ANY
+# SB-specific logic -- OPEN_VPIP_BY_POSITION/etc. treat SB as just another
+# position slot in the same generic dicts. Published small-blind-specific
+# strategy (Upswing "Small Blind Strategy Tips" et al.) makes two concrete,
+# testable claims that don't apply to any other position:
+#   1. Open bigger (~3bb, not the flat 2.5bb everywhere else) specifically in
+#      the blind-vs-blind case (folds to SB, only BB left) -- a bigger price
+#      denies BB's positional/pot-odds advantage of closing the action last
+#      with only 0.5bb more to call. Only fires with zero limpers already in
+#      (limped-pot isolation already has its own, bigger sizing above).
+SB_BIGGER_OPEN_SIZING = False
+SB_OPEN_SIZING_BB = 3.0
+#   2. "3-bet with your entire continue range" facing a late-position
+#      (CO/BTN) steal raise, instead of ever flat-calling -- SB is worse
+#      positioned than any other cold-caller (acts first EVERY street,
+#      against a raiser who now also has position for the rest of the hand),
+#      so the theory says fold equity + range protection from 3-betting beats
+#      just calling and playing a tough OOP pot. Reuses the existing call
+#      range as the "entire continue range" (call_ranges["SB"] | VALUE_3BET)
+#      rather than inventing a new hand list from scratch.
+SB_THREEBET_OR_FOLD_VS_STEAL = True
+
 # r28 (2026-08-13, untested): rake-adjusted early-position open sizing.
 # Published low-stakes/high-rake advice: a smaller open (down to ~2.2bb from
 # UTG/MP) offers a cheaper price to steal blinds or get heads-up in position
@@ -953,7 +1085,12 @@ def _threebet_multiplier(hand: Hand, seat: int) -> float:
 # multiway) -- sizing up a bluff isn't part of this bot's plan either way.
 SIZING_TARGET_ARCHETYPES = {"Nit", "TAG"}
 BIG_VALUE_SIZING_POT_FRACTION = 0.75
-STANDARD_SIZING_POT_FRACTION = 0.525
+# 2026-08-17: user directive -- was 0.525 ("~55%" in the docstring's plain-
+# language strategy card above was always describing this same constant,
+# both the value-bet base size AND the Tier-1 unconditional flop c-bet reuse
+# it, so one change covers both). Changed to a flat 50% pot, a more standard
+# round number; not itself an A/B-tested hypothesis, a direct instruction.
+STANDARD_SIZING_POT_FRACTION = 0.50
 
 # v27: see the RIVER_OVERBET_NUTS_VS_LOOSE comment in choose_abc_action's
 # checked-to branch. A genuine overbet (>100% pot) -- BIG_VALUE_SIZING_
@@ -1178,6 +1315,24 @@ TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 # separately tested.
 SHOVE_AA_KK_VS_3BET_PLUS = True
 SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK", "QQ", "AKs", "AKo"}
+
+# 2026-08-17 (r18v2, user-prompted research check): published 4-bet theory
+# (Upswing "4-Bet Size Strategy" et al.) is consistent that at 100bb
+# effective -- this sim's actual depth -- an all-in 4-bet is NOT standard for
+# a static premium-only range; the usual size is ~2.3x the 3-bet in position,
+# ~2.5-2.6x out of position (roughly 18-25bb), leaving a real postflop stack
+# behind. All-in only becomes the normal 4-bet once effective stacks shrink
+# to around 50bb. SHOVE_AA_KK_VS_3BET_PLUS above was confirmed positive
+# (+31.41/+15.54 bb/100) against the OLD flat-call baseline, but that A/B
+# never asked whether shoving specifically (vs. a smaller sized 4-bet that
+# still re-raises) is the best way to capture that edge -- this flag tests
+# exactly that question, sized version vs. shove version, both already-
+# confirmed-better than calling. Reuses THREEBET_SIZE_BY_POSITION's IP/OOP
+# distinction technique (_is_hero_in_position_vs_raiser) rather than
+# inventing a second position-detection mechanism.
+SIZED_4BET_INSTEAD_OF_SHOVE = False
+SIZED_4BET_MULTIPLIER_IP = 2.3
+SIZED_4BET_MULTIPLIER_OOP = 2.6
 
 # v15, B1: archetype_vs_raise.csv / archetype_facing_bet.csv show Maniac and
 # Station continue/call facing aggression far more than the population
@@ -2008,6 +2163,28 @@ def _street_was_checked_through(hand: Hand, street: str) -> bool:
     return not any(a.street == street and a.action in ("bets", "raises") for a in hand.actions)
 
 
+def _facing_check_raise(hand: Hand, seat: int) -> bool:
+    """True if the player hero is currently facing checked THIS street
+    before their most recent (raising) action -- the classic check-raise
+    pattern. Only meaningful when to_call > 0 and the aggressor's last
+    action is a raise; used by FOLD_MARGINAL_VS_CHECK_RAISE below."""
+    aggressor = _last_aggressor_this_street(hand)
+    if aggressor is None:
+        return False
+    street_actions = [a for a in hand.actions if a.street == hand.street and a.seat == aggressor]
+    if not street_actions or street_actions[-1].action != "raises":
+        return False
+    return any(a.action == "checks" for a in street_actions[:-1])
+
+
+def _hero_called_a_bet_this_hand(hand: Hand, seat: int, street: str) -> bool:
+    """True if hero has a recorded 'calls' action on the given street --
+    used by FLOAT_FLOP_IN_POSITION to detect "hero floated/continued the
+    flop" on a later street, without needing to reconstruct hero's exact
+    hand strength at the moment of that earlier decision."""
+    return any(a.street == street and a.seat == seat and a.action == "calls" for a in hand.actions)
+
+
 # pf6: check back a marginal made hand for pot control instead of always
 # value-betting top-pair-or-better (should_bet's `made` branch, unconditional
 # today). Published theory: a plain one-pair hand, out of position, with
@@ -2082,6 +2259,46 @@ def _has_river_blocker(hole: list[str], hand: Hand) -> bool:
     return bool(scare_card) and any(c[0] == scare_card[0] for c in hole)
 
 
+# 2026-08-17 (user-prompted "look closer at postflop, not every real spot is
+# covered" + research check): this bot's facing-a-bet branch has never
+# distinguished a check-raise from a plain bet -- `made` (top-pair-or-better)
+# just calls regardless. Published low/micro-stakes strategy is specific and
+# consistent here (unlike higher-stakes GTO ranges, which assume a real bluff
+# mix): weak/passive-dominated fields check-raise for value far more than for
+# bluffs, because most of these players' bluffs get checked instead of raised
+# out of fear of being re-raised -- so a check-raise skews unusually strong,
+# and the standard exploit is to fold marginal top-pair-tier hands to it more
+# than to a normal bet. Deliberately excludes LOOSE_ARCHETYPES (already
+# covered by the wider any-pair-or-better call rule elsewhere, which fires
+# before this check ever runs) and very_strong hands (two pair+ never folds
+# here regardless of the bet's shape). Heads-up only, same opponent-identity
+# reasoning as every other archetype-gated rule in this file.
+FOLD_MARGINAL_VS_CHECK_RAISE = False
+
+# 2026-08-17 (same postflop-gap pass): "floating" -- calling a flop bet in
+# position with no hand and no real draw, planning to bet if checked to on
+# the turn -- is a real, named, published concept (Upswing/PokerCoaching/
+# BetMGM strategy guides agree on the mechanism) that this bot has never had
+# any version of. Distinct from pf5's probe bet (which requires a
+# check-check flop, not hero calling a bet) and from pf10's delayed c-bet
+# (which requires hero to have had initiative). Two parts, one flag:
+#   1. Flop, facing a bet, hero has neither `made` nor a real draw (both
+#      already-covered cases return before this can fire) -- call instead of
+#      folding IF hero is in position against the single live opponent
+#      (reuses _is_hero_in_position_vs_raiser generically, not just for the
+#      preflop raiser) and that opponent isn't a known loose archetype
+#      (floating doesn't work against someone who never gives up).
+#   2. Turn, checked to, hero still has no hand -- bet (the "take it away"
+#      follow-through), gated on hero having called a bet on the flop this
+#      hand (_hero_called_a_bet_this_hand -- a disclosed proxy: doesn't
+#      distinguish "floated with pure air" from "called with a draw that
+#      then missed," but both are the same real bluff-the-turn decision by
+#      this point, and this bot doesn't track exact historical hand strength
+#      per street anywhere else either).
+FLOAT_FLOP_IN_POSITION = True
+FLOAT_FOLLOWUP_POT_FRACTION = 0.66  # "bet pretty large when barreling the turn" -- published sizing convention, not fit to a measured breakeven point
+
+
 def choose_abc_action(
     hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
 ) -> tuple[str, float | None]:
@@ -2152,6 +2369,11 @@ def choose_abc_action(
                     sizing_bb = TIGHT_ISO_BASE_SIZING_BB + TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
                 elif ISO_RAISE_OVER_LIMPERS:
                     sizing_bb += ISO_SIZING_PER_LIMPER_BB * n_limpers
+                # SB_BIGGER_OPEN_SIZING: see the constant's comment above --
+                # only the genuine blind-vs-blind case (no limpers already
+                # priced in, isolation sizing doesn't apply).
+                if SB_BIGGER_OPEN_SIZING and position == "SB" and n_limpers == 0:
+                    sizing_bb = SB_OPEN_SIZING_BB
                 # v19, hand-strength-dependent sizing: size up further with a
                 # premium hand (reuses VALUE_3BET_TIGHT as the "premium" set,
                 # rather than defining a second premium-hand list) -- untested
@@ -2178,6 +2400,13 @@ def choose_abc_action(
         if n_raises >= 2:
             if notation in PREMIUM_VS_3BET:
                 if SHOVE_AA_KK_VS_3BET_PLUS and notation in SHOVE_VS_3BET_PLUS_RANGE:
+                    if SIZED_4BET_INSTEAD_OF_SHOVE:
+                        raiser_seat = _last_preflop_raiser_seat(hand)
+                        in_position = raiser_seat is not None and _is_hero_in_position_vs_raiser(hand, seat, raiser_seat)
+                        multiplier = SIZED_4BET_MULTIPLIER_IP if in_position else SIZED_4BET_MULTIPLIER_OOP
+                        amount = hand.current_bet * multiplier
+                        amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+                        return ("raise", amount)
                     return ("raise", legal["max_raise_to"])
                 # v26 (see FOLD_PREMIUM_VS_EXTREME_AGGRO above): even a
                 # premium hand can fold to an extreme-sized re-raise from a
@@ -2275,6 +2504,23 @@ def choose_abc_action(
             amount = hand.current_bet * _threebet_multiplier(hand, seat)
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("raise", amount)
+
+        # SB_THREEBET_OR_FOLD_VS_STEAL: see the constant's comment above.
+        # Only the genuine "steal" case -- a late-position raiser, hero in
+        # SB -- and only reached for hands NOT already covered by the value/
+        # bluff 3-bet checks above (both already `return` before this point).
+        # Replaces the flat call-range check below entirely for this one
+        # position+raiser-position combination: either 3-bet the extended
+        # continue range, or fold -- no flat call.
+        if SB_THREEBET_OR_FOLD_VS_STEAL and position == "SB":
+            raiser_position = _last_preflop_raiser_position(hand)
+            if raiser_position in LATE_STEAL_RAISER_POSITIONS:
+                sb_continue_range = (call_ranges.get("SB") or set()) | VALUE_3BET
+                if notation in sb_continue_range:
+                    amount = hand.current_bet * _threebet_multiplier(hand, seat)
+                    amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
+                    return ("raise", amount)
+                return ("fold", None)
 
         # ALLOW_CALLING_RAISES: earlier versions found calling a raise (with
         # ANY range) under a fit-or-fold postflop plan (no draws, no value
@@ -2407,6 +2653,22 @@ def choose_abc_action(
             and len(_live_opponent_seats(hand, seat)) == 1
         ):
             delayed_cbet_turn = True
+        # FLOAT_FLOP_IN_POSITION, part 2 (see the flag's comment above): hero
+        # called a flop bet with air/a proxy-missed-draw, got checked to on
+        # the turn -- follow through with the "take it away" bet. Deliberately
+        # NOT gated on had_initiative (a float can happen whether or not hero
+        # had preflop initiative -- that's the whole point, it's a
+        # position-based line, not a range-based one).
+        float_followup_turn = False
+        if (
+            FLOAT_FLOP_IN_POSITION
+            and hand.street == "turn"
+            and n_bets == 0
+            and not made
+            and len(_live_opponent_seats(hand, seat)) == 1
+            and _hero_called_a_bet_this_hand(hand, seat, "flop")
+        ):
+            float_followup_turn = True
         # v17, C2 (see TIGHT_ARCHETYPES_FOR_DONK_BLUFF above): a donk bet with
         # NO hand at all, specifically into a known Nit/TAG/LAG -- these
         # archetypes fold to a donk/lead meaningfully more than to a same-
@@ -2451,7 +2713,7 @@ def choose_abc_action(
             if barrel_bluff_with_air and BLOCKER_BASED_RIVER_BLUFF:
                 if not _has_river_blocker(player.hole_cards, hand):
                     barrel_bluff_with_air = False
-        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn
+        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn
         # pf6 (POT_CONTROL_MARGINAL_HANDS): check back a marginal made hand
         # instead of value-betting it, in the specific OOP/multiway/wet-board
         # spot _should_pot_control targets -- never overrides a genuine bluff
@@ -2533,6 +2795,8 @@ def choose_abc_action(
                 sizing = PROBE_BET_TURN_POT_FRACTION
             if delayed_cbet_turn:
                 sizing = DELAYED_CBET_TURN_POT_FRACTION
+            if float_followup_turn:
+                sizing = FLOAT_FOLLOWUP_POT_FRACTION
             # v27 (RIVER_OVERBET_NUTS_VS_LOOSE): a genuine overbet (>100%
             # pot), not just BIG_VALUE_SIZING_POT_FRACTION's 75%, on the
             # river specifically with a real near-nut hand (has_trips_or_
@@ -2636,6 +2900,23 @@ def choose_abc_action(
             # overbet) instead of being silently reclaimed by that other
             # rule for loose bettors specifically.
             return ("fold", None)
+        # FOLD_MARGINAL_VS_CHECK_RAISE: see the flag's comment above -- a
+        # plain top-pair-tier hand (never very_strong) folds to a genuine
+        # check-raise specifically, against a heads-up opponent who isn't a
+        # known loose archetype (that case is already served by the wider
+        # any-pair call below, which never even reaches this `made` branch's
+        # logic since it's a separate check further down -- but an unknown
+        # or known-tight/TAG/LAG aggressor's check-raise is where this fires).
+        if (
+            FOLD_MARGINAL_VS_CHECK_RAISE
+            and not very_strong
+            and len(_live_opponent_seats(hand, seat)) == 1
+            and _facing_check_raise(hand, seat)
+        ):
+            aggressor = _last_aggressor_this_street(hand)
+            aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
+            if aggressor_archetype not in LOOSE_ARCHETYPES:
+                return ("fold", None)
         return ("call", None)
 
     if opponent_archetypes and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
@@ -2668,4 +2949,20 @@ def choose_abc_action(
 
     if should_call_with_draw(player.hole_cards, hand.board, hand.street, to_call, pot_before):
         return ("call", None)
+    # FLOAT_FLOP_IN_POSITION, part 1 (see the flag's comment above): call a
+    # flop bet with no hand and no real draw (both already handled above --
+    # reaching here means neither applies) purely for the positional bluff
+    # equity of a follow-up turn bet if checked to. Only in position against
+    # a single live opponent who isn't a known loose archetype (floating
+    # doesn't work against someone who never gives up the pot).
+    if (
+        FLOAT_FLOP_IN_POSITION
+        and hand.street == "flop"
+    ):
+        float_live_opponents = _live_opponent_seats(hand, seat)
+        if len(float_live_opponents) == 1:
+            float_opponent = float_live_opponents[0]
+            float_archetype = opponent_archetypes.get(float_opponent) if opponent_archetypes else None
+            if float_archetype not in LOOSE_ARCHETYPES and _is_hero_in_position_vs_raiser(hand, seat, float_opponent):
+                return ("call", None)
     return ("fold", None)

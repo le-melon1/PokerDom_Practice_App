@@ -182,6 +182,28 @@ RULE_TEST_GROUPS = {
         ["RIVER_OVERBET_NUTS_VS_LOOSE"],
         "v27 genuine river overbet (150% pot) with trips-or-better vs a known loose/weak archetype",
     ),
+    # 2026-08-17 (user-prompted "check sizings, SB strategy, postflop gaps"
+    # research pass): new flags, none tested yet.
+    "sized-4bet-instead-of-shove": (
+        ["SIZED_4BET_INSTEAD_OF_SHOVE"],
+        "sized (~2.3-2.6x) 4-bet instead of an all-in shove with the SHOVE_AA_KK_VS_3BET_PLUS range",
+    ),
+    "sb-bigger-open-sizing": (
+        ["SB_BIGGER_OPEN_SIZING"],
+        "open to 3bb instead of 2.5bb from SB specifically in the blind-vs-blind (no limpers) case",
+    ),
+    "sb-threebet-or-fold-vs-steal": (
+        ["SB_THREEBET_OR_FOLD_VS_STEAL"],
+        "SB 3-bets its whole continue range facing a CO/BTN/SB steal instead of ever flat-calling",
+    ),
+    "fold-marginal-vs-check-raise": (
+        ["FOLD_MARGINAL_VS_CHECK_RAISE"],
+        "fold a plain top-pair-tier hand (not very_strong) facing a genuine check-raise, heads-up, non-loose aggressor",
+    ),
+    "float-flop-in-position": (
+        ["FLOAT_FLOP_IN_POSITION"],
+        "call a flop bet in position with no hand/draw, bet the turn if checked to again",
+    ),
 }
 
 TIGHT_ISO_PARAM_FLAGS = [
@@ -198,6 +220,15 @@ TIGHT_ISO_VARIANTS = {
     "r12v-current-bigger": (0.70, 5.5, 1.5),
     "r12v-tight-bigger": (0.55, 5.5, 1.5),
     "r12v-wide-smaller": (0.85, 3.5, 0.5),
+    # 2026-08-17: published-theory sizing (Upswing/PreflopWizard/2+2 consensus:
+    # base open size + 1bb/limper, i.e. ~4bb + 1bb/limper live, 3bb + 1bb/limper
+    # online) -- notably smaller than the currently-shipped 5.5bb+1.5bb/limper.
+    # Keeps the already-confirmed-best 0.85 VPIP width, isolates the sizing
+    # question specifically. User asked to verify whether the shipped sizing
+    # (well above any published number) is actually correct for this population
+    # or just an artifact of testing a narrow candidate set that never included
+    # anything this small.
+    "r12v-published-theory": (0.85, 4.0, 1.0),
 }
 
 TIGHT_ISO_VARIANT_GROUPS = {
@@ -435,6 +466,15 @@ ALL_COMPARISON_FLAGS = [
     "LIMP_TRAP_WITH_MONSTERS",
     "LIMP_TRAP_FREQUENCY",
     "SET_MINE_IMPLIED_ODDS",
+    "SIZED_4BET_INSTEAD_OF_SHOVE",
+    "SIZED_4BET_MULTIPLIER_IP",
+    "SIZED_4BET_MULTIPLIER_OOP",
+    "SB_BIGGER_OPEN_SIZING",
+    "SB_OPEN_SIZING_BB",
+    "SB_THREEBET_OR_FOLD_VS_STEAL",
+    "FOLD_MARGINAL_VS_CHECK_RAISE",
+    "FLOAT_FLOP_IN_POSITION",
+    "FLOAT_FOLLOWUP_POT_FRACTION",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 

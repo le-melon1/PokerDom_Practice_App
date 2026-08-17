@@ -95,11 +95,18 @@ def test_iso_wider_range_does_not_fire_into_an_unopened_pot_with_no_limpers():
 
 
 def test_tight_big_iso_folds_plain_open_hands_outside_tight_iso_range():
-    open_ranges, _, _, tight_iso_ranges, *_ = abc_bot._ranges()
+    open_ranges, _, _, tight_iso_ranges, *_, limp_behind_ranges, _ = abc_bot._ranges()
     position = "BTN"
-    marginal_iso_hands = open_ranges[position] - tight_iso_ranges[position]
+    # Exclude LIMP_BEHIND_OVER_LIMPERS's own hand set (confirmed True since
+    # 2026-08-12/16) -- A2s/A3s/etc. are deliberately NOT meant to fold here,
+    # they're meant to limp behind instead, a different (correct) rule this
+    # test isn't trying to cover. sorted()+[0], not next(iter(...)), so the
+    # picked hand doesn't depend on Python's per-process hash-seed-randomized
+    # set iteration order (this test intermittently picked A2s/A3s and failed
+    # on the "call" a limp-behind produces, depending on PYTHONHASHSEED).
+    marginal_iso_hands = open_ranges[position] - tight_iso_ranges[position] - limp_behind_ranges.get(position, set())
     assert marginal_iso_hands, "expected tight iso range to be narrower than the plain open range"
-    test_hand = next(iter(marginal_iso_hands))
+    test_hand = sorted(marginal_iso_hands)[0]
 
     players = make_players(6)
     hand = Hand(players, button_seat=1, small_blind=1.0, big_blind=2.0)
@@ -971,14 +978,20 @@ def _hero_facing_a_flop_bet_from_bb():
     return hand
 
 
-def test_folds_bottom_pair_to_a_bet_with_no_opponent_info():
+def test_folds_bottom_pair_to_a_bet_with_no_opponent_info(monkeypatch):
+    # Hero (UTG) is in position vs the BB bettor here, so FLOAT_FLOP_IN_
+    # POSITION (True by default since 2026-08-17) would otherwise call this
+    # spot as a float -- isolate it off since this test's actual target is
+    # the plain "no hand, no draw, no float rule" fold path.
+    monkeypatch.setattr(abc_bot, "FLOAT_FLOP_IN_POSITION", False)
     hand = _hero_facing_a_flop_bet_from_bb()
     hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair (6s) -- not top-pair-or-better
     action, _ = choose_abc_action(hand, 4)
     assert action == "fold"
 
 
-def test_folds_bottom_pair_to_a_known_nit_bettor():
+def test_folds_bottom_pair_to_a_known_nit_bettor(monkeypatch):
+    monkeypatch.setattr(abc_bot, "FLOAT_FLOP_IN_POSITION", False)
     hand = _hero_facing_a_flop_bet_from_bb()
     hand.players[4].hole_cards = ["6s", "3d"]
     action, _ = choose_abc_action(hand, 4, opponent_archetypes={3: "Nit"})
@@ -1124,6 +1137,10 @@ def test_calls_plain_top_pair_facing_a_bet_instead_of_raising():
 
 def test_never_value_raises_as_a_bluff_with_a_weak_hand_even_with_flag_on(monkeypatch):
     monkeypatch.setattr(abc_bot, "VALUE_RAISE_FACING_BET", True)
+    # Isolate FLOAT_FLOP_IN_POSITION (True by default since 2026-08-17) --
+    # this test's target is confirming VALUE_RAISE_FACING_BET doesn't
+    # mistakenly fire as a bluff-raise, not the separate float-call line.
+    monkeypatch.setattr(abc_bot, "FLOAT_FLOP_IN_POSITION", False)
     hand = _hero_facing_a_flop_bet_from_bb()
     hand.players[4].hole_cards = ["6s", "3d"]  # bottom pair -- not very strong, rule doesn't apply even with the flag on
     action, _ = choose_abc_action(hand, 4)

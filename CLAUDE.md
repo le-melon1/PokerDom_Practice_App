@@ -84,6 +84,8 @@ this makes `FOLD_PREMIUM_VS_EXTREME_AGGRO`/`FOLD_VS_3BET_FROM_PASSIVE`
 structurally unreachable for their whole target hand set now). All
 2026-08-16 numbers from `scripts/remaining_untested_confirm.sh`, log
 `/tmp/remaining_untested_confirm_20260816_124429.log`.
+`SB_THREEBET_OR_FOLD_VS_STEAL` (this file's first-ever SB-specific rule,
+shipped 2026-08-17, +4.10/+5.91 bb/100).
 
 ### Preflop: confirmed NOT real (tested properly, correctly kept off)
 
@@ -193,7 +195,61 @@ opponents), `SEMI_BLUFF_RAISE_DRAWS`/`NUT_ADVANTAGE_SIZING`/`SPR_SCALED_
 THRESHOLDS` (pf3/pf4/pf7, shipped 2026-08-14), `SIZE_UP_WITH_VERY_STRONG_
 HAND`/`SIZE_UP_ON_WET_BOARD` (v23, shipped 2026-08-16, +7.97/+7.22 and
 +14.65/+12.18 bb/100), `RIVER_OVERBET_NUTS_VS_LOOSE` (v27, shipped
-2026-08-16 after a bigger-sample retest, +1.12/+4.04 bb/100).
+2026-08-16 after a bigger-sample retest, +1.12/+4.04 bb/100),
+`FLOAT_FLOP_IN_POSITION` (published "float" concept, first version of it
+this file has ever had, shipped 2026-08-17, +8.10/+9.35 bb/100).
+
+### 2026-08-17: overnight research pass -- iso/shove sizing vs published theory, SB strategy, postflop gaps
+
+User asked to (1) sanity-check the shipped iso-limper sizing and the
+AA/KK/QQ/AKs/AKo shove against actual published poker theory, (2) build the
+small-blind-specific strategy this file never had, (3) flatten
+`STANDARD_SIZING_POT_FRACTION` (both the value-bet base AND the Tier-1
+unconditional flop c-bet reuse this one constant) from 0.525 to a flat 0.50
+-- direct instruction, not a hypothesis, applied immediately, and (4) look
+harder at postflop for missing real spots, researching all of it against
+published sources first. Full results and sourcing in `abc_bot.py`'s own
+changelog docstring (search "overnight research pass"); short version:
+
+- **Iso-limper sizing**: published theory (Upswing/PreflopWizard/2+2
+  consensus) says ~3-4bb + 1bb/limper. Tested that exact sizing
+  (`r12v-published-theory`, base=4.0/per-limper=1.0) against the shipped
+  5.5bb/1.5bb -- **confirmed NEGATIVE both seeds, -30.24/-39.23 bb/100**.
+  The bigger, non-standard sizing this file already shipped is genuinely
+  better against this specific ML-bot population. No code change.
+- **Shove vs. sized 4-bet**: published 100bb-effective 4-bet theory says
+  ~2.3-2.6x the 3-bet, not all-in (all-in becomes standard around 50bb
+  effective). Tested a sized 4-bet (`SIZED_4BET_INSTEAD_OF_SHOVE`) against
+  the shipped all-in shove -- **confirmed NEGATIVE both seeds, -9.62/-2.16
+  bb/100**. The shove stays. Stays False.
+- **SB strategy** (this file had literally none before tonight):
+  `SB_BIGGER_OPEN_SIZING` (3bb instead of 2.5bb, blind-vs-blind only) --
+  inconclusive both seeds, +0.19/+0.04, genuinely near-zero, stays False.
+  `SB_THREEBET_OR_FOLD_VS_STEAL` (3-bet the whole continue range facing a
+  late-position steal instead of ever flat-calling) -- **confirmed
+  POSITIVE both seeds, +4.10/+5.91 bb/100, shipped True.**
+- **Postflop gaps**: `FOLD_MARGINAL_VS_CHECK_RAISE` (published micro-stakes
+  theory: check-raises there skew value-heavy, fold marginal top-pair more)
+  -- **confirmed NEGATIVE both seeds, -0.37/-0.56 bb/100** (each needed
+  350k+ hands, check-raises are rare in this bot's self-play) -- the
+  published exploit does NOT transfer to this ML-bot population, stays
+  False. `FLOAT_FLOP_IN_POSITION` (call a flop bet in position with no
+  hand/draw, bet the turn if checked to) -- **confirmed POSITIVE both
+  seeds, +8.10/+9.35 bb/100, shipped True.**
+- Full audit of `choose_abc_action` surfaced more real gaps not acted on
+  tonight: no distinct response to a donk lead while hero has initiative,
+  no board-texture discount when calling a `made` hand (a plain top pair
+  calls a big bet on a 4-flush river the same as on a dry one), no
+  give-up-or-bluff decision for a missed draw on the river. Real candidates
+  for a future pass, not implemented yet.
+
+Log: `/tmp/night_research_confirm_20260817_071948.log`. Also fixed a real,
+unrelated test-fragility bug found the same night: a test's
+`next(iter(a_set))` pick was hash-seed-dependent and could intermittently
+select a hand `LIMP_BEHIND_OVER_LIMPERS` legitimately calls with instead of
+folding it, causing a flaky failure depending on `PYTHONHASHSEED` -- fixed
+to a deterministic `sorted()` pick. 191 tests pass across multiple random
+hash seeds.
 
 ### Postflop: confirmed NOT real
 
