@@ -188,8 +188,7 @@ The Tier-1 unconditional flop c-bet with initiative, value-betting
 top-pair-or-better on every street (regardless of initiative -- this was a
 measured fix for a real -51.79 bb/100 leak from checking hands down),
 opponent-archetype-aware wider calling (part of v10 above),
-`HERO_PROGRESSIVE_POT_DAMPING` (dropping the flat ~55%-pot sizing as the
-pot grows past 8bb), `OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28),
+`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE` (v28),
 `BARREL_BLUFF_VS_TIGHT` (v25, turn/river scare-card bluff vs known tight
 opponents), `SEMI_BLUFF_RAISE_DRAWS`/`NUT_ADVANTAGE_SIZING`/`SPR_SCALED_
 THRESHOLDS` (pf3/pf4/pf7, shipped 2026-08-14), `SIZE_UP_WITH_VERY_STRONG_
@@ -357,6 +356,14 @@ log `/tmp/multiway_subflags_recheck_20260817_171917.log`, both seeds) --
 `MULTIWAY_NARROW_CALL_RANGE` (the one borderline case in the old
 whole-game test) -36.83±11.79/-29.68±8.90 -- all three confirmed
 negative on both seeds, no ambiguity left. Stay `False`.
+
+`HERO_PROGRESSIVE_POT_DAMPING` (r11, dropping hero's own flat ~55%-pot
+value-bet sizing as the pot grows past 8bb) -- **correction (2026-08-17):
+this was wrongly listed as confirmed/shipped True elsewhere in this file
+until now.** The code has it `False`; the full-model ablation table below
+already had the right number all along (`+72.06 ± 6.94` when removed --
+i.e. the model is BETTER without this rule, `disabled, likely harmful`).
+No new test needed, just a doc-drift fix.
 
 ### Postflop: pf1-pf10, built AND tested 2026-08-14
 
