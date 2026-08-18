@@ -916,6 +916,31 @@ script's docstring). Revision history, each one a real measured finding:
   Consistent magnitude between seeds, clean result. Shipped True. 191
   tests pass across multiple PYTHONHASHSEED values after flipping it.
 
+  2026-08-18, same session: two more candidates from the "what else can
+  be checked" list, both flagged as separate untested questions in this
+  file's own comments when their sibling rules shipped.
+  scripts/semibluff_turn_wetboard_confirm.sh, log /tmp/semibluff_turn_
+  wetboard_confirm_20260818_150344.log, both seeds:
+    - SEMI_BLUFF_RAISE_DRAWS_TURN (extends pf3's flop-only semi-bluff
+      raise to the turn -- flagged when pf3 shipped as "semi-bluff-
+      raising a turn draw commits far more with one card left, a bigger
+      and separately-untested question"): confirmed POSITIVE both seeds,
+      +1.91 +/-0.95 (seed42, 216k hands) / +2.08 +/-1.04 (seed777, 218k
+      hands). Turned out the extra-commitment risk didn't outweigh the
+      fold-equity/backup-equity gain -- same direction and similar
+      magnitude as the flop version. Shipped True.
+    - SMALLER_BLUFF_ON_WET_BOARD (the flip side of SIZE_UP_ON_WET_BOARD --
+      size a plain air bluff, i.e. cbet_with_air/donk_bluff_with_air/
+      barrel_bluff_with_air, SMALLER on a wet board instead of standard,
+      flagged as a separate untested question when v23 shipped): confirmed
+      NEGATIVE both seeds, -4.07 +/-3.72 (seed42, 8k hands) / -4.46
+      +/-3.78 (seed777, 10k hands). A cheaper bluff on a wet board loses
+      more fold equity than it saves in chips -- consistent with this
+      file's broader pattern that this population doesn't fold to size
+      the way solver-derived sizing theory assumes. Stays False.
+  191 tests pass across multiple PYTHONHASHSEED values after flipping
+  SEMI_BLUFF_RAISE_DRAWS_TURN.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1372,6 +1397,13 @@ SIZE_UP_ON_TURN = False  # full-model ablation: +0.46 +/- 0.59, no proven benefi
 # a bundled test can't tell you which part helped.
 SIZE_UP_WITH_VERY_STRONG_HAND = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard with two-pair-or-better (has_very_strong_hand)
 SIZE_UP_ON_WET_BOARD = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard on a two-tone/monotone/well-connected board
+
+# 2026-08-18: the flip side of SIZE_UP_ON_WET_BOARD, flagged as a separate
+# untested question at the time that one shipped -- see the use site's
+# comment in choose_abc_action for the full disclosure (only touches the
+# three "plain" bluff triggers without their own dedicated sizing).
+SMALLER_BLUFF_ON_WET_BOARD = False  # 2026-08-18: confirmed NEGATIVE both seeds, -4.07+/-3.72 (seed42, 8k hands) / -4.46+/-3.78 (seed777, 10k hands). Stays False.
+WET_BOARD_BLUFF_POT_FRACTION = 0.33  # standard-theory "block/probe-sized bluff" number, not fit to a measured breakeven point
 
 # v16, C1: the bot currently treats "someone already limped" identically to
 # "unopened pot" -- always OPEN_SIZING_BB flat. Standard live convention is
@@ -2425,6 +2457,13 @@ SEMI_BLUFF_RAISE_DRAWS = True
 SEMI_BLUFF_RAISE_STREETS = {"flop"}
 SEMI_BLUFF_RAISE_MULTIPLIER = 3.0
 
+# 2026-08-18 (untested): the turn extension flagged as a separate open
+# question above ("semi-bluff-raising a turn draw commits far more with
+# one card left, a bigger and separately-untested question") -- own flag
+# so flop (confirmed) and turn (not) can be confirmed/rejected
+# independently rather than bundled.
+SEMI_BLUFF_RAISE_DRAWS_TURN = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.91+/-0.95 (seed42, 216k hands) / +2.08+/-1.04 (seed777, 218k hands). Shipped True.
+
 # pf4: bet bigger on a board that favors hero's OWN preflop range (had
 # initiative) rather than sizing purely by wet/dry texture (pf1) or opponent
 # archetype (A2/v28). Published range-advantage theory: a high, dry,
@@ -3166,6 +3205,26 @@ def choose_abc_action(
             # should_bet fired, so this can't accidentally shrink a value bet.
             if TEXTURE_DEPENDENT_CBET_SIZING and cbet_with_air and not _is_wet_board(hand.board):
                 sizing = DRY_CBET_POT_FRACTION
+            # 2026-08-18 (SMALLER_BLUFF_ON_WET_BOARD, untested): the flip
+            # side of SIZE_UP_ON_WET_BOARD -- flagged as a separate
+            # untested question when v23 shipped (see that comment). A
+            # pure bluff (no real hand) might want a SMALLER size on a
+            # wet/coordinated board instead of the standard size, since a
+            # credible story is harder to tell and more real value combos
+            # exist in the opponent's continuing range there. Only touches
+            # the three "plain" bluff triggers that don't already have
+            # their own dedicated sizing rationale (cbet_with_air, donk_
+            # bluff_with_air, barrel_bluff_with_air) -- float_followup_
+            # turn/river_bluff_missed_draw keep their existing "bet big
+            # when barreling" published-theory sizing untouched, a
+            # different, deliberately-chosen number for a different reason.
+            if (
+                SMALLER_BLUFF_ON_WET_BOARD
+                and not made
+                and (cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air)
+                and _is_wet_board(hand.board)
+            ):
+                sizing = WET_BOARD_BLUFF_POT_FRACTION
             # pf4 (NUT_ADVANTAGE_SIZING): size up a value bet when the board
             # texture favors hero's own preflop-raiser range -- see the
             # flag's comment above for the disclosed simplified proxy.
@@ -3376,10 +3435,13 @@ def choose_abc_action(
     # pf3 (SEMI_BLUFF_RAISE_DRAWS): raise a strong flop draw instead of only
     # ever calling it -- see the flag's comment above for scope (flop only,
     # heads-up only, hero didn't already bet this street themselves).
+    # SEMI_BLUFF_RAISE_DRAWS_TURN (2026-08-18, untested): extends the same
+    # streets set to include the turn, independently toggleable.
+    semi_bluff_raise_streets = SEMI_BLUFF_RAISE_STREETS | ({"turn"} if SEMI_BLUFF_RAISE_DRAWS_TURN else set())
     if (
         SEMI_BLUFF_RAISE_DRAWS
         and not made
-        and hand.street in SEMI_BLUFF_RAISE_STREETS
+        and hand.street in semi_bluff_raise_streets
         and (_has_flush_draw(player.hole_cards, hand.board) or _has_straight_draw(player.hole_cards, hand.board))
         and len(_live_opponent_seats(hand, seat)) == 1
     ):

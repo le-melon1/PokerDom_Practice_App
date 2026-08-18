@@ -171,6 +171,14 @@ RULE_TEST_GROUPS = {
         ["SEMI_BLUFF_RAISE_DRAWS"],
         "pf3 raise (not just call) a strong flop draw, heads-up",
     ),
+    "semi-bluff-raise-draws-turn": (
+        ["SEMI_BLUFF_RAISE_DRAWS_TURN"],
+        "extend pf3's semi-bluff raise to the turn (flop already confirmed True, turn was flagged untested)",
+    ),
+    "smaller-bluff-on-wet-board": (
+        ["SMALLER_BLUFF_ON_WET_BOARD"],
+        "smaller size (33% pot) for a plain air bluff (cbet/donk-bluff/barrel-bluff) on a wet board instead of standard sizing",
+    ),
     "pf4-nut-advantage-sizing": (
         ["NUT_ADVANTAGE_SIZING"],
         "pf4 size up a value bet when the board favors hero's own preflop-raiser range",
@@ -508,6 +516,7 @@ ALL_COMPARISON_FLAGS = [
     "FOLD_TOP_PAIR_VS_OVERBET",
     "SIZE_UP_WITH_VERY_STRONG_HAND",
     "SIZE_UP_ON_WET_BOARD",
+    "SMALLER_BLUFF_ON_WET_BOARD",
     "BLUFF_3BET_VS_TIGHT",
     "BLUFF_3BET_TARGET_ARCHETYPES",
     "BARREL_BLUFF_VS_TIGHT",

@@ -217,6 +217,28 @@ samples one fresh hand at a time) -- a real infrastructure gap, not a
 quick check. Tilt/bad-beat state-change detection has no groundwork in
 either repo -- would need fresh research against the real dataset first.
 
+### 2026-08-18, same session: two more "flagged as untested" candidates resolved
+
+Both were literal comments in `abc_bot.py` itself, disclosed when their
+sibling rules shipped as separate, never-tested questions --
+`scripts/semibluff_turn_wetboard_confirm.sh`, log `/tmp/semibluff_turn_
+wetboard_confirm_20260818_150344.log`, both seeds:
+
+- **`SEMI_BLUFF_RAISE_DRAWS_TURN`** (extends pf3's flop-only semi-bluff
+  raise to the turn): **confirmed POSITIVE both seeds**, +1.91±0.95
+  (seed42, 216k hands) / +2.08±1.04 (seed777, 218k hands) -- same
+  direction and similar magnitude as the already-confirmed flop version.
+  **Shipped True.**
+- **`SMALLER_BLUFF_ON_WET_BOARD`** (the flip side of `SIZE_UP_ON_WET_
+  BOARD` -- smaller air-bluff sizing on a wet board instead of standard):
+  **confirmed NEGATIVE both seeds**, -4.07±3.72 (seed42, 8k hands) /
+  -4.46±3.78 (seed777, 10k hands). A cheaper bluff on a wet board loses
+  more fold equity than it saves -- consistent with this file's recurring
+  pattern that this population doesn't fold to sizing the way solver
+  theory assumes. **Stays False.**
+
+191 tests pass across multiple `PYTHONHASHSEED` values.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting
@@ -236,7 +258,9 @@ this file has ever had, shipped 2026-08-17, +8.10/+9.35 bb/100),
 flush/straight draw vs known tight archetypes, shipped 2026-08-17,
 +1.78/+2.95 bb/100), `TURN_OVERBET_NUTS_VS_LOOSE` (turn analogue of
 `RIVER_OVERBET_NUTS_VS_LOOSE`, generalized off river-only, shipped
-2026-08-18, +1.86/+1.69 bb/100).
+2026-08-18, +1.86/+1.69 bb/100), `SEMI_BLUFF_RAISE_DRAWS_TURN` (turn
+analogue of pf3's flop-only semi-bluff raise, shipped 2026-08-18,
++1.91/+2.08 bb/100).
 
 ### 2026-08-17: overnight research pass -- iso/shove sizing vs published theory, SB strategy, postflop gaps
 
