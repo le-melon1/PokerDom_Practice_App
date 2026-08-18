@@ -867,6 +867,35 @@ script's docstring). Revision history, each one a real measured finding:
   file's own C1/C2 pattern the productive angle is a genuinely NEW
   behavior for multiway pots, not further restricting the existing three.
 
+  2026-08-18, one more round: pushed the two remaining borderline results
+  from the 2026-08-16 bigger-sample round (r26-limp-trap-monsters,
+  pf8-block-bet-river) to a tighter target-CI (0.25 vs the earlier 0.5),
+  same 1M-hand cap. scripts/borderline_bigger_sample_round2.sh, log
+  /tmp/borderline_bigger_sample_round2_20260817_175050.log, both seeds:
+    - BLOCK_BET_RIVER: -0.73 +/-0.70 (seed42, 172k hands, confirmed_
+      negative) / -0.39 +/-0.39 (seed777, 492k hands, confirmed_
+      negative) -- NOW CONFIRMED NEGATIVE ON BOTH SEEDS. The earlier
+      round's seed777 run (-0.38 +/-0.50, inconclusive) just hadn't run
+      long enough to clear the bar; more precision resolved it cleanly.
+      Stays False, now with real confidence instead of "leans negative."
+    - LIMP_TRAP_WITH_MONSTERS: +0.16 +/-0.24 (seed42, 136k hands,
+      inconclusive_small_effect) / +0.69 +/-0.34 (seed777, 160k hands,
+      confirmed_positive) -- STILL SPLIT, and now a more interesting
+      split than before: at this tighter precision the two point
+      estimates (0.16 vs 0.69) actually disagree with EACH OTHER beyond
+      their own combined CI (0.53 gap vs sqrt(0.24^2+0.34^2)=0.42
+      combined) -- not just "both too imprecise to call," but real
+      between-sample inconsistency for this specific rare spot (unopened
+      AA/KK only). Honest read: if there's a true effect here it's small
+      (roughly 0-0.7 bb/100) and/or genuinely variable in a way this
+      probe's methodology doesn't capture (e.g. real opponent-mix
+      variance hand-to-hand rather than pure sampling noise) -- further
+      hand-count increases alone are unlikely to resolve this cleanly,
+      diminishing returns past this point. Stays False, unresolved by
+      design rather than by neglect.
+  191 tests unaffected (no flag defaults changed this round -- both were
+  already False and stay False).
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 

@@ -172,15 +172,29 @@ cap raised to 1M, target-CI halved to 0.5 (log
   not under-powered. **Stays False.**
 - `BLOCK_BET_RIVER` (pf8): -0.78+/-0.77 confirmed negative (164k hands) /
   -0.38+/-0.50 inconclusive (348k hands) -- leans mildly negative now,
-  doesn't clear the bar on both seeds. **Stays False.**
+  doesn't clear the bar on both seeds. **UPDATE 2026-08-18**: pushed to a
+  tighter target-CI (0.25), `scripts/borderline_bigger_sample_round2.sh`
+  -- -0.73+/-0.70 (seed42, 172k) / **-0.39+/-0.39 (seed777, 492k, now
+  confirmed_negative)** -- the seed777 run just hadn't run long enough
+  before; more hands resolved it cleanly. **Confirmed NEGATIVE both seeds
+  now, stays False with real confidence.**
 - `LIMP_TRAP_WITH_MONSTERS` (r26): +0.16+/-0.32 inconclusive (92k) /
   +0.70+/-0.34 confirmed (160k) -- still a split verdict at 2-3x the
   earlier sample. Genuinely on the edge of measurability for this rare a
-  spot (unopened AA/KK). **Stays False.**
+  spot (unopened AA/KK). **UPDATE 2026-08-18**: pushed further (same
+  script/log as above) -- +0.16+/-0.24 (seed42, 136k) / +0.69+/-0.34
+  (seed777, 160k, unchanged). Tighter seed42 CI now makes the two point
+  estimates disagree with EACH OTHER beyond their own combined CI (0.53
+  gap vs 0.42 combined) -- not just under-powered, genuinely inconsistent
+  between samples for this rare a spot. Diminishing returns to keep
+  pushing hand count alone. **Stays False, unresolved by design.**
 
 This closes out every open question from the 2026-08-14/15/16 validation
 rounds -- every flag in `abc_bot.py` now has an adequately-powered test
-result behind its current True/False state. 191 tests pass.
+result behind its current True/False state (with `BLOCK_BET_RIVER` fully
+resolved 2026-08-18 and `LIMP_TRAP_WITH_MONSTERS` understood as
+genuinely hard-to-pin-down rather than just under-sampled). 191 tests
+pass.
 
 ### Postflop: what's confirmed and shipped True
 
