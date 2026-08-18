@@ -896,6 +896,26 @@ script's docstring). Revision history, each one a real measured finding:
   191 tests unaffected (no flag defaults changed this round -- both were
   already False and stay False).
 
+  2026-08-18, same session: picked up TURN_OVERBET_NUTS_VS_LOOSE, a
+  generalization of RIVER_OVERBET_NUTS_VS_LOOSE (v27) off "river only" --
+  that restriction was never itself a tested finding, just where the
+  overbet-with-near-nuts-vs-loose-archetype idea was first tried. Two
+  other candidates from the same "what else needs checking" pass were
+  scoped and set aside instead of built: per-opponent (not archetype-
+  level) bluff-frequency exploitation needs session-continuity simulation
+  this project's precision test harness doesn't have (TableDossier's
+  per-seat stats accumulate across many hands at one table;
+  probe_chance_enumeration.py samples one fresh hand at a time) -- a
+  real infrastructure gap, not a quick check; tilt/bad-beat state-change
+  detection has no groundwork in either repo, would need fresh research
+  against the real dataset first. scripts/turn_overbet_confirm.sh, log
+  /tmp/turn_overbet_confirm_20260818_140943.log, both seeds -- confirmed
+  POSITIVE both seeds, resolved unusually fast (10k/16k hands):
+    - seed42: +1.86 +/-0.84 bb/100
+    - seed777: +1.69 +/-0.81 bb/100
+  Consistent magnitude between seeds, clean result. Shipped True. 191
+  tests pass across multiple PYTHONHASHSEED values after flipping it.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1280,6 +1300,22 @@ STANDARD_SIZING_POT_FRACTION = 0.50
 # POT_FRACTION's 0.75 never crosses the pot itself.
 RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog
 RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
+
+# 2026-08-18 (untested): turn analogue of RIVER_OVERBET_NUTS_VS_LOOSE --
+# generalizes the same "genuine overbet with a real near-nut hand against a
+# known loose/weak archetype" idea to the turn instead of restricting it to
+# the river. Published theory: overbetting for value against stations/
+# loose-passive players is a general polarization tool that works
+# especially well the moment hero holds a clear range/nut advantage with
+# betting already shown on an earlier street, not something specific to
+# there being no more cards to come -- the river-only restriction was
+# never itself a tested finding, just where the idea was first tried.
+# Same has_trips_or_better bar and LOOSE_ARCHETYPES target as the river
+# version; own flag/sizing constant so the two can be tuned independently
+# (a turn overbet carries extra risk from redraws the river version
+# doesn't, so it isn't assumed to share the exact same optimal sizing).
+TURN_OVERBET_NUTS_VS_LOOSE = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.86+/-0.84 (seed42, 10k hands) / +1.69+/-0.81 (seed777, 16k hands) -- consistent magnitude, resolved fast. Shipped True.
+TURN_OVERBET_POT_FRACTION = 1.5
 
 # v28 (OPTIMAL_VALUE_SIZING_PER_ARCHETYPE): A2 above hardcodes "big sizing
 # for Nit/TAG only, standard for everyone else" -- a real finding, but only
@@ -3191,6 +3227,19 @@ def choose_abc_action(
                 and opponent_archetypes.get(live_opponents[0]) in LOOSE_ARCHETYPES
             ):
                 sizing = RIVER_OVERBET_POT_FRACTION
+            # 2026-08-18 (TURN_OVERBET_NUTS_VS_LOOSE): see the flag's
+            # comment above -- the same overbet-with-near-nuts-vs-loose
+            # idea, generalized to the turn instead of river-only.
+            if (
+                TURN_OVERBET_NUTS_VS_LOOSE
+                and made
+                and has_trips_or_better(player.hole_cards, hand.board)
+                and hand.street == "turn"
+                and opponent_archetypes
+                and len(live_opponents) == 1
+                and opponent_archetypes.get(live_opponents[0]) in LOOSE_ARCHETYPES
+            ):
+                sizing = TURN_OVERBET_POT_FRACTION
             # monster-pot fix, hero side (2026-08-07): the earlier fix only
             # touched the ML bots' sizing (backend/bots/behavior_clone.py) --
             # confirmed via a fresh hand-log pull that hero's OWN sizing here

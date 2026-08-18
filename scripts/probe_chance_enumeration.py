@@ -203,6 +203,10 @@ RULE_TEST_GROUPS = {
         ["RIVER_OVERBET_NUTS_VS_LOOSE"],
         "v27 genuine river overbet (150% pot) with trips-or-better vs a known loose/weak archetype",
     ),
+    "turn-overbet-nuts-vs-loose": (
+        ["TURN_OVERBET_NUTS_VS_LOOSE"],
+        "turn analogue of v27: genuine overbet (150% pot) with trips-or-better vs a known loose/weak archetype, generalized off river-only",
+    ),
     # 2026-08-17 (user-prompted "check sizings, SB strategy, postflop gaps"
     # research pass): new flags, none tested yet.
     "sized-4bet-instead-of-shove": (
@@ -512,6 +516,7 @@ ALL_COMPARISON_FLAGS = [
     "TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD",
     "EXTREME_AGGRO_STACK_FRACTION",
     "RIVER_OVERBET_NUTS_VS_LOOSE",
+    "TURN_OVERBET_NUTS_VS_LOOSE",
     "OPTIMAL_VALUE_SIZING_PER_ARCHETYPE",
     "ISO_WIDER_RANGE_OVER_LIMPERS",
     "SIZE_SCALED_CALL_RANGE",

@@ -196,6 +196,27 @@ resolved 2026-08-18 and `LIMP_TRAP_WITH_MONSTERS` understood as
 genuinely hard-to-pin-down rather than just under-sampled). 191 tests
 pass.
 
+### 2026-08-18: TURN_OVERBET_NUTS_VS_LOOSE -- generalized RIVER_OVERBET_NUTS_VS_LOOSE off river-only
+
+From the "what else globally needs checking" list: `RIVER_OVERBET_NUTS_
+VS_LOOSE` (v27) was always restricted to the river, but that restriction
+was never itself a tested finding -- just where the idea was first tried.
+Built the turn analogue (`TURN_OVERBET_NUTS_VS_LOOSE`, same has_trips_or_
+better bar and `LOOSE_ARCHETYPES` target, own sizing constant) and tested
+it, `scripts/turn_overbet_confirm.sh`, log `/tmp/turn_overbet_confirm_
+20260818_140943.log`, both seeds -- **confirmed POSITIVE both seeds,
+resolved unusually fast (10k/16k hands)**: +1.86±0.84 (seed42) /
++1.69±0.81 (seed777), consistent magnitude. **Shipped True.**
+
+Two other candidates from the same list were scoped and set aside rather
+than built this round: per-opponent (not archetype-level) bluff-frequency
+exploitation needs session-continuity simulation this project's precision
+test harness doesn't support (`backend/dossier.py`'s `SeatDossier` stats
+accumulate across many hands at one table; `probe_chance_enumeration.py`
+samples one fresh hand at a time) -- a real infrastructure gap, not a
+quick check. Tilt/bad-beat state-change detection has no groundwork in
+either repo -- would need fresh research against the real dataset first.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting
@@ -213,7 +234,9 @@ HAND`/`SIZE_UP_ON_WET_BOARD` (v23, shipped 2026-08-16, +7.97/+7.22 and
 this file has ever had, shipped 2026-08-17, +8.10/+9.35 bb/100),
 `RIVER_BLUFF_MISSED_DRAW` (bluff the river with a personally-missed
 flush/straight draw vs known tight archetypes, shipped 2026-08-17,
-+1.78/+2.95 bb/100).
++1.78/+2.95 bb/100), `TURN_OVERBET_NUTS_VS_LOOSE` (turn analogue of
+`RIVER_OVERBET_NUTS_VS_LOOSE`, generalized off river-only, shipped
+2026-08-18, +1.86/+1.69 bb/100).
 
 ### 2026-08-17: overnight research pass -- iso/shove sizing vs published theory, SB strategy, postflop gaps
 
