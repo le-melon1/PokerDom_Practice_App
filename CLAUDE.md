@@ -239,6 +239,68 @@ wetboard_confirm_20260818_150344.log`, both seeds:
 
 191 tests pass across multiple `PYTHONHASHSEED` values.
 
+### 2026-08-19/20: MAJOR restructure -- archetype split into two independent axes, full pipeline rebuilt
+
+User-directed: player classification is no longer one flat archetype
+label. Now two independent axes:
+- **Preflop archetype** (Nit/TAG/LAG/Loose-passive/Station/Maniac) --
+  made **purely preflop**. It used to gate Maniac on a postflop stat
+  (`af>=2.0`), mixing the two axes right where they're meant to be
+  independent -- user caught this ("значит у нас неправильно
+  распределены архетипы"). Redefined Maniac as `vpip>0.45 and
+  pfr_ratio>=0.45` (an extreme-VPIP LAG), no postflop input at all.
+- **`postflop_freq_tier`** (rare/normal/often) -- a 3-way split of the
+  same `aggression_factor` stat, using literature-grounded poker-HUD AF
+  thresholds (AF<2.0 / 2.0-3.0 / >3.0, researched via WebSearch per the
+  user's explicit request to base this on real convention rather than
+  fit our own data) rather than dataset-derived percentiles.
+
+**Real population shift**: Maniac drops from 3352 to 756 players (12.5%
+-> 2.8% of the labeled population) -- Station and Loose-passive absorbed
+most of the reclassified players.
+
+**Full cascade rebuilt** (user: "нужно вообще всё переделать под новые
+типы"), each step committed/pushed separately in both repos:
+1. All 4 `archetype_*.csv` reference tables (`build_archetype_tables.py`,
+   full 4379-file raw re-parse, no OOM issues).
+2. `matchup_hand_ev.csv` -- all 36 archetype pairs recomputed (~2 hours,
+   `overnight_ev_batch.py`; had to delete the stale file first since it
+   append-skips already-done pairs).
+3. `player_profile_seeds.csv`.
+4. **The ML opponent training dataset rebuilt** (34,543,852 decision
+   rows) **and BOTH CatBoost models retrained** -- old models backed up
+   first. This is the point of no return: the ML opponents now actually
+   behave differently.
+5. `session_length_by_archetype.csv` / `session_lengths_raw.csv`
+   (same stale-file issue as step 2).
+6. `ARCHETYPE_POPULATION_WEIGHTS` in `backend/sessions/live_dynamics.py`
+   manually updated to the new counts.
+
+191 tests + a 5000-hand whole-game smoke test both clean after the
+retrain (+22.45±10.79 bb/100 excl. monster pots -- strategy still
+clearly wins against the new population).
+
+**First re-validation round** against the new population/model
+(`scripts/repop_revalidate_round1.sh`, both seeds) -- prioritized the
+single biggest lever plus the one flag whose loose-archetype set
+explicitly includes Maniac:
+- **`OPPONENT_AWARE_ARCHETYPES`** (v10, the biggest lever in the whole
+  file): still confirmed POSITIVE both seeds, +47.01±11.91 (seed42) /
+  +59.24±13.91 (seed777). Makes sense in hindsight -- `LOOSE_ARCHETYPES`'s
+  three-archetype total (Loose-passive+Station+Maniac) barely moved in
+  aggregate (18,360 -> 18,542 of 26,797) even though Maniac specifically
+  shrank a lot.
+- **`WIDER_3BET_VS_LOOSE`** (v15/B1): previously "active but unconfirmed"
+  (old whole-game method, inside CI) -- now confirmed POSITIVE both
+  seeds with the modern method, +4.91±2.43 (seed42) / +5.99±2.72
+  (seed777). Resolves this backlog item and the population re-check at
+  the same time.
+
+**Everything else in this file's confirmed-flag history has NOT yet been
+re-validated against the new population** -- a large, explicitly
+ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the
+tracking note; do not assume old numbers still hold without re-checking.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting

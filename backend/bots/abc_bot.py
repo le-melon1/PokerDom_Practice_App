@@ -941,6 +941,49 @@ script's docstring). Revision history, each one a real measured finding:
   191 tests pass across multiple PYTHONHASHSEED values after flipping
   SEMI_BLUFF_RAISE_DRAWS_TURN.
 
+  2026-08-19/20: MAJOR restructure, user-directed -- opponent
+  classification split into two independent axes instead of one flat
+  archetype label. PokerDom_Microlimits_Analysis/src/pipeline/
+  archetypes.py: (1) new `postflop_freq_tier` (rare/normal/often, from
+  the same aggression_factor stat, literature-grounded AF thresholds
+  <2.0/2.0-3.0/>3.0), (2) the archetype function itself made PURELY
+  preflop -- it used to gate Maniac on postflop af>=2.0, mixing the two
+  axes; redefined as vpip>0.45 and pfr_ratio>=0.45 (no af parameter at
+  all). Real population shift: Maniac 3352 -> 756 players (12.5% ->
+  2.8%), absorbed mostly into Station/Loose-passive. Full cascade
+  rebuilt per user's "нужно вообще всё переделать под новые типы":
+  all 4 archetype_*.csv reference tables, matchup_hand_ev.csv (all 36
+  pairs), player_profile_seeds.csv, the ML opponent training dataset
+  (34.5M rows) and BOTH CatBoost models retrained, session-length-by-
+  archetype data, and ARCHETYPE_POPULATION_WEIGHTS in live_dynamics.py.
+  Old models backed up before overwriting. 191 tests + a whole-game
+  smoke test (5000 hands) both clean after the retrain, +22.45+/-10.79
+  bb/100 excl. monster pots -- the strategy is not broken against the
+  new population.
+
+  First re-validation round against the new population/model
+  (scripts/repop_revalidate_round1.sh, log
+  /tmp/repop_revalidate_round1_20260820_005*.log, both seeds) --
+  prioritized the single biggest lever in the file plus the one flag
+  whose loose-archetype set explicitly includes Maniac:
+    - OPPONENT_AWARE_ARCHETYPES (v10): still confirmed POSITIVE both
+      seeds, +47.01+/-11.91 (seed42) / +59.24+/-13.91 (seed777) -- the
+      biggest lever in the file survives the restructure intact. Makes
+      sense in hindsight: LOOSE_ARCHETYPES's three-archetype total
+      (Loose-passive+Station+Maniac) barely moved in aggregate (18,360
+      -> 18,542 of 26,797 players) even though Maniac specifically
+      shrank a lot -- the reclassified players landed in the other two
+      members of the same set.
+    - WIDER_3BET_VS_LOOSE (v15/B1): previously "active but unconfirmed"
+      (old whole-game method, +1.62 @500k, inside CI) -- NOW confirmed
+      POSITIVE both seeds with the modern method, +4.91+/-2.43 (seed42)
+      / +5.99+/-2.72 (seed777). Resolves this Tier-1 backlog item at the
+      same time as the population re-check.
+  Everything else in the file's confirmed-flag history has NOT yet been
+  re-validated against the new population -- flagged in memory as a
+  large, ongoing, multi-session task, not attempted exhaustively in one
+  sitting.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1645,7 +1688,7 @@ SIZED_4BET_MULTIPLIER_OOP = 2.6
 # "wider works here," not a precise optimal range.
 LOOSE_ARCHETYPES_FOR_3BET = {"Maniac", "Station"}
 VALUE_3BET_VS_LOOSE = VALUE_3BET | {"99", "88", "AJs", "AJo", "KQs", "KQo"}
-WIDER_3BET_VS_LOOSE = True  # flip False to A/B-test against the baseline (VALUE_3BET regardless of raiser)
+WIDER_3BET_VS_LOOSE = True  # 2026-08-20: was "active but unconfirmed" (old whole-game method, +1.62 @500k, inside CI) -- re-confirmed POSITIVE both seeds with the modern chance-enumeration method against the new archetype population, +4.91+/-2.43 (seed42) / +5.99+/-2.72 (seed777). See the changelog entry near the end of this docstring.
 
 # v21: a squeeze spot (facing one raise that's ALREADY been called by at
 # least one other player before hero acts) has never been treated any
