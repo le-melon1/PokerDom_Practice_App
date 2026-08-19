@@ -24,14 +24,22 @@ ARCHETYPE_POOL = ["Nit", "TAG", "LAG", "Loose-passive", "Station", "Maniac"]
 # even more so after the 2026-07-30 dataset expansion (1000 -> 4379
 # PokerStars files, 3.56M hands, 26,797 labeled players vs 8,619 before):
 # Loose-passive+Station+Maniac combined went from 57.9% to 68.5% of the
-# population. Refreshed from the original 841k-hand counts
-# (2479/1696/1352/1257/1025/810) to these bigger-sample ones.
-#   Loose-passive=8007  Station=7001  LAG=3899  Maniac=3352  TAG=2547  Nit=1991
+# population.
+#
+# 2026-08-19: refreshed again after archetypes.py's Maniac definition
+# changed from postflop-af-gated (vpip>0.45 and af>=2.0) to purely
+# preflop (vpip>0.45 and pfr_ratio>=0.45) -- see that module's own
+# docstring for why. Real, large shift: Maniac drops from 3352 to 756
+# (12.5% -> 2.8% of the population) now that postflop aggression is its
+# own independent axis (POSTFLOP_FREQ_TIER) instead of partly defining
+# the preflop archetype. Station and Loose-passive absorbed most of the
+# reclassified players.
+#   Loose-passive=8602  Station=9184  LAG=3717  Maniac=756  TAG=2547  Nit=1991
 ARCHETYPE_POPULATION_WEIGHTS = {
-    "Loose-passive": 8007,
-    "Station": 7001,
-    "LAG": 3899,
-    "Maniac": 3352,
+    "Loose-passive": 8602,
+    "Station": 9184,
+    "LAG": 3717,
+    "Maniac": 756,
     "TAG": 2547,
     "Nit": 1991,
 }
