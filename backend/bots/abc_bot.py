@@ -984,6 +984,46 @@ script's docstring). Revision history, each one a real measured finding:
   large, ongoing, multi-session task, not attempted exhaustively in one
   sitting.
 
+  Second re-validation round (scripts/repop_revalidate_round2.sh, log
+  /tmp/repop_revalidate_round2_20260820_012413.log, both seeds) --
+  covered every OTHER shipped-True flag that reads an opponent
+  archetype-set membership, per user instruction "нужно проверить все
+  флаги зависящие от типа игроков у нас же теперь они новые":
+    - FLOAT_FLOP_IN_POSITION: confirmed POSITIVE both seeds, +7.15+/-3.00
+      (seed42) / +11.51+/-4.78 (seed777).
+    - BLUFF_3BET_VS_TIGHT (v24): confirmed POSITIVE both seeds with the
+      modern method for the FIRST time ever (previously only the old
+      whole-game method had tested it, +1.80 bb/100 @2M/arm) --
+      +3.85+/-1.91 (seed42) / +5.42+/-2.60 (seed777).
+    - DONK_BLUFF_VS_TIGHT (r10/v17): confirmed POSITIVE both seeds,
+      +1.25+/-0.61 (seed42) / +2.47+/-1.23 (seed777).
+    - BARREL_BLUFF_VS_TIGHT (v25): confirmed POSITIVE both seeds,
+      +3.89+/-1.82 (seed42) / +6.94+/-3.44 (seed777).
+    - RIVER_BLUFF_MISSED_DRAW: confirmed POSITIVE both seeds,
+      +2.03+/-0.98 (seed42) / +2.85+/-1.36 (seed777).
+    - RIVER_OVERBET_NUTS_VS_LOOSE (v27): direction still positive both
+      seeds, but WEAKER than pre-restructure -- seed42 landed
+      +0.94+/-0.83 (inconclusive_small_effect, CI barely clears zero),
+      seed777 +3.74+/-1.85 (confirmed_positive). Not a clean both-seeds
+      re-confirmation by this file's own bar; stays True on the strength
+      of two-for-two positive direction plus the original pre-restructure
+      confirmation, but flagged for a bigger-sample re-check rather than
+      treated as fully re-validated.
+    - TURN_OVERBET_NUTS_VS_LOOSE: same pattern, weaker than pre-
+      restructure -- seed42 +0.35+/-0.93 (inconclusive_small_effect, CI
+      crosses zero), seed777 +1.88+/-0.93 (confirmed_positive). Same
+      caveat as RIVER_OVERBET_NUTS_VS_LOOSE above.
+    - STEAL_WIDER_VS_NIT / SIZING_TARGET_ARCHETYPES (v14): both hit ZERO
+      divergent hands in 100k on BOTH seeds -- still untestable by self-
+      play at the current population/model, same limitation as before
+      the restructure (TIGHT_ARCHETYPES_FOR_STEAL={"Nit"} is a rare-
+      opponent-behavior bottleneck, not a hero-hand one). Stays an open
+      Tier-1 backlog item, unresolved either way.
+  Net: 5/9 flags cleanly re-confirmed, 2/9 hold direction but weakened
+  (worth a bigger-sample follow-up), 2/9 remain untestable by self-play
+  regardless of population. No flag flipped sign or was disabled this
+  round.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 

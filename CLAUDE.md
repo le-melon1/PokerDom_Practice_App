@@ -296,6 +296,31 @@ explicitly includes Maniac:
   (seed777). Resolves this backlog item and the population re-check at
   the same time.
 
+**Second re-validation round** (`scripts/repop_revalidate_round2.sh`, both
+seeds) -- every other shipped-True flag that reads an opponent
+archetype-set membership, per user instruction "нужно проверить все
+флаги зависящие от типа игроков у нас же теперь они новые":
+- Cleanly re-confirmed POSITIVE both seeds (5): `FLOAT_FLOP_IN_POSITION`
+  (+7.15±3.00 / +11.51±4.78), `BLUFF_3BET_VS_TIGHT` (v24, +3.85±1.91 /
+  +5.42±2.60 -- first time ever confirmed with the modern method, was
+  previously old-whole-game-only), `DONK_BLUFF_VS_TIGHT` (r10/v17,
+  +1.25±0.61 / +2.47±1.23), `BARREL_BLUFF_VS_TIGHT` (v25, +3.89±1.82 /
+  +6.94±3.44), `RIVER_BLUFF_MISSED_DRAW` (+2.03±0.98 / +2.85±1.36).
+- Direction holds but weaker than pre-restructure, not a clean both-
+  seeds re-confirmation (2): `RIVER_OVERBET_NUTS_VS_LOOSE` (v27,
+  +0.94±0.83 seed42 inconclusive / +3.74±1.85 seed777 confirmed),
+  `TURN_OVERBET_NUTS_VS_LOOSE` (+0.35±0.93 seed42 inconclusive, CI
+  crosses zero / +1.88±0.93 seed777 confirmed). Both stay `True` on
+  two-for-two positive direction plus the original pre-restructure
+  confirmation, but flagged for a bigger-sample follow-up.
+- Still untestable by self-play, both seeds (2): `STEAL_WIDER_VS_NIT` /
+  `SIZING_TARGET_ARCHETYPES` (v14) -- zero divergent hands in 100k on
+  both seeds, same pre-existing rare-opponent-behavior bottleneck
+  (`TIGHT_ARCHETYPES_FOR_STEAL={"Nit"}`), unrelated to the restructure.
+  Remains an open Tier-1 backlog item.
+
+No flag flipped sign or was disabled across either re-validation round.
+
 **Everything else in this file's confirmed-flag history has NOT yet been
 re-validated against the new population** -- a large, explicitly
 ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the
