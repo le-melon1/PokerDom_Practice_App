@@ -1042,11 +1042,19 @@ script's docstring). Revision history, each one a real measured finding:
   (Station) and decision point, raise probability rises monotonically
   with tier -- rare 4.5% -> normal 6.4% -> often 7.5%.
 
-  STILL NOT DONE: no hero rule in this file reads opponent_freq_tiers
-  yet. The opponent MODEL now behaves differently by tier, but hero
-  doesn't yet exploit that -- designing and testing a freq-tier-aware
-  rule (e.g. call wider vs an "often" raiser, tighter vs a "rare" one)
-  is the next real step, not started.
+  STILL NOT DONE (as of the retrain above): no hero rule in this file
+  reads opponent_freq_tiers yet. The opponent MODEL now behaves
+  differently by tier, but hero doesn't yet exploit that -- designing
+  and testing a freq-tier-aware rule is the next real step, not started.
+
+  2026-08-20, WIDER_CALL_VS_OFTEN_TIER: the first rule to close that gap.
+  Generalizes the LOOSE_ARCHETYPES any-pair-or-better call across the
+  freq_tier axis -- OR'd with the existing archetype check, either being
+  true is enough to widen (see the flag's own comment for the full
+  reasoning). Confirmed POSITIVE both seeds, +22.27+/-7.39 (seed42) /
+  +11.24+/-5.51 (seed777). Shipped True. 191 tests pass across 3
+  PYTHONHASHSEED values, 5000-hand smoke test clean and improved further
+  (+38.47+/-11.76 bb/100 excl. monster pots, up from +33.26 pre-flag).
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -2358,6 +2366,26 @@ def has_any_pair_or_better(hole: list[str], board: list[str]) -> bool:
 # full opponent-exploitative one.
 LOOSE_ARCHETYPES = {"Loose-passive", "Station", "Maniac"}
 
+# 2026-08-20: the FIRST rule anywhere in this file to read
+# opponent_freq_tiers instead of opponent_archetypes -- generalizes the
+# LOOSE_ARCHETYPES any-pair-or-better call across the orthogonal axis. The
+# reasoning: LOOSE_ARCHETYPES targets archetypes that bet/raise with a weak
+# range on average, but postflop_freq_tier is the more DIRECT measurement
+# of "does this specific opponent raise too much" -- a TAG or LAG (not in
+# LOOSE_ARCHETYPES) who happens to be read as "often" is, within their own
+# archetype, still overraising relative to peers, the same overextended-
+# range signal LOOSE_ARCHETYPES was already a proxy for. OR'd with the
+# existing archetype check (either is enough to widen), not a replacement --
+# a known-loose archetype still widens the call regardless of their tier
+# reading. CONFIRMED POSITIVE both seeds (scripts/probe_chance_
+# enumeration.py, wider-call-vs-often-tier, --comparison current
+# --adaptive): +22.27+/-7.39 (seed42) / +11.24+/-5.51 (seed777). Only
+# possible to test meaningfully now that the ML opponent model has been
+# retrained to actually behave differently by tier (see behavior_clone.py's
+# CAT_FEATURES comment) -- before that retrain this same rule would have
+# been testing noise.
+WIDER_CALL_VS_OFTEN_TIER = True
+
 
 def _last_aggressor_this_street(hand: Hand) -> int | None:
     street_bets = [a for a in hand.actions if a.street == hand.street and a.action in ("bets", "raises")]
@@ -3538,10 +3566,13 @@ def choose_abc_action(
                 return ("fold", None)
         return ("call", None)
 
-    if opponent_archetypes and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
+    if (opponent_archetypes or opponent_freq_tiers) and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
         aggressor = _last_aggressor_this_street(hand)
-        aggressor_archetype = opponent_archetypes.get(aggressor) if aggressor is not None else None
-        if aggressor_archetype in LOOSE_ARCHETYPES and has_any_pair_or_better(player.hole_cards, hand.board):
+        aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
+        aggressor_freq_tier = opponent_freq_tiers.get(aggressor) if opponent_freq_tiers and aggressor is not None else None
+        is_loose_aggressor = aggressor_archetype in LOOSE_ARCHETYPES
+        is_often_aggressor = WIDER_CALL_VS_OFTEN_TIER and aggressor_freq_tier == "often"
+        if (is_loose_aggressor or is_often_aggressor) and has_any_pair_or_better(player.hole_cards, hand.board):
             return ("call", None)
 
     # pf7 (SPR_SCALED_THRESHOLDS): already near pot-committed (low

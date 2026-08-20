@@ -343,9 +343,13 @@ in two deliberate stages, per user's explicit choice to do infra first:
    learned it: same archetype (Station), raise probability rises
    monotonically with tier -- rare 4.5% → normal 6.4% → often 7.5%.
 
-**Still not done**: no rule in `abc_bot.py` reads `opponent_freq_tiers`
-yet. The opponent MODEL now varies by tier; hero doesn't exploit that yet
--- designing a freq-tier-aware hero rule is the next real step.
+**`WIDER_CALL_VS_OFTEN_TIER`** (2026-08-20, shipped True): the first rule
+to actually read `opponent_freq_tiers`. Generalizes the `LOOSE_ARCHETYPES`
+any-pair-or-better call across the freq_tier axis -- OR'd with the
+existing archetype check, either being true is enough to widen. Confirmed
+POSITIVE both seeds, +22.27±7.39 (seed42) / +11.24±5.51 (seed777). 191
+tests pass, 5000-hand smoke test improved further (+38.47±11.76 bb/100
+excl. monster pots, up from +33.26 pre-flag).
 
 **Everything else in this file's confirmed-flag history has NOT yet been
 re-validated against the new population** -- a large, explicitly

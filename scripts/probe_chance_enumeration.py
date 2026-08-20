@@ -251,6 +251,10 @@ RULE_TEST_GROUPS = {
         ["RIVER_BLUFF_MISSED_DRAW"],
         "bluff the river when checked to after a real flush/straight draw missed, vs a known tight archetype",
     ),
+    "wider-call-vs-often-tier": (
+        ["WIDER_CALL_VS_OFTEN_TIER"],
+        "call with any pair or better vs an aggressor read as postflop_freq_tier=often, generalizing LOOSE_ARCHETYPES across the orthogonal axis",
+    ),
     # 2026-08-17, follow-up round: diagnostic-only (never meant to ship) --
     # see SB_FOLD_VS_STEAL_DIAGNOSTIC's comment in abc_bot.py. Answers
     # "is SB's flat-call range vs a steal positive EV at all" (vs a pure
@@ -570,6 +574,7 @@ ALL_COMPARISON_FLAGS = [
     "FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT",
     "RIVER_BLUFF_MISSED_DRAW",
     "RIVER_BLUFF_MISSED_DRAW_POT_FRACTION",
+    "WIDER_CALL_VS_OFTEN_TIER",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
