@@ -898,6 +898,20 @@ def _hero_opponent_archetypes(hand, turnover: TableTurnover, flag_state: dict[st
     return {s: turnover.archetype_for(s) for s in bot_seats if hand.players[s].in_hand}
 
 
+def _hero_opponent_freq_tiers(hand, turnover: TableTurnover) -> dict[int, str] | None:
+    """Ground-truth {seat: postflop_freq_tier}, unconditional -- unlike
+    opponent_archetypes above, there's no PSEUDO_OPPONENT_AWARE gate yet
+    because no preset/rule reads this axis yet (2026-08-20 infra-only
+    step). Wired here so a future freq-tier-aware preset doesn't need any
+    further plumbing, just a comparison branch in _build_comparison that
+    reads opponent_freq_tiers. Note the seated bots' actual behavior does
+    NOT vary by this tier yet -- the ML opponent model wasn't retrained
+    with it as a feature, so this is ground truth for a signal the
+    opponents don't yet act on."""
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    return {s: turnover.freq_tier_for(s) for s in bot_seats if hand.players[s].in_hand}
+
+
 def _should_force_opponent_reraise(hand, seat: int) -> bool:
     """True when `seat` (a non-hero seat) is facing exactly hero's own
     preflop raise -- i.e. this is the decision point where "does the
@@ -968,7 +982,10 @@ def _choose_and_apply(
     if seat == HERO_SEAT:
         _apply_flag_state(flag_state)
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
-        action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
+        opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
+        action, amount = choose_abc_action(
+            hand, seat, opponent_archetypes=opponent_archetypes, opponent_freq_tiers=opponent_freq_tiers
+        )
     elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
         action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
     else:
@@ -1000,7 +1017,10 @@ def _continue_to_finish(
         if seat == HERO_SEAT:
             _apply_flag_state(flag_state)
             opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
-            action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
+            opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
+            action, amount = choose_abc_action(
+                hand, seat, opponent_archetypes=opponent_archetypes, opponent_freq_tiers=opponent_freq_tiers
+            )
         else:
             archetype = turnover.archetype_for(seat)
             bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat, branch_id)

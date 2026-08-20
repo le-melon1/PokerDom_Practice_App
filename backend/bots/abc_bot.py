@@ -2787,7 +2787,10 @@ RIVER_BLUFF_MISSED_DRAW_POT_FRACTION = 0.66
 
 
 def choose_abc_action(
-    hand: Hand, seat: int, opponent_archetypes: dict[int, str] | None = None
+    hand: Hand,
+    seat: int,
+    opponent_archetypes: dict[int, str] | None = None,
+    opponent_freq_tiers: dict[int, str] | None = None,
 ) -> tuple[str, float | None]:
     """`opponent_archetypes`: optional {seat: archetype} for the OTHER seats
     at the table. Only used to loosen the postflop calling bar against a
@@ -2795,7 +2798,17 @@ def choose_abc_action(
     this bot ignores it entirely. In the live practice app this would come
     from each seat's session dossier (`dossier.style`, an estimate); the
     simulation script can also pass the ground-truth archetype to measure the
-    ceiling of what opponent-awareness is worth before dossier noise."""
+    ceiling of what opponent-awareness is worth before dossier noise.
+
+    `opponent_freq_tiers`: optional {seat: postflop_freq_tier} ("rare"/
+    "normal"/"often"), the second independent axis from the 2026-08-20
+    archetype restructure. Plumbing only, added ahead of any rule that uses
+    it -- NOT read anywhere in this function yet, and the seated ML/
+    population bots' actual behavior does not vary by tier yet either (the
+    opponent model wasn't retrained with it as a feature). Both were left
+    for a deliberate follow-up once a real freq-tier-aware rule is designed
+    and ready to test -- see live_dynamics.py's ARCHETYPE_FREQ_TIER_WEIGHTS
+    comment for the full reasoning."""
     (
         open_ranges,
         call_ranges,

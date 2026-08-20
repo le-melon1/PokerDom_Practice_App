@@ -44,6 +44,60 @@ ARCHETYPE_POPULATION_WEIGHTS = {
     "Nit": 1991,
 }
 
+# 2026-08-20: second independent axis -- postflop raise-frequency tier
+# (rare/normal/often), split out of the archetype label itself so it can be
+# read separately from the (now purely preflop) archetype. Infra-only so
+# far, per user's explicit choice: this seats bots with a real tier and
+# makes it readable, but no decision in abc_bot.py reads it yet, and the
+# ML opponent model was NOT retrained with it as a feature -- so seated
+# bots' actual behavior does not yet vary by their assigned tier. Building
+# that (adding the feature + retrain) is deliberately deferred to a
+# separate step once real strategies are ready to consume the signal.
+#
+# Thresholds match src/pipeline/archetypes.py in PokerDom_Microlimits_
+# Analysis exactly (AF<2.0 rare / 2.0-3.0 normal / >3.0 often,
+# literature-grounded, not fit to this dataset) -- keep both in sync if
+# either changes.
+FREQ_TIER_POOL = ["rare", "normal", "often"]
+POSTFLOP_FREQ_RARE_MAX = 2.0
+POSTFLOP_FREQ_OFTEN_MIN = 3.0
+
+
+def _freq_tier_from_af(af: float) -> str:
+    if af < POSTFLOP_FREQ_RARE_MAX:
+        return "rare"
+    if af > POSTFLOP_FREQ_OFTEN_MIN:
+        return "often"
+    return "normal"
+
+
+# Real joint population counts: labeled players (label_archetypes' own
+# postflop_freq_tier column) cross-tabulated by archetype, same 26,797-
+# player dataset as ARCHETYPE_POPULATION_WEIGHTS above. Computed 2026-08-20
+# directly from data/processed/actions.parquet in the analysis project --
+# not a guess, not assumed independent of archetype (it isn't: e.g. Station
+# skews "rare" 5370/9184=58% since passive-calling stations by definition
+# raise less, while LAG is close to a 3-way split).
+ARCHETYPE_FREQ_TIER_WEIGHTS = {
+    "Nit": {"normal": 672, "often": 803, "rare": 516},
+    "TAG": {"normal": 978, "often": 1084, "rare": 485},
+    "LAG": {"normal": 1325, "often": 1186, "rare": 1206},
+    "Loose-passive": {"normal": 2741, "often": 1838, "rare": 4023},
+    "Station": {"normal": 2573, "often": 1241, "rare": 5370},
+    "Maniac": {"normal": 315, "often": 259, "rare": 182},
+}
+
+
+def sample_freq_tier(archetype: str, rng: random.Random | None = None) -> str:
+    """Weighted-random tier conditioned on archetype, from the real joint
+    distribution above."""
+    rng = rng or random
+    weights = ARCHETYPE_FREQ_TIER_WEIGHTS.get(archetype)
+    if not weights:
+        return rng.choice(FREQ_TIER_POOL)
+    tiers = list(weights.keys())
+    return rng.choices(tiers, weights=[weights[t] for t in tiers])[0]
+
 _lengths_by_archetype: dict[str, list[int]] | None = None
 
 
@@ -67,9 +121,10 @@ def sample_session_length(archetype: str, rng: random.Random | None = None) -> i
 
 
 class SeatOccupant:
-    def __init__(self, archetype: str, planned_length: int, profile_id: str | None = None):
+    def __init__(self, archetype: str, planned_length: int, freq_tier: str, profile_id: str | None = None):
         self.archetype = archetype
         self.planned_length = planned_length
+        self.freq_tier = freq_tier
         self.hands_played = 0
         # None in normal archetype mode. When set, this seat is a "real
         # player" bot (see backend/bots/player_profile_bots.py) instead of
@@ -122,9 +177,15 @@ class TableTurnover:
             from backend.bots.player_profile_bots import load_profile_pool
 
             profile_id = self.rng.choice(self.player_profile_ids)
-            archetype = load_profile_pool()[profile_id]["archetype"]
+            profile = load_profile_pool()[profile_id]
+            archetype = profile["archetype"]
+            # Real players get their OWN measured tier (from their actual
+            # aggression_factor), not a population sample -- more precise
+            # than sampling since we already know this specific person's
+            # postflop frequency.
+            freq_tier = _freq_tier_from_af(profile["aggression_factor"])
             length = sample_session_length(archetype, self.rng)
-            occ = SeatOccupant(archetype, length, profile_id=profile_id)
+            occ = SeatOccupant(archetype, length, freq_tier, profile_id=profile_id)
             self.occupants[seat] = occ
             return occ
 
@@ -133,13 +194,17 @@ class TableTurnover:
             pool,
             weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
         )[0]
+        freq_tier = sample_freq_tier(archetype, self.rng)
         length = sample_session_length(archetype, self.rng)
-        occ = SeatOccupant(archetype, length)
+        occ = SeatOccupant(archetype, length, freq_tier)
         self.occupants[seat] = occ
         return occ
 
     def archetype_for(self, seat: int) -> str:
         return self.occupants[seat].archetype
+
+    def freq_tier_for(self, seat: int) -> str:
+        return self.occupants[seat].freq_tier
 
     def profile_id_for(self, seat: int) -> str | None:
         return self.occupants[seat].profile_id
