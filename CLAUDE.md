@@ -321,6 +321,32 @@ archetype-set membership, per user instruction "нужно проверить в
 
 No flag flipped sign or was disabled across either re-validation round.
 
+### `postflop_freq_tier`: infra built, then retrained (2026-08-20)
+
+Second independent axis (rare/normal/often, from `aggression_factor`) built
+in two deliberate stages, per user's explicit choice to do infra first:
+
+1. **Infra-only** (commit `37c9699`): `live_dynamics.py` seats bots with a
+   real per-archetype-weighted tier (`ARCHETYPE_FREQ_TIER_WEIGHTS`,
+   real joint population counts); `TableTurnover.freq_tier_for(seat)`;
+   `choose_abc_action` gained an `opponent_freq_tiers` param, documented
+   as unused. At this stage seated bots were LABELED with a tier but
+   didn't behave differently by it.
+2. **Retrain**: `behavior_clone.py`'s `CAT_FEATURES` gained `"freq_tier"`;
+   `build_training_data.py` now carries each real player's own measured
+   `postflop_freq_tier` (ground truth, not sampled) into every training
+   row; both CatBoost models retrained (old ones backed up first).
+   Losses improved slightly (action 0.6699→0.6675, sizing 0.5909→0.5900)
+   -- a real signal. 191 tests pass (3 `PYTHONHASHSEED` values), 5000-hand
+   smoke test clean (+33.26±11.28 bb/100 excl. monster pots, better than
+   the archetype-only-retrain baseline). Direct check confirms the model
+   learned it: same archetype (Station), raise probability rises
+   monotonically with tier -- rare 4.5% → normal 6.4% → often 7.5%.
+
+**Still not done**: no rule in `abc_bot.py` reads `opponent_freq_tiers`
+yet. The opponent MODEL now varies by tier; hero doesn't exploit that yet
+-- designing a freq-tier-aware hero rule is the next real step.
+
 **Everything else in this file's confirmed-flag history has NOT yet been
 re-validated against the new population** -- a large, explicitly
 ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the

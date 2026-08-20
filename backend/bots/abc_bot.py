@@ -1024,6 +1024,30 @@ script's docstring). Revision history, each one a real measured finding:
   regardless of population. No flag flipped sign or was disabled this
   round.
 
+  2026-08-20, postflop_freq_tier retrain: after landing the infra-only
+  step (live tier assignment + opponent_freq_tiers plumbing through
+  choose_abc_action, no rule reads it), the ML opponent model
+  (behavior_clone.py) was retrained WITH freq_tier added to
+  CAT_FEATURES (see that file's own comment). build_training_data.py now
+  carries each real player's own measured postflop_freq_tier alongside
+  their archetype -- ground truth, not a population sample, since we
+  already know that specific real player's aggression_factor. Old
+  models backed up first. Losses improved slightly over the archetype-
+  only retrain (action bestTest 0.6699 -> 0.6675, sizing 0.5909 ->
+  0.5900) -- a small but real signal, not noise. 191 tests pass across 3
+  PYTHONHASHSEED values, 5000-hand whole-game smoke test clean
+  (+33.26+/-11.28 bb/100 excl. monster pots, better than the +22.45
+  archetype-only-retrain baseline, no crash). Direct sanity check
+  confirms the model actually learned the signal: same archetype
+  (Station) and decision point, raise probability rises monotonically
+  with tier -- rare 4.5% -> normal 6.4% -> often 7.5%.
+
+  STILL NOT DONE: no hero rule in this file reads opponent_freq_tiers
+  yet. The opponent MODEL now behaves differently by tier, but hero
+  doesn't yet exploit that -- designing and testing a freq-tier-aware
+  rule (e.g. call wider vs an "often" raiser, tighter vs a "rare" one)
+  is the next real step, not started.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 

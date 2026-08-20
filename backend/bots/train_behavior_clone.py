@@ -24,7 +24,9 @@ from sklearn.model_selection import train_test_split
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "behavior_clone_training_data.parquet"
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
-CAT_FEATURES = ["street", "position", "archetype"]
+CAT_FEATURES = ["street", "position", "archetype", "freq_tier"]
+# 2026-08-20: freq_tier (rare/normal/often) added -- must match
+# behavior_clone.py's CAT_FEATURES exactly, see that file's comment for why.
 # 2026-07-30: tried adding stack_bb/spr here (real stack-depth data exists in
 # build_training_data.py's output, computed but unused) hoping it would fix
 # the ML bots' "monster pot" tendency. Measured result: monster-pot rate was

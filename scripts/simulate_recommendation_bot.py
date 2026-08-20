@@ -143,7 +143,8 @@ def run_batch(n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int) 
                     hand.apply_action(seat, "fold")
             else:
                 archetype = turnover.archetype_for(seat)
-                action, amount = choose_bot_action(hand, seat, archetype=archetype)
+                freq_tier = turnover.freq_tier_for(seat)
+                action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier)
                 try:
                     hand.apply_action(seat, action, amount)
                 except IllegalAction:

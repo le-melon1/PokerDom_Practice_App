@@ -103,7 +103,8 @@ def main(n_hands: int = 80000, seed: int = 42):
                 action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
             else:
                 archetype = turnover.archetype_for(seat)
-                action, amount = choose_bot_action(hand, seat, archetype=archetype)
+                freq_tier = turnover.freq_tier_for(seat)
+                action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier)
             try:
                 hand.apply_action(seat, action, amount)
             except IllegalAction:

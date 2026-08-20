@@ -187,9 +187,10 @@ def _step_one_bot() -> float | None:
         think_time = player_profile_think_time(action)
     else:
         archetype = turnover.archetype_for(seat)
+        freq_tier = turnover.freq_tier_for(seat)
         hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
         action, amount = choose_bot_action(
-            hand, seat, archetype=archetype, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
+            hand, seat, archetype=archetype, freq_tier=freq_tier, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
         )
         think_time = bot_think_time(action)
     try:

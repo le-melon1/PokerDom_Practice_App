@@ -258,7 +258,16 @@ if TYPE_CHECKING:
 
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
-CAT_FEATURES = ["street", "position", "archetype"]
+CAT_FEATURES = ["street", "position", "archetype", "freq_tier"]
+# 2026-08-20: freq_tier (rare/normal/often) added -- the second independent
+# axis from the archetype restructure (see live_dynamics.py's
+# ARCHETYPE_FREQ_TIER_WEIGHTS comment). Training rows now carry each real
+# player's own postflop_freq_tier alongside their (now purely preflop)
+# archetype, so the model can finally learn that e.g. two Stations with
+# different real raise frequencies don't play identically -- something the
+# old archetype-only model structurally could not represent since that
+# signal used to be partly baked into (and partly lost from) the archetype
+# label itself. Must match train_behavior_clone.py's CAT_FEATURES exactly.
 # 2026-07-30: stack_bb/spr were added then reverted here -- see
 # train_behavior_clone.py's NUMERIC_FEATURES comment for the full story
 # (measured regression, not just "no improvement"). Must match that file's
@@ -446,7 +455,7 @@ def _style_bias(archetype: str) -> dict[str, float]:
     return {"folds": 1.0, "checks": 1.0, "calls": 1.05, "bets": 1.05, "raises": 1.05}
 
 
-def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
+def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str) -> dict:
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     pot_before = sum(p.total_contributed for p in hand.players.values())
@@ -457,6 +466,7 @@ def _build_features(hand: Hand, seat: int, archetype: str) -> dict:
         "street": hand.street,
         "position": _seat_position(hand, seat),
         "archetype": archetype,
+        "freq_tier": freq_tier,
         "to_call_frac": (legal["call_amount"] / pot_before) if pot_before > 0 else 0.0,
         "n_raises_this_street": _n_raises_this_street(hand),
         **{f"board_{k}": v for k, v in texture.items()},
@@ -470,12 +480,18 @@ def choose_bot_action(
     hand: Hand,
     seat: int,
     archetype: str = "TAG",
+    freq_tier: str = "normal",
     seed: int | None = None,
     hero_seat: int | None = None,
     hero_dossier: "SeatDossier | None" = None,
 ) -> tuple[str, float | None]:
     """Returns (action, amount) ready to pass to Hand.apply_action. `amount` is
     None for fold/check/call.
+
+    `freq_tier`: "rare"/"normal"/"often", this seat's postflop raise-
+    frequency tier (see CAT_FEATURES comment above). Defaults to "normal"
+    for any caller that doesn't pass it, matching the middle/most common
+    bucket rather than an unlabeled category the model never saw in training.
 
     `hero_seat`/`hero_dossier`: optional, both None by default (a full no-op
     for every caller that doesn't pass them). When both are given and this
@@ -485,7 +501,7 @@ def choose_bot_action(
     action_model, sizing_model = _load_models()
     rng = random.Random(seed)
 
-    features = _build_features(hand, seat, archetype)
+    features = _build_features(hand, seat, archetype, freq_tier)
     legal = hand.legal_actions(seat)
 
     row = [[features[f] for f in FEATURES]]

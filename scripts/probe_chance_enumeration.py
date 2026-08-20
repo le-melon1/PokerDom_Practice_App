@@ -990,8 +990,9 @@ def _choose_and_apply(
         action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
     else:
         archetype = turnover.archetype_for(seat)
+        freq_tier = turnover.freq_tier_for(seat)
         bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
-        action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
+        action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier, seed=bot_seed)
 
     try:
         hand.apply_action(seat, action, amount)
@@ -1023,8 +1024,9 @@ def _continue_to_finish(
             )
         else:
             archetype = turnover.archetype_for(seat)
+            freq_tier = turnover.freq_tier_for(seat)
             bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat, branch_id)
-            action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
+            action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier, seed=bot_seed)
         try:
             hand.apply_action(seat, action, amount)
         except IllegalAction:

@@ -43,7 +43,9 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> list[dict]:
+def _hand_rows(
+    hand_id, grp, board_by_hand: dict, archetype_by_player: dict, freq_tier_by_player: dict
+) -> list[dict]:
     if grp["big_blind"].iloc[0] <= 0:
         return []  # same rare malformed/missed-blind hands filtered elsewhere in the analysis project
 
@@ -115,6 +117,13 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
         to_call = max(current_street_bet - contributed_before, 0.0)
 
         archetype = archetype_by_player.get(row.player, "Insufficient sample")
+        # 2026-08-20: real player's OWN measured tier, same field
+        # label_archetypes() already computes (postflop_freq_tier) -- not a
+        # population sample, this is ground truth for that specific real
+        # player. "normal" fallback for anyone missing from the lookup
+        # (shouldn't happen since both dicts come from the same stats df,
+        # but matches choose_bot_action's own default rather than crashing).
+        freq_tier = freq_tier_by_player.get(row.player, "normal")
         remaining_stack = max(row.stack - total_contributed.get(row.player, 0.0), 0.0)
 
         rows.append(
@@ -123,6 +132,7 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
                 "street": current_street,
                 "position": row.position,
                 "archetype": archetype,
+                "freq_tier": freq_tier,
                 "pot_before": pot_before,
                 "to_call_frac": to_call / pot_before,
                 "n_raises_this_street": n_raises_this_street,
@@ -155,7 +165,11 @@ def _hand_rows(hand_id, grp, board_by_hand: dict, archetype_by_player: dict) -> 
 
 
 def build_dataset_streaming(
-    actions_df: pd.DataFrame, hands_df: pd.DataFrame, archetype_by_player: dict, out_path: Path,
+    actions_df: pd.DataFrame,
+    hands_df: pd.DataFrame,
+    archetype_by_player: dict,
+    freq_tier_by_player: dict,
+    out_path: Path,
 ) -> int:
     """Streams the training dataset straight to `out_path` in bounded
     hand-count batches, never holding more than one batch's decision rows in
@@ -179,7 +193,7 @@ def build_dataset_streaming(
         batch_rows = []
 
     for hand_id, grp in actions_df.groupby("hand_id", sort=False):
-        batch_rows.extend(_hand_rows(hand_id, grp, board_by_hand, archetype_by_player))
+        batch_rows.extend(_hand_rows(hand_id, grp, board_by_hand, archetype_by_player, freq_tier_by_player))
         n_hands += 1
         if n_hands % HAND_BATCH_SIZE == 0:
             _flush()
@@ -200,12 +214,13 @@ def main():
     log("labeling archetypes...")
     stats = label_archetypes(player_stats(actions_df))
     archetype_by_player = dict(zip(stats["player"], stats["archetype"]))
+    freq_tier_by_player = dict(zip(stats["player"], stats["postflop_freq_tier"]))
 
     out_path = Path(__file__).resolve().parent.parent.parent / "data" / "behavior_clone_training_data.parquet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log(f"building decision dataset from {len(actions_df)} actions, streaming to {out_path}...")
-    build_dataset_streaming(actions_df, hands_df, archetype_by_player, out_path)
+    build_dataset_streaming(actions_df, hands_df, archetype_by_player, freq_tier_by_player, out_path)
 
 
 if __name__ == "__main__":

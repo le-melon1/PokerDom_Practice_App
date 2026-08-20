@@ -136,8 +136,9 @@ def run_batch(
                 action, amount = choose_abc_action(hand, seat, opponent_archetypes=opponent_archetypes)
             else:
                 archetype = turnover.archetype_for(seat)
+                freq_tier = turnover.freq_tier_for(seat)
                 bot_seed = _common_seed(seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat) if use_common_random else None
-                action, amount = choose_bot_action(hand, seat, archetype=archetype, seed=bot_seed)
+                action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier, seed=bot_seed)
             try:
                 hand.apply_action(seat, action, amount)
             except IllegalAction:
