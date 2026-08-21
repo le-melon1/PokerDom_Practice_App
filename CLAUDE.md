@@ -351,6 +351,30 @@ POSITIVE both seeds, +22.27±7.39 (seed42) / +11.24±5.51 (seed777). 191
 tests pass, 5000-hand smoke test improved further (+38.47±11.76 bb/100
 excl. monster pots, up from +33.26 pre-flag).
 
+### 2026-08-21: pokerdom_pending_ideas backlog cleanup
+
+Bigger-N re-checks (`scripts/pending_backlog_round1.sh`), both seeds where
+applicable:
+- **`USE_WIDE_VALUE_3BET`** (v9): last remaining Tier-1 item. CONFIRMED
+  POSITIVE both seeds with the modern method, +6.73±2.88 (seed42) /
+  +3.60±1.78 (seed777). No longer pending.
+- **`FOLD_VS_3BET_FROM_PASSIVE`** (r29): re-run with a 300k-hand budget --
+  ZERO divergent hands on BOTH seeds now. Confirmed untestable by self-
+  play at the current population/model, same class as
+  `STEAL_WIDER_VS_NIT`. Stays `False`.
+- **`OPTIMAL_VALUE_SIZING_PER_ARCHETYPE`** (v28): magnitude pinned down
+  with a big single run (90k hands, 3035 divergent), +1.39±0.79 bb/100.
+- **`RIVER_OVERBET_NUTS_VS_LOOSE`** / **`TURN_OVERBET_NUTS_VS_LOOSE`**:
+  bigger budget (up to 144k hands) confirms direction still positive both
+  seeds, but the magnitude has converged close to zero (river:
+  +0.51±0.98 / +0.98±0.83; turn: +0.72±0.57 / +0.59±0.53), both landing
+  `inconclusive_small_effect` even at this sample size -- a real finding,
+  not sampling noise. Whatever edge these had pre-restructure has largely
+  evaporated. Both stay `True` (no evidence of harm) but should not be
+  cited with their old magnitudes anymore.
+
+191 tests pass, 5000-hand smoke test unaffected.
+
 **Everything else in this file's confirmed-flag history has NOT yet been
 re-validated against the new population** -- a large, explicitly
 ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the

@@ -237,6 +237,14 @@ RULE_TEST_GROUPS = {
         ["FLOAT_FLOP_IN_POSITION"],
         "call a flop bet in position with no hand/draw, bet the turn if checked to again",
     ),
+    "float-turn-in-position": (
+        ["FLOAT_TURN_IN_POSITION"],
+        "call a turn bet in position with no hand/draw, bet the river if checked to again -- FLOAT_FLOP_IN_POSITION generalized one street later",
+    ),
+    "size-up-premium-3bets": (
+        ["SIZE_UP_PREMIUM_3BETS"],
+        "size up the value 3-bet with a premium hand -- SIZE_UP_PREMIUM_OPENS generalized to the 3-bet",
+    ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
     "fold-marginal-vs-big-donk": (
@@ -575,6 +583,8 @@ ALL_COMPARISON_FLAGS = [
     "RIVER_BLUFF_MISSED_DRAW",
     "RIVER_BLUFF_MISSED_DRAW_POT_FRACTION",
     "WIDER_CALL_VS_OFTEN_TIER",
+    "FLOAT_TURN_IN_POSITION",
+    "SIZE_UP_PREMIUM_3BETS",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 

@@ -1056,6 +1056,41 @@ script's docstring). Revision history, each one a real measured finding:
   PYTHONHASHSEED values, 5000-hand smoke test clean and improved further
   (+38.47+/-11.76 bb/100 excl. monster pots, up from +33.26 pre-flag).
 
+  2026-08-21, pokerdom_pending_ideas backlog cleanup (scripts/
+  pending_backlog_round1.sh, bigger-N budgets, both seeds where
+  applicable):
+    - USE_WIDE_VALUE_3BET (v9): last remaining Tier-1 "old whole-game
+      method only" item. CONFIRMED POSITIVE both seeds with the modern
+      method, +6.73+/-2.88 (seed42) / +3.60+/-1.78 (seed777). No longer
+      pending.
+    - FOLD_VS_3BET_FROM_PASSIVE (r29): previously one seed confirmed
+      negative, one seed zero divergent hands (never cross-validated).
+      Re-run with a 300k-hand budget: ZERO divergent hands on BOTH seeds
+      now -- confirmed untestable by self-play at the current population/
+      model, same class as STEAL_WIDER_VS_NIT. Stays False, no longer an
+      open cross-validation question (it's a genuine self-play blind
+      spot, not unresolved).
+    - OPTIMAL_VALUE_SIZING_PER_ARCHETYPE (v28): magnitude was fuzzy
+      (+0.68 to +4.88 bb/100 across 5 samples, sign always positive).
+      Pinned down with one big run (90k hands, target_ci=0.5,
+      3035 divergent hands): +1.39+/-0.79 bb/100. Resolves the backlog
+      item.
+    - RIVER_OVERBET_NUTS_VS_LOOSE / TURN_OVERBET_NUTS_VS_LOOSE: the
+      round-2 re-validation (2026-08-20) found these weaker than pre-
+      restructure but still nominally positive both seeds. Re-run here
+      with a much bigger budget (up to 144k hands): direction STILL
+      positive both seeds, but the magnitude has converged close to zero
+      (river: +0.51+/-0.98 / +0.98+/-0.83; turn: +0.72+/-0.57 /
+      +0.59+/-0.53) -- both landed stop_reason=inconclusive_small_effect
+      even at this sample size, not just noise from a small run. Real
+      finding: whatever edge these had pre-restructure has largely
+      evaporated under the new archetype/model population. Both stay
+      True (no evidence of active harm, and flipping on a
+      near-zero-but-still-positive point estimate isn't warranted
+      either) but should not be cited with their old magnitudes anymore.
+  191 tests pass, 5000-hand smoke test unaffected (no flag changed
+  direction).
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1438,7 +1473,7 @@ STANDARD_SIZING_POT_FRACTION = 0.50
 # v27: see the RIVER_OVERBET_NUTS_VS_LOOSE comment in choose_abc_action's
 # checked-to branch. A genuine overbet (>100% pot) -- BIG_VALUE_SIZING_
 # POT_FRACTION's 0.75 never crosses the pot itself.
-RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog
+RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog. 2026-08-21 post-restructure re-check (bigger N, up to 144k hands): direction still positive both seeds but shrunk close to zero (+0.51+/-0.98 seed42, +0.98+/-0.83 seed777, both inconclusive_small_effect) -- stays True (no evidence of harm), but the original +1.12/+4.04 magnitude looks stale under the new population/model.
 RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
 
 # 2026-08-18 (untested): turn analogue of RIVER_OVERBET_NUTS_VS_LOOSE --
@@ -1454,7 +1489,7 @@ RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not 
 # version; own flag/sizing constant so the two can be tuned independently
 # (a turn overbet carries extra risk from redraws the river version
 # doesn't, so it isn't assumed to share the exact same optimal sizing).
-TURN_OVERBET_NUTS_VS_LOOSE = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.86+/-0.84 (seed42, 10k hands) / +1.69+/-0.81 (seed777, 16k hands) -- consistent magnitude, resolved fast. Shipped True.
+TURN_OVERBET_NUTS_VS_LOOSE = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.86+/-0.84 (seed42, 10k hands) / +1.69+/-0.81 (seed777, 16k hands) -- consistent magnitude, resolved fast. Shipped True. 2026-08-21 post-restructure re-check (bigger N, 8k hands both seeds): direction still positive both seeds but shrunk close to zero (+0.72+/-0.57 seed42, +0.59+/-0.53 seed777, both inconclusive_small_effect) -- same pattern as RIVER_OVERBET_NUTS_VS_LOOSE. Stays True.
 TURN_OVERBET_POT_FRACTION = 1.5
 
 # v28 (OPTIMAL_VALUE_SIZING_PER_ARCHETYPE): A2 above hardcodes "big sizing
@@ -1474,7 +1509,7 @@ TURN_OVERBET_POT_FRACTION = 1.5
 # the disclosed approximation (a single assumed made-hand equity constant,
 # not a real per-hand equity read, which this bot deliberately doesn't
 # compute anywhere else either).
-OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = True  # 2026-08-12/13: confirmed positive across 4 independent chance-enumeration samples, all positive direction (+2.25, +0.82, +4.88, and a precise large-sample +1.45+/-0.62 @ 54k hands/2001 divergent -- the last one clears the standard confirmed_positive bar cleanly). Shipped True.
+OPTIMAL_VALUE_SIZING_PER_ARCHETYPE = True  # 2026-08-12/13: confirmed positive across 4 independent chance-enumeration samples, all positive direction (+2.25, +0.82, +4.88, and a precise large-sample +1.45+/-0.62 @ 54k hands/2001 divergent -- the last one clears the standard confirmed_positive bar cleanly). Shipped True. 2026-08-21: magnitude pinned down with a much bigger single run (90k hands, 3035 divergent, target_ci=0.5), +1.39+/-0.79 bb/100 -- right in the middle of the prior 0.68-4.88 range, resolves the Tier-3 backlog item.
 ASSUMED_VALUE_HAND_EQUITY = 0.75  # disclosed, single-number approximation of "how often a should_bet hand is still best when called" -- not a real per-hand equity computation
 
 # monster-pot fix, hero side -- see choose_abc_action's
@@ -1666,6 +1701,17 @@ ISO_WIDER_RANGE_OVER_LIMPERS = False
 SIZE_UP_PREMIUM_OPENS = True  # 2026-08-13: v19b's old whole-game test (+1.76/-0.76, inside CI, sign flip) was too imprecise. Re-tested with the chance-enumeration probe (r20): +4.00+/-1.89 @ seed42, +3.05+/-1.44 @ seed777, combined-CI-in-quadrature 2.38 vs a 0.95 delta between them -- well inside, confirmed. Shipped True.
 PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
 
+# 2026-08-20 (untested): SIZE_UP_PREMIUM_OPENS generalized one decision
+# point later -- the same idea (a stronger-than-baseline hand sizes up
+# instead of keeping the range's sizing flat) applied to the VALUE 3-bet
+# (facing exactly one raise, notation in value_3bet_range) instead of the
+# open-raise. Reuses VALUE_3BET_TIGHT as the "premium" subset, same
+# pattern SIZE_UP_PREMIUM_OPENS already established rather than defining a
+# third similar-but-different premium-hand list. Needs its own A/B
+# confirmation before shipping True.
+SIZE_UP_PREMIUM_3BETS = False
+PREMIUM_3BET_SIZING_BONUS_BB = 1.5
+
 # v17, C2: archetype_facing_bet_by_initiative.csv (new this session --
 # PokerDom_Microlimits_Analysis/scripts/build_archetype_tables.py, extended
 # to tag each postflop bet with whether the bettor had preflop initiative)
@@ -1700,7 +1746,7 @@ VALUE_3BET_WIDE = VALUE_3BET_TIGHT | {"JJ", "TT", "AQs", "AQo"}
 # hypothesis, not a validated finding. Widening the value-3-bet range adds
 # preflop-only fold equity, which is specifically valuable against rake
 # ("no flop no drop" -- a preflop-only win pays zero rake).
-USE_WIDE_VALUE_3BET = True
+USE_WIDE_VALUE_3BET = True  # 2026-08-13/2026-08-21: v9's old whole-game test (+0.80 @500k, inside CI) was too imprecise -- last remaining Tier-1 "old method only" backlog item, re-tested with the modern chance-enumeration method 2026-08-21: confirmed POSITIVE both seeds, +6.73+/-2.88 (seed42) / +3.60+/-1.78 (seed777). Resolves the backlog item, no longer pending.
 VALUE_3BET = VALUE_3BET_WIDE if USE_WIDE_VALUE_3BET else VALUE_3BET_TIGHT
 PREMIUM_VS_3BET = VALUE_3BET_TIGHT  # facing a 3-bet+, stay tight regardless -- going deeper with JJ/TT/AQ vs real aggression isn't worth it
 
@@ -1983,7 +2029,7 @@ LATE_THREEBET_BLUFF_POSITIONS = {"CO", "BTN", "SB"}
 # archetype -- v26 already folds vs Nit/TAG on an extreme-sized bet; this is
 # the mirror case (a normally-passive player suddenly 3-betting), independent
 # of bet size.
-FOLD_VS_3BET_FROM_PASSIVE = False
+FOLD_VS_3BET_FROM_PASSIVE = False  # 2026-08-15: seed42 confirmed negative (-2.15+/-1.22), seed777 had zero divergent hands in 50k -- never cross-validated. 2026-08-21 re-check post-restructure with a 300k-hand budget: ZERO divergent hands on BOTH seeds now -- confirmed untestable by self-play at the current population/model, same class as STEAL_WIDER_VS_NIT (a passive archetype 3-betting at all is too rare an OPPONENT-behavior event, not a hero-hand-filter-fixable problem).
 PASSIVE_ARCHETYPES_FOR_3BET_FOLD = {"Station"}
 
 # Candidate: defend the BB more specifically against cheap late-position
@@ -2791,6 +2837,24 @@ FOLD_MARGINAL_VS_CHECK_RAISE = False
 FLOAT_FLOP_IN_POSITION = True
 FLOAT_FOLLOWUP_POT_FRACTION = 0.66  # "bet pretty large when barreling the turn" -- published sizing convention, not fit to a measured breakeven point
 
+# 2026-08-20 (untested): generalizes FLOAT_FLOP_IN_POSITION one street later
+# -- the same "a rule was restricted to one street and the restriction was
+# never itself tested" pattern that produced SEMI_BLUFF_RAISE_DRAWS_TURN and
+# TURN_OVERBET_NUTS_VS_LOOSE (both confirmed positive). Two parts, same
+# shape as the flop version:
+#   1. Turn, facing a bet, hero has neither `made` nor a real draw -- call
+#      instead of folding IF in position vs the single live opponent and
+#      that opponent isn't a known loose archetype. Independent of whether
+#      hero also floated the flop this hand -- a turn float can start fresh
+#      (e.g. hero checked back the flop with initiative, then faces a bet
+#      on the turn for the first time).
+#   2. River, checked to, hero still has no hand -- bet, gated on hero
+#      having called a bet on the TURN this hand (not flop -- reuses
+#      _hero_called_a_bet_this_hand with street="turn").
+# Independently toggleable from FLOAT_FLOP_IN_POSITION -- either, both, or
+# neither can be on. Needs its own A/B confirmation before shipping True.
+FLOAT_TURN_IN_POSITION = False
+
 # 2026-08-17, later same day (continuing the postflop-gap audit): the three
 # real gaps flagged but not closed in the overnight pass above. Same
 # discipline -- researched against published sources first, built as its
@@ -3016,6 +3080,11 @@ def choose_abc_action(
             # constant's comment above.
             if SQUEEZE_SIZE_UP_PER_CALLER:
                 amount += hand.big_blind * SQUEEZE_SIZING_PER_CALLER_BB * n_callers_in
+            # SIZE_UP_PREMIUM_3BETS (see the constant's comment above): the
+            # same sizing bonus SIZE_UP_PREMIUM_OPENS gives a premium open,
+            # applied to the value 3-bet.
+            if SIZE_UP_PREMIUM_3BETS and notation in VALUE_3BET_TIGHT:
+                amount += hand.big_blind * PREMIUM_3BET_SIZING_BONUS_BB
             amount = max(legal["min_raise_to"], min(legal["max_raise_to"], amount))
             return ("raise", amount)
         # v24 (BLUFF_3BET_VS_TIGHT): this bot has never had a bluff 3-bet --
@@ -3237,6 +3306,20 @@ def choose_abc_action(
             and _hero_called_a_bet_this_hand(hand, seat, "flop")
         ):
             float_followup_turn = True
+        # FLOAT_TURN_IN_POSITION, part 2 (see the flag's comment above): the
+        # same follow-through, one street later -- hero called a turn bet
+        # with air, got checked to on the river, bets. Reuses
+        # _hero_called_a_bet_this_hand with street="turn" instead of "flop".
+        float_followup_river = False
+        if (
+            FLOAT_TURN_IN_POSITION
+            and hand.street == "river"
+            and n_bets == 0
+            and not made
+            and len(_live_opponent_seats(hand, seat)) == 1
+            and _hero_called_a_bet_this_hand(hand, seat, "turn")
+        ):
+            float_followup_river = True
         # v17, C2 (see TIGHT_ARCHETYPES_FOR_DONK_BLUFF above): a donk bet with
         # NO hand at all, specifically into a known Nit/TAG/LAG -- these
         # archetypes fold to a donk/lead meaningfully more than to a same-
@@ -3299,7 +3382,7 @@ def choose_abc_action(
             if len(missed_draw_live_opponents) == 1:
                 if opponent_archetypes.get(missed_draw_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
                     river_bluff_missed_draw = True
-        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn or river_bluff_missed_draw
+        should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn or float_followup_river or river_bluff_missed_draw
         # pf6 (POT_CONTROL_MARGINAL_HANDS): check back a marginal made hand
         # instead of value-betting it, in the specific OOP/multiway/wet-board
         # spot _should_pot_control targets -- never overrides a genuine bluff
@@ -3402,6 +3485,8 @@ def choose_abc_action(
             if delayed_cbet_turn:
                 sizing = DELAYED_CBET_TURN_POT_FRACTION
             if float_followup_turn:
+                sizing = FLOAT_FOLLOWUP_POT_FRACTION
+            if float_followup_river:
                 sizing = FLOAT_FOLLOWUP_POT_FRACTION
             if river_bluff_missed_draw:
                 sizing = RIVER_BLUFF_MISSED_DRAW_POT_FRACTION
@@ -3609,8 +3694,8 @@ def choose_abc_action(
     # a single live opponent who isn't a known loose archetype (floating
     # doesn't work against someone who never gives up the pot).
     if (
-        FLOAT_FLOP_IN_POSITION
-        and hand.street == "flop"
+        (FLOAT_FLOP_IN_POSITION and hand.street == "flop")
+        or (FLOAT_TURN_IN_POSITION and hand.street == "turn")
     ):
         float_live_opponents = _live_opponent_seats(hand, seat)
         if len(float_live_opponents) == 1:
