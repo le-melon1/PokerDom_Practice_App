@@ -88,6 +88,29 @@ ARCHETYPE_FREQ_TIER_WEIGHTS = {
 }
 
 
+# 2026-08-21: third session-scoped signal (unlike archetype/freq_tier,
+# NOT a static per-seat label -- it changes hand-to-hand based on that
+# seat's own recent results). Confirmed real on actual data
+# (PokerDom_Microlimits_Analysis/scripts/check_tilt_after_cooler.py):
+# losing a big pot (>=15bb invested, real showdown, lost) measurably
+# loosens/tightens a player's next ~10 hands (VPIP +11.75pp, postflop
+# aggression +5.76pp), decaying across the window. Same constants and
+# tier buckets as that script and build_training_data.py's tilt_tier
+# feature -- keep all three in sync if any changes.
+COOLER_MIN_BB = 15.0
+POST_COOLER_WINDOW = 10
+
+
+def _tilt_tier_from_hands_since(hands_since_cooler: int | None) -> str:
+    if hands_since_cooler is None:
+        return "none"
+    if hands_since_cooler <= 2:
+        return "acute"
+    if hands_since_cooler <= 5:
+        return "fading"
+    return "residual"
+
+
 def sample_freq_tier(archetype: str, rng: random.Random | None = None) -> str:
     """Weighted-random tier conditioned on archetype, from the real joint
     distribution above."""
@@ -132,6 +155,11 @@ class SeatOccupant:
         # that model's session_hands_so_far feature, the exact same causal
         # quantity build_player_profile_training_data.py computed it as.
         self.profile_id = profile_id
+        # None = not currently in a post-cooler window. 1..COOLER_WINDOW =
+        # hands since this seat's most recent qualifying cooler (see
+        # TableTurnover.record_hand_for_tilt). Reset to None whenever a new
+        # occupant is seated -- tilt is personal history, doesn't transfer.
+        self.hands_since_cooler: int | None = None
 
     def should_leave(self, busted: bool) -> bool:
         return busted or self.hands_played >= self.planned_length
@@ -208,6 +236,40 @@ class TableTurnover:
 
     def profile_id_for(self, seat: int) -> str | None:
         return self.occupants[seat].profile_id
+
+    def tilt_tier_for(self, seat: int) -> str:
+        return _tilt_tier_from_hands_since(self.occupants[seat].hands_since_cooler)
+
+    def record_hand_for_tilt(self, hand) -> None:
+        """Call once per finished hand, with the just-finished Hand object,
+        to update each occupied seat's post-cooler window -- the one piece
+        of session HISTORY this class tracks (everything else here is a
+        static per-seat label drawn at seating time). Independent of
+        after_hand()/turnover -- call this first if a seat is about to be
+        replaced, since a busted seat's tilt state is moot either way.
+
+        Cooler definition matches check_tilt_after_cooler.py exactly: this
+        seat put in >=COOLER_MIN_BB, the hand reached a real showdown (not
+        everyone else just folding -- Hand.finish() leaves
+        result.winners_by_pot empty for an uncontested win), and this seat
+        won nothing from it.
+        """
+        result = getattr(hand, "result", None)
+        real_showdown = bool(result and result.winners_by_pot)
+        payouts = result.payouts if result else {}
+        big_blind = getattr(hand, "big_blind", 0)
+        for seat, occ in self.occupants.items():
+            player = hand.players.get(seat)
+            if player is None or not getattr(player, "in_hand", False) or big_blind <= 0:
+                continue
+            contributed_bb = player.total_contributed / big_blind
+            lost_a_cooler = real_showdown and contributed_bb >= COOLER_MIN_BB and payouts.get(seat, 0.0) <= 0.0
+            if lost_a_cooler:
+                occ.hands_since_cooler = 1
+            elif occ.hands_since_cooler is not None:
+                occ.hands_since_cooler += 1
+                if occ.hands_since_cooler > POST_COOLER_WINDOW:
+                    occ.hands_since_cooler = None
 
     def after_hand(self, seat_stacks: dict[int, float], starting_stack: float) -> dict[int, bool]:
         """Call once per finished hand with each bot seat's current stack.

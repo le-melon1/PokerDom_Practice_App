@@ -144,7 +144,10 @@ def run_batch(n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int) 
             else:
                 archetype = turnover.archetype_for(seat)
                 freq_tier = turnover.freq_tier_for(seat)
-                action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier)
+                tilt_tier = turnover.tilt_tier_for(seat)
+                action, amount = choose_bot_action(
+                    hand, seat, archetype=archetype, freq_tier=freq_tier, tilt_tier=tilt_tier
+                )
                 try:
                     hand.apply_action(seat, action, amount)
                 except IllegalAction:
@@ -173,6 +176,7 @@ def run_batch(n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int) 
 
         dossier.record_hand(hand)
         seat_stacks = {seat: p.stack for seat, p in hand.players.items() if seat != HERO_SEAT}
+        turnover.record_hand_for_tilt(hand)
         turned_over = turnover.after_hand(seat_stacks, STARTING_STACK)
         for seat, did_turn_over in turned_over.items():
             if did_turn_over:

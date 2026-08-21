@@ -1103,6 +1103,52 @@ script's docstring). Revision history, each one a real measured finding:
       rejected. 191 tests pass, 5000-hand smoke test improved further
       (+40.75+/-11.23 bb/100 excl. monster pots, up from +38.47).
 
+  2026-08-21, Tier 4 groundwork -- tilt-after-cooler infra, harder of the
+  two Tier 4 items (user's explicit choice over the freq_tier-style
+  static-label shortcut for the other Tier 4 idea, per-opponent bluff
+  frequency, which stays untouched). Third session-scoped signal, but
+  unlike archetype/freq_tier this one genuinely changes hand-to-hand:
+    - live_dynamics.py: TableTurnover now tracks each seat's
+      hands_since_cooler across the session (SeatOccupant field, reset on
+      re-seating). New TableTurnover.record_hand_for_tilt(hand), called
+      once per finished hand alongside the existing after_hand() turnover
+      check, detects a cooler (>=15bb invested, real showdown reached,
+      lost -- exact same definition and constants as
+      PokerDom_Microlimits_Analysis/scripts/check_tilt_after_cooler.py)
+      and updates the window. tilt_tier_for(seat) buckets into
+      none/acute(1-2)/fading(3-5)/residual(6-10), matching that script's
+      own decay-curve finding.
+    - build_training_data.py: reuses that same script's cached per-
+      (hand,player) hands_since_cooler computation (768,494 post-cooler
+      pairs) rather than recomputing -- causally safe as a training
+      feature since it only depends on that player's OWN past hands.
+    - behavior_clone.py/train_behavior_clone.py: CAT_FEATURES gained
+      "tilt_tier". Retrained (old models backed up first) -- losses
+      barely moved (action 0.6675->0.6672, sizing 0.5900->0.5905, both
+      within noise, expected since tilt_tier is nonzero for only ~2.2% of
+      rows) but a direct sanity check confirms the model DID learn the
+      real-data direction: at a fixed decision point, call probability
+      rises (24.1%->26.4%) and fold probability drops (70.7%->67.5%) the
+      moment tilt_tier leaves "none" -- matches the real +11.75pp VPIP
+      finding. The finer acute/fading/residual gradient didn't show up
+      distinctly at that one test point; the tilting-vs-not split clearly
+      did.
+    - choose_abc_action gained an opponent_tilt_states param, documented
+      as unused so far -- same infra-first pattern as opponent_freq_tiers.
+    - backend/api.py + 6 scripts wired to call record_hand_for_tilt() and
+      pass tilt_tier through to choose_bot_action.
+  191 tests pass, 5000-hand smoke test clean (+40.90+/-11.00 bb/100 excl.
+  monster pots, unchanged from pre-tilt-retrain -- expected, nothing
+  reads opponent_tilt_states yet).
+
+  STILL NOT DONE, and bigger than the freq_tier equivalent:
+  probe_chance_enumeration.py starts every probed hand fresh (documented
+  in its own module docstring) -- it has no way to simulate a SEQUENCE of
+  hands per opponent, so there's currently no way to A/B test a hero rule
+  that exploits opponent_tilt_states (need a cooler to actually occur,
+  then observe the following ~10 hands). This is a genuinely separate
+  infrastructure lift from everything else done today, not started.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -2919,6 +2965,7 @@ def choose_abc_action(
     seat: int,
     opponent_archetypes: dict[int, str] | None = None,
     opponent_freq_tiers: dict[int, str] | None = None,
+    opponent_tilt_states: dict[int, str] | None = None,
 ) -> tuple[str, float | None]:
     """`opponent_archetypes`: optional {seat: archetype} for the OTHER seats
     at the table. Only used to loosen the postflop calling bar against a
@@ -2930,13 +2977,22 @@ def choose_abc_action(
 
     `opponent_freq_tiers`: optional {seat: postflop_freq_tier} ("rare"/
     "normal"/"often"), the second independent axis from the 2026-08-20
-    archetype restructure. Plumbing only, added ahead of any rule that uses
-    it -- NOT read anywhere in this function yet, and the seated ML/
-    population bots' actual behavior does not vary by tier yet either (the
-    opponent model wasn't retrained with it as a feature). Both were left
-    for a deliberate follow-up once a real freq-tier-aware rule is designed
-    and ready to test -- see live_dynamics.py's ARCHETYPE_FREQ_TIER_WEIGHTS
-    comment for the full reasoning."""
+    archetype restructure. Read by WIDER_CALL_VS_OFTEN_TIER (see
+    LOOSE_ARCHETYPES's comment above) -- the seated ML/population bots'
+    behavior genuinely varies by tier since the 2026-08-20/21 retrain.
+
+    `opponent_tilt_states`: optional {seat: tilt_tier} ("none"/"acute"/
+    "fading"/"residual"), how many hands ago (if any) that seat lost a big
+    pot -- see live_dynamics.py's COOLER_MIN_BB/POST_COOLER_WINDOW comment
+    for the real-data finding behind it. Plumbing only so far: NOT read
+    anywhere in this function yet. The seated ML/population bots' behavior
+    DOES already vary by it (retrained with tilt_tier as a feature,
+    2026-08-21), and TableTurnover already tracks it live hand-to-hand --
+    but no hero rule exploits it yet, and probe_chance_enumeration.py
+    cannot yet A/B test one (it starts every probe hand fresh; testing a
+    tilt-exploit rule needs simulating a SEQUENCE of hands per opponent so
+    a cooler event can actually occur and be followed up on -- a genuinely
+    separate infrastructure lift, not done here)."""
     (
         open_ranges,
         call_ranges,

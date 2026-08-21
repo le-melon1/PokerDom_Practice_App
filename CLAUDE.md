@@ -394,6 +394,39 @@ re-validated against the new population** -- a large, explicitly
 ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the
 tracking note; do not assume old numbers still hold without re-checking.
 
+### 2026-08-21: Tier 4 groundwork -- tilt-after-cooler infra (harder half)
+
+User picked the harder of Tier 4's two ideas (tilt-after-cooler, over the
+freq_tier-style static-label shortcut for per-opponent bluff frequency).
+Third session-scoped signal, but genuinely dynamic hand-to-hand unlike
+archetype/freq_tier:
+- `live_dynamics.py`: `TableTurnover` tracks each seat's
+  `hands_since_cooler` across the session. New
+  `record_hand_for_tilt(hand)` (called alongside `after_hand()`) detects
+  a cooler -- >=15bb invested, real showdown, lost -- same definition as
+  `PokerDom_Microlimits_Analysis/scripts/check_tilt_after_cooler.py`.
+  `tilt_tier_for(seat)` buckets none/acute(1-2)/fading(3-5)/residual(6-10).
+- `build_training_data.py` reuses that script's cached per-(hand,player)
+  `hands_since_cooler` (768,494 post-cooler pairs) -- causally safe, only
+  depends on that player's own past hands.
+- `behavior_clone.py`/`train_behavior_clone.py`: `CAT_FEATURES` gained
+  `"tilt_tier"`. Retrained -- losses barely moved (expected, ~2.2% of
+  rows are nonzero) but a sanity check confirms the model learned the
+  real direction: call probability +2.3pp / fold probability -3.2pp the
+  moment tilt_tier leaves "none", at a fixed test decision point.
+- `choose_abc_action` gained `opponent_tilt_states`, unused so far.
+  `backend/api.py` + 6 scripts wired to compute and pass it through.
+
+191 tests pass, 5000-hand smoke test unchanged (+40.90±11.00 bb/100 excl.
+monster pots -- expected, nothing reads the new signal yet).
+
+**Bigger gap than freq_tier had**: `probe_chance_enumeration.py` starts
+every probed hand fresh -- no way to simulate a SEQUENCE of hands per
+opponent, so no way to A/B test a tilt-exploit hero rule yet (need a
+cooler to occur, then observe the following hands). Genuinely separate
+infrastructure, not started. The other Tier 4 idea (per-opponent bluff
+frequency) is also still untouched.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting

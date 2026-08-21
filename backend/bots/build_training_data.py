@@ -38,13 +38,56 @@ from src.pipeline.preprocess import player_stats
 STREET_BOARD_LEN = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
 HAND_BATCH_SIZE = 50_000
 
+# 2026-08-21, Tier 4 (tilt-after-cooler): scripts/check_tilt_after_cooler.py
+# in the analysis project already established this is REAL on actual data
+# (VPIP +11.75pp, postflop aggression +5.76pp, decaying over ~10 hands,
+# survives a stack-matched confound check) and cached its per-(hand,player)
+# hands_since_cooler computation -- reused here rather than recomputed, same
+# cooler definition (>=15bb invested, real showdown, lost) and session
+# logic (45-minute gap). Causally safe as a training feature: it only
+# depends on that SAME player's PAST hands within their own session, so
+# it's knowable before this hand starts -- no leakage risk like the
+# preflop_last_raiser bug this file's own history already found and fixed
+# for had_initiative.
+TILT_CACHE_PATH = ANALYSIS_ROOT / "data" / "processed" / "_tilt_after_cooler_feat_cache.parquet"
+
+
+def _load_tilt_tier_lookup() -> dict[tuple, str]:
+    """{(hand_id, player): tilt_tier} for post-cooler hands only (sparse --
+    the overwhelming majority of hands aren't in anyone's post-cooler
+    window, so rows are looked up with a "none" default instead of
+    materializing a tier for every hand). Buckets match the decay curve
+    check_tilt_after_cooler.py found on real data (VPIP 40.2% hands 1-2 ->
+    36.4% hands 3-5 -> 34.9% hands 6-10, vs 24.9% baseline) rather than an
+    arbitrary split."""
+    log(f"loading tilt-after-cooler cache from {TILT_CACHE_PATH}...")
+    tilt = pd.read_parquet(TILT_CACHE_PATH, columns=["hand_id", "player", "post_cooler", "hands_since_cooler"])
+    tilt = tilt[tilt["post_cooler"]]
+
+    def _tier(n: float) -> str:
+        if n <= 2:
+            return "acute"
+        if n <= 5:
+            return "fading"
+        return "residual"
+
+    tilt["tilt_tier"] = tilt["hands_since_cooler"].apply(_tier)
+    lookup = dict(zip(zip(tilt["hand_id"], tilt["player"]), tilt["tilt_tier"]))
+    log(f"tilt tier lookup: {len(lookup):,} post-cooler (hand,player) pairs")
+    return lookup
+
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def _hand_rows(
-    hand_id, grp, board_by_hand: dict, archetype_by_player: dict, freq_tier_by_player: dict
+    hand_id,
+    grp,
+    board_by_hand: dict,
+    archetype_by_player: dict,
+    freq_tier_by_player: dict,
+    tilt_tier_by_hand_player: dict,
 ) -> list[dict]:
     if grp["big_blind"].iloc[0] <= 0:
         return []  # same rare malformed/missed-blind hands filtered elsewhere in the analysis project
@@ -124,6 +167,7 @@ def _hand_rows(
         # (shouldn't happen since both dicts come from the same stats df,
         # but matches choose_bot_action's own default rather than crashing).
         freq_tier = freq_tier_by_player.get(row.player, "normal")
+        tilt_tier = tilt_tier_by_hand_player.get((hand_id, row.player), "none")
         remaining_stack = max(row.stack - total_contributed.get(row.player, 0.0), 0.0)
 
         rows.append(
@@ -132,6 +176,7 @@ def _hand_rows(
                 "street": current_street,
                 "position": row.position,
                 "archetype": archetype,
+                "tilt_tier": tilt_tier,
                 "freq_tier": freq_tier,
                 "pot_before": pot_before,
                 "to_call_frac": to_call / pot_before,
@@ -169,6 +214,7 @@ def build_dataset_streaming(
     hands_df: pd.DataFrame,
     archetype_by_player: dict,
     freq_tier_by_player: dict,
+    tilt_tier_by_hand_player: dict,
     out_path: Path,
 ) -> int:
     """Streams the training dataset straight to `out_path` in bounded
@@ -193,7 +239,9 @@ def build_dataset_streaming(
         batch_rows = []
 
     for hand_id, grp in actions_df.groupby("hand_id", sort=False):
-        batch_rows.extend(_hand_rows(hand_id, grp, board_by_hand, archetype_by_player, freq_tier_by_player))
+        batch_rows.extend(
+            _hand_rows(hand_id, grp, board_by_hand, archetype_by_player, freq_tier_by_player, tilt_tier_by_hand_player)
+        )
         n_hands += 1
         if n_hands % HAND_BATCH_SIZE == 0:
             _flush()
@@ -215,12 +263,13 @@ def main():
     stats = label_archetypes(player_stats(actions_df))
     archetype_by_player = dict(zip(stats["player"], stats["archetype"]))
     freq_tier_by_player = dict(zip(stats["player"], stats["postflop_freq_tier"]))
+    tilt_tier_by_hand_player = _load_tilt_tier_lookup()
 
     out_path = Path(__file__).resolve().parent.parent.parent / "data" / "behavior_clone_training_data.parquet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log(f"building decision dataset from {len(actions_df)} actions, streaming to {out_path}...")
-    build_dataset_streaming(actions_df, hands_df, archetype_by_player, freq_tier_by_player, out_path)
+    build_dataset_streaming(actions_df, hands_df, archetype_by_player, freq_tier_by_player, tilt_tier_by_hand_player, out_path)
 
 
 if __name__ == "__main__":

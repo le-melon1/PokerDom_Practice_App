@@ -258,7 +258,17 @@ if TYPE_CHECKING:
 
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
-CAT_FEATURES = ["street", "position", "archetype", "freq_tier"]
+CAT_FEATURES = ["street", "position", "archetype", "freq_tier", "tilt_tier"]
+# 2026-08-21: tilt_tier ("none"/"acute"/"fading"/"residual") added -- real,
+# confirmed-on-actual-data signal from PokerDom_Microlimits_Analysis/
+# scripts/check_tilt_after_cooler.py: a player who just lost a big pot
+# (>=15bb invested, real showdown, lost) plays measurably looser/more
+# aggressive for about 10 hands afterward (VPIP +11.75pp, postflop
+# aggression +5.76pp, decaying: acute hands 1-2 strongest, fading hands
+# 3-5, residual hands 6-10), survives a stack-matched confound check.
+# Causally safe as a feature: only depends on that player's OWN past
+# hands within their own session, always knowable before the current hand
+# starts. Must match train_behavior_clone.py's CAT_FEATURES exactly.
 # 2026-08-20: freq_tier (rare/normal/often) added -- the second independent
 # axis from the archetype restructure (see live_dynamics.py's
 # ARCHETYPE_FREQ_TIER_WEIGHTS comment). Training rows now carry each real
@@ -455,7 +465,7 @@ def _style_bias(archetype: str) -> dict[str, float]:
     return {"folds": 1.0, "checks": 1.0, "calls": 1.05, "bets": 1.05, "raises": 1.05}
 
 
-def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str) -> dict:
+def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str, tilt_tier: str) -> dict:
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     pot_before = sum(p.total_contributed for p in hand.players.values())
@@ -467,6 +477,7 @@ def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str) -> di
         "position": _seat_position(hand, seat),
         "archetype": archetype,
         "freq_tier": freq_tier,
+        "tilt_tier": tilt_tier,
         "to_call_frac": (legal["call_amount"] / pot_before) if pot_before > 0 else 0.0,
         "n_raises_this_street": _n_raises_this_street(hand),
         **{f"board_{k}": v for k, v in texture.items()},
@@ -481,6 +492,7 @@ def choose_bot_action(
     seat: int,
     archetype: str = "TAG",
     freq_tier: str = "normal",
+    tilt_tier: str = "none",
     seed: int | None = None,
     hero_seat: int | None = None,
     hero_dossier: "SeatDossier | None" = None,
@@ -493,6 +505,11 @@ def choose_bot_action(
     for any caller that doesn't pass it, matching the middle/most common
     bucket rather than an unlabeled category the model never saw in training.
 
+    `tilt_tier`: "none"/"acute"/"fading"/"residual" -- how many hands ago
+    (if any) this seat lost a big pot (see CAT_FEATURES comment above).
+    Defaults to "none" (not currently tilting), the overwhelming majority
+    case.
+
     `hero_seat`/`hero_dossier`: optional, both None by default (a full no-op
     for every caller that doesn't pass them). When both are given and this
     bot is facing a bet/raise made by hero_seat THIS street, and hero_dossier
@@ -501,7 +518,7 @@ def choose_bot_action(
     action_model, sizing_model = _load_models()
     rng = random.Random(seed)
 
-    features = _build_features(hand, seat, archetype, freq_tier)
+    features = _build_features(hand, seat, archetype, freq_tier, tilt_tier)
     legal = hand.legal_actions(seat)
 
     row = [[features[f] for f in FEATURES]]

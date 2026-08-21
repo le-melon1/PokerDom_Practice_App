@@ -188,9 +188,16 @@ def _step_one_bot() -> float | None:
     else:
         archetype = turnover.archetype_for(seat)
         freq_tier = turnover.freq_tier_for(seat)
+        tilt_tier = turnover.tilt_tier_for(seat)
         hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
         action, amount = choose_bot_action(
-            hand, seat, archetype=archetype, freq_tier=freq_tier, hero_seat=HERO_SEAT, hero_dossier=hero_dossier
+            hand,
+            seat,
+            archetype=archetype,
+            freq_tier=freq_tier,
+            tilt_tier=tilt_tier,
+            hero_seat=HERO_SEAT,
+            hero_dossier=hero_dossier,
         )
         think_time = bot_think_time(action)
     try:
@@ -218,6 +225,7 @@ def _apply_table_turnover(hand) -> None:
     archetype, new planned length, stack topped back up, dossier reset."""
     turnover: TableTurnover = state["turnover"]
     table: Table = state["table"]
+    turnover.record_hand_for_tilt(hand)
     seat_stacks = {seat: p.stack for seat, p in hand.players.items() if seat != HERO_SEAT}
     turned_over = turnover.after_hand(seat_stacks, state["starting_stack"])
 
