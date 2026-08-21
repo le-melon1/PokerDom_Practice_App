@@ -422,10 +422,22 @@ monster pots -- expected, nothing reads the new signal yet).
 
 **Bigger gap than freq_tier had**: `probe_chance_enumeration.py` starts
 every probed hand fresh -- no way to simulate a SEQUENCE of hands per
-opponent, so no way to A/B test a tilt-exploit hero rule yet (need a
-cooler to occur, then observe the following hands). Genuinely separate
-infrastructure, not started. The other Tier 4 idea (per-opponent bluff
-frequency) is also still untouched.
+opponent, so no way to A/B test a tilt-exploit hero rule the way it
+actually works live.
+
+**`WIDER_CALL_VS_TILTING_OPPONENT`** (2026-08-21, tested, stays False):
+rather than build the full sequence simulator, tested via ground-truth
+PER-HAND sampling from the real population incidence instead (~4% of
+hands for a player who tilts at all) -- a disclosed simplification, same
+"ceiling before estimation noise" precedent as archetype/freq_tier's
+first tests. Result: seed42 confirmed_positive (+0.70±0.30 bb/100, 124k
+hands, 30 divergent) -- seed777 hit ZERO divergent hands at a 300k-hand
+budget. NOT cross-validated per this file's own two-seed standard, same
+pattern `FOLD_VS_3BET_FROM_PASSIVE` originally showed. Stays False.
+
+The real sequence-of-hands simulator, and the other Tier 4 idea
+(per-opponent bluff frequency via `dossier.py`'s `SeatDossier.
+river_bluff_rate`), both remain untouched.
 
 ### Postflop: what's confirmed and shipped True
 

@@ -1141,13 +1141,28 @@ script's docstring). Revision history, each one a real measured finding:
   monster pots, unchanged from pre-tilt-retrain -- expected, nothing
   reads opponent_tilt_states yet).
 
-  STILL NOT DONE, and bigger than the freq_tier equivalent:
+  STILL NOT DONE at the time of the retrain above:
   probe_chance_enumeration.py starts every probed hand fresh (documented
   in its own module docstring) -- it has no way to simulate a SEQUENCE of
   hands per opponent, so there's currently no way to A/B test a hero rule
-  that exploits opponent_tilt_states (need a cooler to actually occur,
-  then observe the following ~10 hands). This is a genuinely separate
-  infrastructure lift from everything else done today, not started.
+  that exploits opponent_tilt_states the way it actually works live (need
+  a cooler to occur, then observe the following ~10 hands).
+
+  2026-08-21, WIDER_CALL_VS_TILTING_OPPONENT: rather than build that full
+  sequence infrastructure, tested via ground-truth PER-HAND sampling from
+  the real population incidence instead (same "ceiling before estimation
+  noise" precedent as archetype/freq_tier's first tests) -- see the
+  flag's own comment for the full reasoning and disclosed limitation.
+  Result: seed42 confirmed_positive, +0.70+/-0.30 bb/100 (124k hands, 30
+  divergent) -- seed777 hit ZERO divergent hands at a 300k-hand budget.
+  NOT cross-validated per this file's own two-seed standard. Stays False
+  -- same single-seed-signal/single-seed-silent pattern
+  FOLD_VS_3BET_FROM_PASSIVE originally showed. 191 tests pass, no
+  behavior change (flag off).
+
+  The real sequence-of-hands simulator, and the OTHER Tier 4 idea
+  (per-opponent bluff frequency via dossier.py's SeatDossier.
+  river_bluff_rate), both remain untouched.
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -2490,6 +2505,32 @@ LOOSE_ARCHETYPES = {"Loose-passive", "Station", "Maniac"}
 # been testing noise.
 WIDER_CALL_VS_OFTEN_TIER = True
 
+# 2026-08-21 (untested): third rule reading a live opponent signal beyond
+# archetype -- widens the same any-pair-or-better call bar against an
+# aggressor currently inside their own post-cooler tilt window (any of
+# acute/fading/residual -- see live_dynamics.py's COOLER_MIN_BB comment
+# for the real-data finding: a player who just lost a big pot plays
+# measurably looser for ~10 hands). OR'd with the archetype/freq_tier
+# checks above, not a replacement. Tested here via ground-truth PER-HAND
+# sampling from the real population incidence (~4% of hands for a player
+# who tilts at all: acute 1.0%, fading 1.3%, residual 1.7%), NOT via
+# TableTurnover's live hand-to-hand tracking -- same "measure the ceiling
+# before estimation noise" precedent as archetype/freq_tier's original
+# ground-truth tests, disclosed simplification since
+# probe_chance_enumeration.py can't yet simulate a real cooler-then-
+# follow-up sequence (see choose_abc_action's opponent_tilt_states
+# docstring). 2026-08-21 test result (scripts/tilt_confirm.sh,
+# wider-call-vs-tilting-opponent, --comparison current --adaptive):
+# seed42 confirmed_positive, +0.70+/-0.30 bb/100 (124k hands, 30
+# divergent) -- seed777 hit ZERO divergent hands at a 300k-hand budget
+# (max-zero-divergent-hands reached, stop_reason=no_divergent_hands).
+# NOT cross-validated per this file's own two-seed standard -- same
+# single-seed-positive/single-seed-silent pattern
+# FOLD_VS_3BET_FROM_PASSIVE originally showed before it was eventually
+# retested to genuinely-untestable-both-seeds. Stays False; the one real
+# result is suggestive but not sufficient on its own.
+WIDER_CALL_VS_TILTING_OPPONENT = False
+
 
 def _last_aggressor_this_street(hand: Hand) -> int | None:
     street_bets = [a for a in hand.actions if a.street == hand.street and a.action in ("bets", "raises")]
@@ -2984,15 +3025,15 @@ def choose_abc_action(
     `opponent_tilt_states`: optional {seat: tilt_tier} ("none"/"acute"/
     "fading"/"residual"), how many hands ago (if any) that seat lost a big
     pot -- see live_dynamics.py's COOLER_MIN_BB/POST_COOLER_WINDOW comment
-    for the real-data finding behind it. Plumbing only so far: NOT read
-    anywhere in this function yet. The seated ML/population bots' behavior
-    DOES already vary by it (retrained with tilt_tier as a feature,
-    2026-08-21), and TableTurnover already tracks it live hand-to-hand --
-    but no hero rule exploits it yet, and probe_chance_enumeration.py
-    cannot yet A/B test one (it starts every probe hand fresh; testing a
-    tilt-exploit rule needs simulating a SEQUENCE of hands per opponent so
-    a cooler event can actually occur and be followed up on -- a genuinely
-    separate infrastructure lift, not done here)."""
+    for the real-data finding behind it. Read by
+    WIDER_CALL_VS_TILTING_OPPONENT (see LOOSE_ARCHETYPES's comment above).
+    In the live app this comes from TableTurnover's real hand-to-hand
+    tracking; probe_chance_enumeration.py can't yet simulate a real
+    cooler-then-follow-up sequence (it starts every probed hand fresh), so
+    it tests this rule via ground-truth PER-HAND sampling from the real
+    population incidence instead -- see the flag's own comment for why
+    that's a defensible ceiling estimate, not the full live-accuracy
+    picture."""
     (
         open_ranges,
         call_ranges,
@@ -3719,13 +3760,19 @@ def choose_abc_action(
                 return ("fold", None)
         return ("call", None)
 
-    if (opponent_archetypes or opponent_freq_tiers) and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
+    if (opponent_archetypes or opponent_freq_tiers or opponent_tilt_states) and not (
+        MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus
+    ):
         aggressor = _last_aggressor_this_street(hand)
         aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
         aggressor_freq_tier = opponent_freq_tiers.get(aggressor) if opponent_freq_tiers and aggressor is not None else None
+        aggressor_tilt = opponent_tilt_states.get(aggressor) if opponent_tilt_states and aggressor is not None else None
         is_loose_aggressor = aggressor_archetype in LOOSE_ARCHETYPES
         is_often_aggressor = WIDER_CALL_VS_OFTEN_TIER and aggressor_freq_tier == "often"
-        if (is_loose_aggressor or is_often_aggressor) and has_any_pair_or_better(player.hole_cards, hand.board):
+        is_tilting_aggressor = WIDER_CALL_VS_TILTING_OPPONENT and aggressor_tilt not in (None, "none")
+        if (is_loose_aggressor or is_often_aggressor or is_tilting_aggressor) and has_any_pair_or_better(
+            player.hole_cards, hand.board
+        ):
             return ("call", None)
 
     # pf7 (SPR_SCALED_THRESHOLDS): already near pot-committed (low

@@ -54,11 +54,23 @@ from scripts.simulate_abc_bot import (
     RAKE_CAP_BB,
     RAKE_PERCENT,
     STARTING_STACK,
+    TILT_SEED_STREAM,
     _NON_BOOLEAN_FLAG_OFF_VALUES,
     _NON_BOOLEAN_FLAG_ON_VALUES,
     _common_seed,
     _sync_value_3bet,
 )
+
+# 2026-08-21: real population incidence, restricted to players who tilt at
+# all (same conditioning as PokerDom_Microlimits_Analysis/scripts/
+# check_tilt_after_cooler.py's feat_rel) -- 768,494 post-cooler (hand,
+# player) pairs out of 19,211,339 total for that subpopulation. Sampled
+# per hand per opponent (NOT accumulated via TableTurnover's live
+# tracking, which this probe's fresh-stacks-every-hand design can't yet
+# feed a real cooler sequence into) -- see WIDER_CALL_VS_TILTING_OPPONENT's
+# comment in abc_bot.py for why this ground-truth-ceiling approach is a
+# disclosed simplification, not the full live picture.
+TILT_TIER_WEIGHTS = {"none": 18_442_845, "acute": 191_623, "fading": 244_897, "residual": 331_974}
 
 EXTRA_TEST_GROUPS = {
     "v3-calling-raises": (["ALLOW_CALLING_RAISES"], "v3 allow calling raises"),
@@ -244,6 +256,10 @@ RULE_TEST_GROUPS = {
     "size-up-premium-3bets": (
         ["SIZE_UP_PREMIUM_3BETS"],
         "size up the value 3-bet with a premium hand -- SIZE_UP_PREMIUM_OPENS generalized to the 3-bet",
+    ),
+    "wider-call-vs-tilting-opponent": (
+        ["WIDER_CALL_VS_TILTING_OPPONENT"],
+        "call with any pair or better vs an aggressor currently in a post-cooler tilt window, ground-truth-sampled per hand from real population incidence",
     ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
@@ -585,6 +601,7 @@ ALL_COMPARISON_FLAGS = [
     "WIDER_CALL_VS_OFTEN_TIER",
     "FLOAT_TURN_IN_POSITION",
     "SIZE_UP_PREMIUM_3BETS",
+    "WIDER_CALL_VS_TILTING_OPPONENT",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
@@ -927,6 +944,27 @@ def _hero_opponent_freq_tiers(hand, turnover: TableTurnover) -> dict[int, str] |
     return {s: turnover.freq_tier_for(s) for s in bot_seats if hand.players[s].in_hand}
 
 
+def _hero_opponent_tilt_states(hand, hand_index: int, base_seed: int) -> dict[int, str] | None:
+    """Ground-truth {seat: tilt_tier}, sampled independently per hand per
+    opponent from TILT_TIER_WEIGHTS (see that constant's comment) --
+    deliberately NOT read from TableTurnover.tilt_tier_for(), since this
+    probe resets stacks fresh every hand and never calls
+    record_hand_for_tilt(), so a real cooler-then-follow-up sequence can't
+    occur here yet. Deterministic per (base_seed, hand_index, seat) via
+    the shared _common_seed helper, same reproducibility standard as every
+    other random draw in this file."""
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    tiers = list(TILT_TIER_WEIGHTS.keys())
+    weights = list(TILT_TIER_WEIGHTS.values())
+    out = {}
+    for s in bot_seats:
+        if not hand.players[s].in_hand:
+            continue
+        rng = random.Random(_common_seed(base_seed, hand_index, TILT_SEED_STREAM, s))
+        out[s] = rng.choices(tiers, weights=weights)[0]
+    return out
+
+
 def _should_force_opponent_reraise(hand, seat: int) -> bool:
     """True when `seat` (a non-hero seat) is facing exactly hero's own
     preflop raise -- i.e. this is the decision point where "does the
@@ -998,8 +1036,13 @@ def _choose_and_apply(
         _apply_flag_state(flag_state)
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
+        opponent_tilt_states = _hero_opponent_tilt_states(hand, hand_index, base_seed)
         action, amount = choose_abc_action(
-            hand, seat, opponent_archetypes=opponent_archetypes, opponent_freq_tiers=opponent_freq_tiers
+            hand,
+            seat,
+            opponent_archetypes=opponent_archetypes,
+            opponent_freq_tiers=opponent_freq_tiers,
+            opponent_tilt_states=opponent_tilt_states,
         )
     elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
         action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
@@ -1034,8 +1077,13 @@ def _continue_to_finish(
             _apply_flag_state(flag_state)
             opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
             opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
+            opponent_tilt_states = _hero_opponent_tilt_states(hand, hand_index, base_seed)
             action, amount = choose_abc_action(
-                hand, seat, opponent_archetypes=opponent_archetypes, opponent_freq_tiers=opponent_freq_tiers
+                hand,
+                seat,
+                opponent_archetypes=opponent_archetypes,
+                opponent_freq_tiers=opponent_freq_tiers,
+                opponent_tilt_states=opponent_tilt_states,
             )
         else:
             archetype = turnover.archetype_for(seat)
