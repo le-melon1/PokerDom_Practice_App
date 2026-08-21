@@ -1091,6 +1091,18 @@ script's docstring). Revision history, each one a real measured finding:
   191 tests pass, 5000-hand smoke test unaffected (no flag changed
   direction).
 
+  2026-08-21, Tier-5 confirmation (scripts/tier5_confirm.sh, both seeds):
+    - FLOAT_TURN_IN_POSITION: confirmed POSITIVE both seeds, +15.76+/-7.69
+      (seed42) / +10.28+/-4.86 (seed777). Shipped True.
+    - SIZE_UP_PREMIUM_3BETS: confirmed NEGATIVE seed42 (-1.80+/-1.63),
+      inconclusive-but-negative-leaning seed777 (-0.50+/-0.98). Unlike
+      SIZE_UP_PREMIUM_OPENS, sizing up a value 3-bet with a premium hand
+      does NOT help -- a 3-bet already telegraphs strength, so the extra
+      size likely just makes it easier for the raiser's continuing range
+      to fold profitably rather than pay off. Stays False, tested-and-
+      rejected. 191 tests pass, 5000-hand smoke test improved further
+      (+40.75+/-11.23 bb/100 excl. monster pots, up from +38.47).
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1709,7 +1721,7 @@ PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
 # pattern SIZE_UP_PREMIUM_OPENS already established rather than defining a
 # third similar-but-different premium-hand list. Needs its own A/B
 # confirmation before shipping True.
-SIZE_UP_PREMIUM_3BETS = False
+SIZE_UP_PREMIUM_3BETS = False  # 2026-08-21: tested (scripts/tier5_confirm.sh, size-up-premium-3bets, --comparison current --adaptive) -- confirmed NEGATIVE seed42 (-1.80+/-1.63), inconclusive-but-negative-leaning seed777 (-0.50+/-0.98, crosses zero). Unlike SIZE_UP_PREMIUM_OPENS, sizing up a value 3-bet specifically with a premium hand does NOT help -- likely because a 3-bet already telegraphs strength, so the extra size just makes it easier for the rest of the raiser's continuing range to fold profitably against, losing value rather than gaining it. Stays False, tested-and-rejected (not "untested").
 PREMIUM_3BET_SIZING_BONUS_BB = 1.5
 
 # v17, C2: archetype_facing_bet_by_initiative.csv (new this session --
@@ -2853,7 +2865,7 @@ FLOAT_FOLLOWUP_POT_FRACTION = 0.66  # "bet pretty large when barreling the turn"
 #      _hero_called_a_bet_this_hand with street="turn").
 # Independently toggleable from FLOAT_FLOP_IN_POSITION -- either, both, or
 # neither can be on. Needs its own A/B confirmation before shipping True.
-FLOAT_TURN_IN_POSITION = False
+FLOAT_TURN_IN_POSITION = True  # 2026-08-21: confirmed POSITIVE both seeds (scripts/tier5_confirm.sh, float-turn-in-position, --comparison current --adaptive), +15.76+/-7.69 (seed42) / +10.28+/-4.86 (seed777). Shipped True.
 
 # 2026-08-17, later same day (continuing the postflop-gap audit): the three
 # real gaps flagged but not closed in the overnight pass above. Same

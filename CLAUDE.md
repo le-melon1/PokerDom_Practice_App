@@ -375,6 +375,20 @@ applicable:
 
 191 tests pass, 5000-hand smoke test unaffected.
 
+**Tier-5 confirmation** (`scripts/tier5_confirm.sh`, both seeds):
+- **`FLOAT_TURN_IN_POSITION`**: `FLOAT_FLOP_IN_POSITION` generalized to
+  the turn. Confirmed POSITIVE both seeds, +15.76±7.69 (seed42) /
+  +10.28±4.86 (seed777). Shipped True.
+- **`SIZE_UP_PREMIUM_3BETS`**: `SIZE_UP_PREMIUM_OPENS` generalized to the
+  3-bet. Confirmed NEGATIVE seed42 (-1.80±1.63), inconclusive-but-
+  negative-leaning seed777 (-0.50±0.98). Unlike the open-sizing version,
+  sizing up a value 3-bet with a premium hand does NOT help -- a 3-bet
+  already telegraphs strength, so it likely just makes folding easier for
+  the raiser's continuing range. Stays False, tested-and-rejected.
+
+191 tests pass, 5000-hand smoke test improved further (+40.75±11.23
+bb/100 excl. monster pots, up from +38.47).
+
 **Everything else in this file's confirmed-flag history has NOT yet been
 re-validated against the new population** -- a large, explicitly
 ongoing, multi-session task. See `pokerdom_pending_ideas` memory for the
