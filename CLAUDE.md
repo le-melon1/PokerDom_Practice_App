@@ -420,24 +420,36 @@ archetype/freq_tier:
 191 tests pass, 5000-hand smoke test unchanged (+40.90±11.00 bb/100 excl.
 monster pots -- expected, nothing reads the new signal yet).
 
-**Bigger gap than freq_tier had**: `probe_chance_enumeration.py` starts
-every probed hand fresh -- no way to simulate a SEQUENCE of hands per
-opponent, so no way to A/B test a tilt-exploit hero rule the way it
-actually works live.
+### 2026-08-22: the sequence-of-hands simulator got built after all
 
-**`WIDER_CALL_VS_TILTING_OPPONENT`** (2026-08-21, tested, stays False):
-rather than build the full sequence simulator, tested via ground-truth
-PER-HAND sampling from the real population incidence instead (~4% of
-hands for a player who tilts at all) -- a disclosed simplification, same
-"ceiling before estimation noise" precedent as archetype/freq_tier's
-first tests. Result: seed42 confirmed_positive (+0.70±0.30 bb/100, 124k
-hands, 30 divergent) -- seed777 hit ZERO divergent hands at a 300k-hand
-budget. NOT cross-validated per this file's own two-seed standard, same
-pattern `FOLD_VS_3BET_FROM_PASSIVE` originally showed. Stays False.
+Turned out not to need new architecture: `_run_probe_chunk` already
+keeps the same `TableTurnover` alive across its whole `n_hands` loop
+(only the Table's stacks reset every hand, not opponent session state).
+Added `turnover.record_hand_for_tilt(hand)` right after each hand that
+genuinely finishes (guarded on `Hand.finished`, which naturally excludes
+divergent hands -- no ambiguity about which forked hypothetical outcome
+should update a shared persistent object). `opponent_tilt_states` now
+reads `turnover.tilt_tier_for(seat)` live instead of sampling.
 
-The real sequence-of-hands simulator, and the other Tier 4 idea
-(per-opponent bluff frequency via `dossier.py`'s `SeatDossier.
-river_bluff_rate`), both remain untouched.
+**`WIDER_CALL_VS_TILTING_OPPONENT`**, re-tested with real accumulated
+tilt state (`scripts/tilt_confirm_live.sh`): incidence jumped ~8x (0.20%
+vs 0.024% divergent hero hands before) and seed42 re-confirmed much
+faster, +3.16±1.34 bb/100 (16k hands, 32 divergent). seed777 again found
+zero divergent hands (150k budget) -- but a separate diagnostic
+confirmed this isn't a bug (tilt state actually fires in ~25% of that
+seed's seat-hands, MORE than seed42's ~14%); more likely explanation:
+seed777's population draw happens to put tilting seats on
+already-loose/already-often archetypes, masking any marginal tilt-only
+effect. Still not cross-validated. Stays `False` -- see the flag's own
+comment in `abc_bot.py` for the full history of both attempts.
+
+**The other Tier 4 idea (per-opponent bluff frequency)** hit a different,
+more fundamental blocker: `PokerDom_Microlimits_Analysis/scripts/
+find_frequent_bluffers.py`'s `MIN_RIVER_SHOWDOWNS=40` bar leaves only 49
+reliable players out of 26,797 (0.2%) -- too thin to build a trustworthy
+population tier distribution the way archetype/freq_tier/tilt all could.
+Even at 15 showdowns, only 777 players (2.9%) qualify. Surfaced to the
+user rather than building a pipeline on data this thin.
 
 ### Postflop: what's confirmed and shipped True
 

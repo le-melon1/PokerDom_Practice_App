@@ -1160,9 +1160,39 @@ script's docstring). Revision history, each one a real measured finding:
   FOLD_VS_3BET_FROM_PASSIVE originally showed. 191 tests pass, no
   behavior change (flag off).
 
-  The real sequence-of-hands simulator, and the OTHER Tier 4 idea
-  (per-opponent bluff frequency via dossier.py's SeatDossier.
-  river_bluff_rate), both remain untouched.
+  2026-08-22, the sequence-of-hands simulator DOES get built: turned out
+  not to need new architecture -- _run_probe_chunk already keeps the same
+  TableTurnover object alive across its whole n_hands loop (only the
+  Table's STACKS reset every hand, not opponent identity/session state).
+  Added one call, `turnover.record_hand_for_tilt(hand)`, right after
+  each hand that genuinely finishes (guarded on Hand.finished, which
+  naturally excludes divergent hands -- their delta computation forks
+  into separate copies via _continue_to_finish instead, so there's no
+  ambiguity about which hypothetical outcome should update a shared,
+  persistent turnover). opponent_tilt_states now reads
+  turnover.tilt_tier_for(seat) directly (live accumulated history)
+  instead of sampling. Incidence jumped ~8x (0.20% vs 0.024% divergent
+  hero hands) and seed42 re-confirmed much faster: +3.16+/-1.34 bb/100
+  (16k hands, 32 divergent, scripts/tilt_confirm_live.sh). seed777 AGAIN
+  found zero divergent hands (150k budget) -- a separate diagnostic
+  confirmed this isn't a plumbing bug (tilt state actually fires in ~25%
+  of that seed's seat-hands, MORE than seed42's ~14%); more likely the
+  seats that end up tilting in seed777's population draw already qualify
+  via LOOSE_ARCHETYPES/WIDER_CALL_VS_OFTEN_TIER, masking any marginal
+  tilt-only effect. Still not cross-validated. WIDER_CALL_VS_TILTING_
+  OPPONENT stays False -- see the flag's own comment for the full
+  history of both attempts.
+
+  The OTHER Tier 4 idea (per-opponent bluff frequency via dossier.py's
+  SeatDossier.river_bluff_rate) hit a different, more fundamental
+  blocker on investigation: PokerDom_Microlimits_Analysis/scripts/
+  find_frequent_bluffers.py's MIN_RIVER_SHOWDOWNS=40 bar leaves only 49
+  reliable players out of 26,797 (0.2% of the population) -- an order of
+  magnitude too thin to build a trustworthy population-level tier
+  distribution the way archetype/freq_tier/tilt all could. Even at a
+  much lower bar (15 showdowns), only 777 players (2.9%) qualify.
+  Surfaced to the user rather than building a pipeline on data this
+  thin -- decision on how to proceed pending.
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -2505,30 +2535,39 @@ LOOSE_ARCHETYPES = {"Loose-passive", "Station", "Maniac"}
 # been testing noise.
 WIDER_CALL_VS_OFTEN_TIER = True
 
-# 2026-08-21 (untested): third rule reading a live opponent signal beyond
+# 2026-08-21/22: third rule reading a live opponent signal beyond
 # archetype -- widens the same any-pair-or-better call bar against an
 # aggressor currently inside their own post-cooler tilt window (any of
 # acute/fading/residual -- see live_dynamics.py's COOLER_MIN_BB comment
 # for the real-data finding: a player who just lost a big pot plays
 # measurably looser for ~10 hands). OR'd with the archetype/freq_tier
-# checks above, not a replacement. Tested here via ground-truth PER-HAND
-# sampling from the real population incidence (~4% of hands for a player
-# who tilts at all: acute 1.0%, fading 1.3%, residual 1.7%), NOT via
-# TableTurnover's live hand-to-hand tracking -- same "measure the ceiling
-# before estimation noise" precedent as archetype/freq_tier's original
-# ground-truth tests, disclosed simplification since
-# probe_chance_enumeration.py can't yet simulate a real cooler-then-
-# follow-up sequence (see choose_abc_action's opponent_tilt_states
-# docstring). 2026-08-21 test result (scripts/tilt_confirm.sh,
-# wider-call-vs-tilting-opponent, --comparison current --adaptive):
-# seed42 confirmed_positive, +0.70+/-0.30 bb/100 (124k hands, 30
-# divergent) -- seed777 hit ZERO divergent hands at a 300k-hand budget
-# (max-zero-divergent-hands reached, stop_reason=no_divergent_hands).
-# NOT cross-validated per this file's own two-seed standard -- same
-# single-seed-positive/single-seed-silent pattern
-# FOLD_VS_3BET_FROM_PASSIVE originally showed before it was eventually
-# retested to genuinely-untestable-both-seeds. Stays False; the one real
-# result is suggestive but not sufficient on its own.
+# checks above, not a replacement.
+#
+# Tested TWICE. First attempt (2026-08-21, scripts/tilt_confirm.sh):
+# ground-truth PER-HAND sampling from the real population incidence
+# (disclosed simplification, since probe_chance_enumeration.py started
+# every hand fresh at the time) -- seed42 confirmed_positive +0.70+/-0.30
+# (124k hands, 30 divergent), seed777 zero divergent at 300k.
+#
+# Second attempt (2026-08-22, scripts/tilt_confirm_live.sh), AFTER
+# _run_probe_chunk was extended to call TableTurnover.record_hand_for_
+# tilt() on every genuinely-finished hand -- tilt state now accumulates
+# from REAL sequences within each probe run, no more sampling. Incidence
+# jumped ~8x (0.20% divergent vs 0.024% before) and seed42 converged much
+# faster: confirmed_positive, +3.16+/-1.34 bb/100 (16k hands, 32
+# divergent). seed777 AGAIN hit zero divergent hands (150k budget) --
+# but a separate diagnostic confirmed the tilt MECHANISM itself works
+# fine for seed777 (tilt state actually occurs in ~25% of seat-hands for
+# that seed's population draw, MORE than seed42's ~14%) -- not a bug.
+# Likely explanation: for seed777's specific archetype/freq_tier
+# population draw, the seats that end up tilting happen to already
+# qualify via LOOSE_ARCHETYPES or WIDER_CALL_VS_OFTEN_TIER, so the OR
+# never gets a chance to show a MARGINAL tilt-only effect on divergent
+# hands, even though tilt state is common.
+#
+# NOT cross-validated per this file's own two-seed standard, both times.
+# Stays False -- the seed42-only signal is real and reproducible but not
+# sufficient alone.
 WIDER_CALL_VS_TILTING_OPPONENT = False
 
 

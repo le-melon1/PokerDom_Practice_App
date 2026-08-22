@@ -259,7 +259,7 @@ RULE_TEST_GROUPS = {
     ),
     "wider-call-vs-tilting-opponent": (
         ["WIDER_CALL_VS_TILTING_OPPONENT"],
-        "call with any pair or better vs an aggressor currently in a post-cooler tilt window, ground-truth-sampled per hand from real population incidence",
+        "call with any pair or better vs an aggressor currently in a real, live-accumulated post-cooler tilt window (record_hand_for_tilt across this probe run's own hand sequence)",
     ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
@@ -944,15 +944,15 @@ def _hero_opponent_freq_tiers(hand, turnover: TableTurnover) -> dict[int, str] |
     return {s: turnover.freq_tier_for(s) for s in bot_seats if hand.players[s].in_hand}
 
 
-def _hero_opponent_tilt_states(hand, hand_index: int, base_seed: int) -> dict[int, str] | None:
-    """Ground-truth {seat: tilt_tier}, sampled independently per hand per
-    opponent from TILT_TIER_WEIGHTS (see that constant's comment) --
-    deliberately NOT read from TableTurnover.tilt_tier_for(), since this
-    probe resets stacks fresh every hand and never calls
-    record_hand_for_tilt(), so a real cooler-then-follow-up sequence can't
-    occur here yet. Deterministic per (base_seed, hand_index, seat) via
-    the shared _common_seed helper, same reproducibility standard as every
-    other random draw in this file."""
+def _hero_opponent_tilt_states_sampled(hand, hand_index: int, base_seed: int) -> dict[int, str] | None:
+    """LEGACY (2026-08-21 first attempt, superseded by the live version
+    below once _run_probe_chunk started calling record_hand_for_tilt()):
+    ground-truth {seat: tilt_tier}, sampled independently per hand per
+    opponent from TILT_TIER_WEIGHTS (see that constant's comment) instead
+    of read from real accumulated history. Kept only so the
+    wider-call-vs-tilting-opponent result already recorded in abc_bot.py's
+    changelog (seed42 confirmed_positive +0.70, seed777 zero divergent)
+    stays reproducible from this file -- not called by anything anymore."""
     bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
     tiers = list(TILT_TIER_WEIGHTS.keys())
     weights = list(TILT_TIER_WEIGHTS.values())
@@ -962,6 +962,22 @@ def _hero_opponent_tilt_states(hand, hand_index: int, base_seed: int) -> dict[in
             continue
         rng = random.Random(_common_seed(base_seed, hand_index, TILT_SEED_STREAM, s))
         out[s] = rng.choices(tiers, weights=weights)[0]
+    return out
+
+
+def _hero_opponent_tilt_states(hand, turnover: TableTurnover) -> dict[int, str] | None:
+    """Ground-truth {seat: tilt_tier}, read from TableTurnover's real
+    accumulated hand-to-hand history (see record_hand_for_tilt, now called
+    once per genuinely-finished hand in _run_probe_chunk's main loop) --
+    a real cooler must actually have occurred in a preceding hand of THIS
+    probe run for a seat to read as anything but "none" here. Same shape
+    as _hero_opponent_freq_tiers above."""
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    out = {}
+    for s in bot_seats:
+        if not hand.players[s].in_hand:
+            continue
+        out[s] = turnover.tilt_tier_for(s)
     return out
 
 
@@ -1036,7 +1052,7 @@ def _choose_and_apply(
         _apply_flag_state(flag_state)
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
-        opponent_tilt_states = _hero_opponent_tilt_states(hand, hand_index, base_seed)
+        opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
         action, amount = choose_abc_action(
             hand,
             seat,
@@ -1077,7 +1093,7 @@ def _continue_to_finish(
             _apply_flag_state(flag_state)
             opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
             opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
-            opponent_tilt_states = _hero_opponent_tilt_states(hand, hand_index, base_seed)
+            opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
             action, amount = choose_abc_action(
                 hand,
                 seat,
@@ -1200,6 +1216,24 @@ def _run_probe_chunk(
         if not split:
             random_deltas.append(0.0)
             enum_deltas.append(0.0)
+
+        # 2026-08-21 (tilt sequence infra): update each turnover's live
+        # tilt-window state from the hand that actually just played out --
+        # but ONLY when that hand genuinely finished. A divergent hand
+        # (split=True) breaks out before base_hand/treat_hand reach
+        # Hand.finished (the delta computation forks separate COPIES via
+        # _continue_to_finish instead) -- the .finished guard below
+        # naturally skips updating tilt state from those forks, avoiding
+        # the ambiguity of which hypothetical outcome (random continuation
+        # vs one of N enumerated branches) should count as "the" result
+        # for a shared, persistent turnover object. This means opponent
+        # tilt accumulation is driven only by hands where hero's rule-
+        # under-test made no difference -- typically 95%+ of hands, so
+        # real incidence is barely affected by skipping the rest.
+        if base_hand.finished:
+            base_turnover.record_hand_for_tilt(base_hand)
+        if treat_hand.finished:
+            treat_turnover.record_hand_for_tilt(treat_hand)
     return divergent
 
 
