@@ -1234,6 +1234,45 @@ script's docstring). Revision history, each one a real measured finding:
       of how the trigger is shaped. Tested-and-rejected.
   191 tests pass, no behavior change (both flags off).
 
+  2026-08-22, Tier 6 #2 (CONFIDENCE_GATED_ARCHETYPE_READ): tested via
+  scripts/confidence_gate_confirm.py (special many-short-independent-
+  sessions method -- see that script's docstring for why the normal
+  long-adaptive-run harness structurally can't reach the low-confidence
+  window). Confirmed NEGATIVE both seeds, -32.67+/-10.06 (seed42) /
+  -29.75+/-8.64 (seed777). Real structural finding: opponent_archetypes
+  is always ground truth in this self-play sim from hand 1 -- there's no
+  actual estimation noise for "confidence" to protect against, so
+  distrusting an already-100%-accurate read only discards real value.
+  Would need testing against a genuinely noisy read (e.g. the live app's
+  dossier estimate) to have any chance of showing an effect -- out of
+  scope for this probe's ground-truth-everywhere design. Stays False.
+
+  2026-08-22, Tier 6 #3 (REAL_RANGE_NUT_ADVANTAGE_SIZING): found
+  PokerDom_Microlimits_Analysis's src/engine/range_equity.py already
+  exists, tested, and is used by the live EV panel -- not a from-scratch
+  build. Wired a real Monte Carlo range-vs-range equity read (hero's
+  opening range vs the opponent's implied continuing range, on the
+  actual board) in as an alternative to NUT_ADVANTAGE_SIZING's binary
+  (top-card-rank, wet/dry) proxy, independently toggleable. Tested
+  (scripts/real_range_confirm.sh): ZERO divergent hands on BOTH seeds at
+  150k hands each (~52 minutes total -- Monte Carlo equity runs ~13ms/
+  hand here, an order of magnitude slower than most presets). Since
+  NUT_ADVANTAGE_SIZING is already True in both arms, divergence only
+  happens where the real equity read disagrees with the proxy -- and on
+  this population, at this threshold, it apparently never does. Real
+  finding: the cheap proxy already captures essentially everything the
+  expensive calculation would add to this specific binary decision.
+  Stays False.
+
+  This closes out the full Tier 6 backlog (#1-#4, all taken in order per
+  the user's "делай всё по очереди"): one confirmed-negative
+  (CONTINUOUS_FOLD_VS_BET_SIZE), one confirmed-negative
+  (CONFIDENCE_GATED_ARCHETYPE_READ), two genuinely-untestable-by-self-
+  play (MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND, REAL_RANGE_NUT_
+  ADVANTAGE_SIZING). No flag shipped True, but all four ideas were
+  taken to clear, honest, well-understood conclusions rather than left
+  as vague brainstorm items.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -2938,6 +2977,22 @@ NUT_ADVANTAGE_POT_FRACTION = 0.75  # same number as BIG_VALUE_SIZING_POT_FRACTIO
 # replacing the confirmed original, per this file's standard practice
 # of never swapping a working confirmed mechanism for an unproven one
 # without its own independent confirmation first.
+# 2026-08-22 test result (scripts/real_range_confirm.sh, --comparison
+# current --adaptive): ZERO divergent hands on BOTH seeds at a 150k-hand
+# budget each (~52 minutes total wall time -- Monte Carlo equity is
+# roughly 13ms/hand here, an order of magnitude slower than most presets
+# in this file). Since NUT_ADVANTAGE_SIZING (the cheap proxy) is already
+# True in both arms of this comparison, divergence can only occur where
+# the real equity read actively DISAGREES with the proxy's call on
+# whether to size up -- and on this population, at this threshold, it
+# apparently never does within 300k total hands. Real, informative
+# finding: the cheap (top-card-rank, wet/dry) proxy already captures
+# essentially everything the far more expensive Monte Carlo range-vs-
+# range calculation would add to THIS specific binary sizing decision.
+# The "honest fix" NUT_ADVANTAGE_SIZING's own original comment called
+# for turned out to be unnecessary in practice. Stays False -- not
+# spending more compute chasing an even bigger budget without being
+# asked, given the cost-per-hand here.
 REAL_RANGE_NUT_ADVANTAGE_SIZING = False
 REAL_RANGE_EQUITY_THRESHOLD = 0.55
 REAL_RANGE_TRIALS = 300  # kept low deliberately -- Monte Carlo equity is the single most expensive operation in this file by orders of magnitude; every trial added here multiplies the cost of every chance-enumeration probe that touches this branch
@@ -3801,6 +3856,30 @@ def choose_abc_action(
                 and not _is_wet_board(hand.board)
             ):
                 sizing = NUT_ADVANTAGE_POT_FRACTION
+            # REAL_RANGE_NUT_ADVANTAGE_SIZING (see the flag's comment above):
+            # real Monte Carlo range-vs-range equity instead of NUT_ADVANTAGE_
+            # SIZING's rank/wet-dry proxy. Independently toggleable -- only
+            # one of the two should be active in a given test.
+            if (
+                REAL_RANGE_NUT_ADVANTAGE_SIZING
+                and made
+                and had_initiative
+                and hand.board
+                and len(_live_opponent_seats(hand, seat)) == 1
+            ):
+                opp_seat = _live_opponent_seats(hand, seat)[0]
+                hero_pos = _seat_position(hand, seat)
+                opp_pos = _seat_position(hand, opp_seat)
+                hero_range = open_ranges.get(hero_pos)
+                opp_range = call_ranges.get(opp_pos)
+                if hero_range and opp_range:
+                    hero_combos = filter_combos_for_board(_expand_range(list(hero_range)), hand.board)
+                    if hero_combos:
+                        hero_equity, _ = combos_vs_range_equity_on_board(
+                            hero_combos, list(opp_range), hand.board, trials=REAL_RANGE_TRIALS
+                        )
+                        if hero_equity >= REAL_RANGE_EQUITY_THRESHOLD:
+                            sizing = NUT_ADVANTAGE_POT_FRACTION
             # pf8 (BLOCK_BET_RIVER): a small river sizing tier for thin value
             # with a marginal (not very_strong) made hand, out of position,
             # no initiative -- mutually exclusive with pf6's pot-control

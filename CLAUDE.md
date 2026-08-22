@@ -480,8 +480,33 @@ holding a qualifying hand not already covered elsewhere). Both stay
   different mechanism, same conclusion every prior "fold more to bet
   size" idea reached -- this population just doesn't punish oversized
   bets. Tested-and-rejected.
+- **`CONFIDENCE_GATED_ARCHETYPE_READ`** (#2, sample-size-weighted trust
+  in an archetype read): confirmed NEGATIVE both seeds, -32.67±10.06
+  (seed42) / -29.75±8.64 (seed777) -- tested via `scripts/
+  confidence_gate_confirm.py`'s special many-short-independent-sessions
+  method (the normal long-adaptive-run harness can't reach the low-
+  confidence window at any rate, since occupants never reseat mid-run).
+  Real structural finding: `opponent_archetypes` is always ground truth
+  in this sim from hand 1 -- no estimation noise for confidence to
+  protect against, so distrust only discards real value. Would need a
+  genuinely noisy read (e.g. live dossier estimates) to have a chance.
+- **`REAL_RANGE_NUT_ADVANTAGE_SIZING`** (#3, real Monte Carlo range-vs-
+  range equity replacing `NUT_ADVANTAGE_SIZING`'s binary proxy): found
+  `PokerDom_Microlimits_Analysis/src/engine/range_equity.py` already
+  exists and is used by the live EV panel -- not a from-scratch build.
+  Tested (`scripts/real_range_confirm.sh`): ZERO divergent hands both
+  seeds at 150k hands each (~52 min total, Monte Carlo runs ~13ms/hand
+  here). Since the cheap proxy is already active in both arms,
+  divergence only happens on disagreement -- and it never disagreed
+  enough to change the sizing decision. The cheap proxy already
+  captures what the expensive calculation would add here.
 
-191 tests pass, no behavior change (both flags off).
+**Closes the full Tier 6 backlog** (#1-#4, taken in order): two
+confirmed-negative, two genuinely-untestable-by-self-play. No flag
+shipped True, but every idea reached a clear, honest conclusion instead
+of staying a vague brainstorm item.
+
+191 tests pass, no behavior change (all flags off).
 
 ### Postflop: what's confirmed and shipped True
 

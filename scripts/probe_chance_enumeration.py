@@ -281,6 +281,10 @@ RULE_TEST_GROUPS = {
         ["CONFIDENCE_GATED_ARCHETYPE_READ"],
         "distrust the LOOSE_ARCHETYPES widen against an aggressor observed for fewer than CONFIDENCE_MIN_HANDS hands this probe run, Tier 6 sample-size-weighted-trust idea",
     ),
+    "real-range-nut-advantage-sizing": (
+        ["REAL_RANGE_NUT_ADVANTAGE_SIZING"],
+        "real Monte Carlo range-vs-range equity value-bet sizing instead of NUT_ADVANTAGE_SIZING's rank/wet-dry proxy, Tier 6 real-range-equity idea",
+    ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
     "fold-marginal-vs-big-donk": (
@@ -627,6 +631,7 @@ ALL_COMPARISON_FLAGS = [
     "MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND",
     "CONTINUOUS_FOLD_VS_BET_SIZE",
     "CONFIDENCE_GATED_ARCHETYPE_READ",
+    "REAL_RANGE_NUT_ADVANTAGE_SIZING",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
