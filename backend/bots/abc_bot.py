@@ -1921,6 +1921,19 @@ PREMIUM_3BET_SIZING_BONUS_BB = 1.5
 TIGHT_ARCHETYPES_FOR_DONK_BLUFF = {"Nit", "TAG", "LAG"}
 DONK_BLUFF_VS_TIGHT = True  # flip False to A/B-test against the baseline (no donk bluffing at all)
 
+# 2026-08-23 (untested): generalizes the "bluff more into a tight-style
+# opponent" reasoning across the freq_tier axis, the same way WIDER_CALL_
+# VS_OFTEN_TIER generalized the LOOSE_ARCHETYPES call-widening logic --
+# an opponent read as postflop_freq_tier="rare" (raises/bets less than
+# most, regardless of their broader preflop archetype) should fold to a
+# bluff more too, the same real-data mechanism TIGHT_ARCHETYPES_FOR_
+# DONK_BLUFF is a proxy for. ONE flag covers all three bluffs that
+# already share that exact archetype gate (DONK_BLUFF_VS_TIGHT,
+# BARREL_BLUFF_VS_TIGHT, RIVER_BLUFF_MISSED_DRAW) -- OR'd with the
+# existing archetype check in each, either being true is enough to fire.
+# Needs its own A/B confirmation before shipping True.
+BLUFF_VS_RARE_TIER = False
+
 # v25 (BARREL_BLUFF_VS_TIGHT): before this, the bot's only air-bluffing
 # mechanisms were a single flop cbet (UNCONDITIONAL_FLOP_CBET, flop-only)
 # and a donk-bluff without initiative (v17, DONK_BLUFF_VS_TIGHT) -- there
@@ -2005,6 +2018,16 @@ SIZED_4BET_MULTIPLIER_OOP = 2.6
 LOOSE_ARCHETYPES_FOR_3BET = {"Maniac", "Station"}
 VALUE_3BET_VS_LOOSE = VALUE_3BET | {"99", "88", "AJs", "AJo", "KQs", "KQo"}
 WIDER_3BET_VS_LOOSE = True  # 2026-08-20: was "active but unconfirmed" (old whole-game method, +1.62 @500k, inside CI) -- re-confirmed POSITIVE both seeds with the modern chance-enumeration method against the new archetype population, +4.91+/-2.43 (seed42) / +5.99+/-2.72 (seed777). See the changelog entry near the end of this docstring.
+
+# 2026-08-23 (untested): generalizes WIDER_3BET_VS_LOOSE across the
+# freq_tier axis, the same reasoning as WIDER_CALL_VS_OFTEN_TIER (postflop)
+# and BLUFF_VS_RARE_TIER (bluffing) already established -- a raiser read
+# as postflop_freq_tier="often" continues against 3-bets more than most,
+# regardless of their broader preflop archetype, the same real signal
+# LOOSE_ARCHETYPES_FOR_3BET is a proxy for. OR'd with the existing
+# archetype check, either being true is enough to widen. Needs its own
+# A/B confirmation before shipping True.
+WIDER_3BET_VS_OFTEN_TIER = False
 
 # v21: a squeeze spot (facing one raise that's ALREADY been called by at
 # least one other player before hero acts) has never been treated any
@@ -3464,10 +3487,17 @@ def choose_abc_action(
         # v15, B1: widen the value-3-bet range when the raiser hero is facing
         # is a known Maniac/Station (see LOOSE_ARCHETYPES_FOR_3BET above).
         value_3bet_range = VALUE_3BET
-        if WIDER_3BET_VS_LOOSE and opponent_archetypes:
+        if (WIDER_3BET_VS_LOOSE and opponent_archetypes) or (WIDER_3BET_VS_OFTEN_TIER and opponent_freq_tiers):
             raiser_seat = _last_preflop_raiser_seat(hand)
-            if raiser_seat is not None and opponent_archetypes.get(raiser_seat) in LOOSE_ARCHETYPES_FOR_3BET:
-                value_3bet_range = VALUE_3BET_VS_LOOSE
+            if raiser_seat is not None:
+                raiser_is_loose = (
+                    WIDER_3BET_VS_LOOSE and opponent_archetypes and opponent_archetypes.get(raiser_seat) in LOOSE_ARCHETYPES_FOR_3BET
+                )
+                raiser_is_often = (
+                    WIDER_3BET_VS_OFTEN_TIER and opponent_freq_tiers and opponent_freq_tiers.get(raiser_seat) == "often"
+                )
+                if raiser_is_loose or raiser_is_often:
+                    value_3bet_range = VALUE_3BET_VS_LOOSE
         # v21 (SQUEEZE_WIDER_RANGE): see the constant's comment above -- dead
         # money from the caller(s) already in justifies the same widening a
         # loose raiser does, so just take the wider of the two ranges.
@@ -3732,14 +3762,17 @@ def choose_abc_action(
         # sizing/range tweak on an existing bet -- the bot previously only
         # ever bluffed as an in-position flop cbet with initiative.
         donk_bluff_with_air = False
-        if DONK_BLUFF_VS_TIGHT and not had_initiative and n_bets == 0 and opponent_archetypes:
+        if DONK_BLUFF_VS_TIGHT and not had_initiative and n_bets == 0 and (opponent_archetypes or opponent_freq_tiers):
             # heads-up-only is already enforced below via len(...)==1 --
             # deliberately not gated by is_multiway/MULTIWAY_AWARE, so this
             # v17 rule stays independent of the (2026-08-07-split) v18
             # multiway sub-rule flags being tested.
             donk_live_opponents = _live_opponent_seats(hand, seat)
             if len(donk_live_opponents) == 1:
-                if opponent_archetypes.get(donk_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                donk_opp = donk_live_opponents[0]
+                is_tight_archetype = opponent_archetypes and opponent_archetypes.get(donk_opp) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF
+                is_rare_tier = BLUFF_VS_RARE_TIER and opponent_freq_tiers and opponent_freq_tiers.get(donk_opp) == "rare"
+                if is_tight_archetype or is_rare_tier:
                     donk_bluff_with_air = True
         # v25 (see BARREL_BLUFF_VS_TIGHT above): continue bluffing a scare
         # card on the turn/river against a known tight opponent, if hero
@@ -3752,12 +3785,15 @@ def choose_abc_action(
             and had_initiative
             and n_bets == 0
             and hand.street in ("turn", "river")
-            and opponent_archetypes
+            and (opponent_archetypes or opponent_freq_tiers)
             and _is_scare_card(hand)
         ):
             barrel_live_opponents = _live_opponent_seats(hand, seat)
             if len(barrel_live_opponents) == 1:
-                if opponent_archetypes.get(barrel_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                barrel_opp = barrel_live_opponents[0]
+                is_tight_archetype = opponent_archetypes and opponent_archetypes.get(barrel_opp) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF
+                is_rare_tier = BLUFF_VS_RARE_TIER and opponent_freq_tiers and opponent_freq_tiers.get(barrel_opp) == "rare"
+                if is_tight_archetype or is_rare_tier:
                     barrel_bluff_with_air = True
             # pf9 (BLOCKER_BASED_RIVER_BLUFF): narrows (never widens) the
             # barrel bluff above -- only fire it if hero's own hole cards
@@ -3778,12 +3814,19 @@ def choose_abc_action(
             and hand.street == "river"
             and n_bets == 0
             and not made
-            and opponent_archetypes
+            and (opponent_archetypes or opponent_freq_tiers)
             and _had_missed_draw(player.hole_cards, hand.board)
         ):
             missed_draw_live_opponents = _live_opponent_seats(hand, seat)
             if len(missed_draw_live_opponents) == 1:
-                if opponent_archetypes.get(missed_draw_live_opponents[0]) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
+                missed_draw_opp = missed_draw_live_opponents[0]
+                is_tight_archetype = (
+                    opponent_archetypes and opponent_archetypes.get(missed_draw_opp) in TIGHT_ARCHETYPES_FOR_DONK_BLUFF
+                )
+                is_rare_tier = (
+                    BLUFF_VS_RARE_TIER and opponent_freq_tiers and opponent_freq_tiers.get(missed_draw_opp) == "rare"
+                )
+                if is_tight_archetype or is_rare_tier:
                     river_bluff_missed_draw = True
         should_bet = made or cbet_with_air or donk_bluff_with_air or barrel_bluff_with_air or probe_bet_turn or delayed_cbet_turn or float_followup_turn or float_followup_river or river_bluff_missed_draw
         # pf6 (POT_CONTROL_MARGINAL_HANDS): check back a marginal made hand

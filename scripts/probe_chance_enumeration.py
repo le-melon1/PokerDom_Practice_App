@@ -293,6 +293,14 @@ RULE_TEST_GROUPS = {
         ["REAL_RANGE_NUT_ADVANTAGE_SIZING"],
         "real Monte Carlo range-vs-range equity value-bet sizing instead of NUT_ADVANTAGE_SIZING's rank/wet-dry proxy, Tier 6 real-range-equity idea",
     ),
+    "bluff-vs-rare-tier": (
+        ["BLUFF_VS_RARE_TIER"],
+        "generalizes DONK_BLUFF_VS_TIGHT/BARREL_BLUFF_VS_TIGHT/RIVER_BLUFF_MISSED_DRAW's tight-archetype gate to also fire vs an opponent read as postflop_freq_tier=rare",
+    ),
+    "wider-3bet-vs-often-tier": (
+        ["WIDER_3BET_VS_OFTEN_TIER"],
+        "generalizes WIDER_3BET_VS_LOOSE's loose-archetype gate to also widen the value-3-bet range vs a raiser read as postflop_freq_tier=often",
+    ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
     "fold-marginal-vs-big-donk": (
@@ -640,6 +648,8 @@ ALL_COMPARISON_FLAGS = [
     "CONTINUOUS_FOLD_VS_BET_SIZE",
     "CONFIDENCE_GATED_ARCHETYPE_READ",
     "REAL_RANGE_NUT_ADVANTAGE_SIZING",
+    "BLUFF_VS_RARE_TIER",
+    "WIDER_3BET_VS_OFTEN_TIER",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
