@@ -1217,6 +1217,23 @@ script's docstring). Revision history, each one a real measured finding:
   "high" tier + hero holding a qualifying hand not already covered by
   archetype/freq_tier/tilt). Both stay False.
 
+  2026-08-22, Tier 6 backlog (user: "давай отдельно сделаем вариант а и
+  с" then "делай всё по очереди" -- all four brainstorm items, taken in
+  order): scripts/tier6_confirm.sh, both seeds.
+    - MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND (#1, relative stack among
+      multiple opponents): ZERO divergent hands both seeds (150k
+      budget). Genuinely untestable, same class as STEAL_WIDER_VS_NIT --
+      the compound spot (multiway + would-be-widened call + a specific
+      other opponent short-stacked) is too rare.
+    - CONTINUOUS_FOLD_VS_BET_SIZE (#4, graduated fold probability
+      instead of a hard size cutoff): confirmed NEGATIVE both seeds,
+      -0.82+/-0.33 (seed42) / -0.57+/-0.22 (seed777). A genuinely
+      different mechanism landed in the same place every other
+      "fold more to bet size" idea in this file has -- this population
+      doesn't punish oversized bets the way theory predicts, regardless
+      of how the trigger is shaped. Tested-and-rejected.
+  191 tests pass, no behavior change (both flags off).
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -2604,6 +2621,55 @@ WIDER_CALL_VS_TILTING_OPPONENT = True
 BLUFF_CATCH_VS_FREQUENT_BLUFFER_A = False
 BLUFF_CATCH_VS_FREQUENT_BLUFFER_C = False
 
+# 2026-08-22 (untested), Tier 6 #1: a genuinely new angle on multiway
+# awareness -- stack-depth-conditioned, not frequency-conditioned (the
+# three prior multiway-restriction attempts, MULTIWAY_DISABLE_AIR_CBET/
+# MULTIWAY_DISABLE_LOOSE_CALL/MULTIWAY_NARROW_CALL_RANGE, all failed on
+# THIS population, see their own comments -- this doesn't repeat that
+# same idea a fourth time). Suppresses the LOOSE_ARCHETYPES/freq_tier/
+# tilt/bluff-tier any-pair-or-better widen (see the block below) when
+# ANOTHER live opponent (not the aggressor) has a short stack behind --
+# a short stack changes incentives for everyone else at the table
+# (side-pot dynamics, the aggressor may be betting a stronger range
+# specifically because a covered short stack is already close to
+# committed) that the existing archetype/tier reads don't capture.
+#
+# 2026-08-22 test result (scripts/tier6_confirm.sh, --comparison current
+# --adaptive): ZERO divergent hands on BOTH seeds at a 150k-hand budget.
+# Genuinely untestable by self-play -- same class as STEAL_WIDER_VS_NIT
+# -- the compound spot (multiway + would-be-widened call + a specific
+# other live opponent short-stacked) is too rare for this population/
+# model to ever surface it in volume. Stays False.
+MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND = False
+SHORT_STACK_BEHIND_THRESHOLD_BB = 20.0
+
+
+def _min_other_live_stack_bb(hand: Hand, seat: int, exclude: int | None) -> float | None:
+    """Shortest stack (in bb) among live opponents, excluding `seat` itself
+    and `exclude` (typically the current aggressor) -- None if no such
+    opponent exists (heads-up or everyone else already folded)."""
+    live = [s for s in _live_opponent_seats(hand, seat) if s != exclude]
+    if not live or hand.big_blind <= 0:
+        return None
+    return min(hand.players[s].stack for s in live) / hand.big_blind
+
+
+# 2026-08-22 (untested), Tier 6 #2: currently an opponent's archetype
+# read is trusted identically whether it's backed by 5 hands or 5000 --
+# binary "known or not," no confidence weighting by sample size. Gates
+# the LOOSE_ARCHETYPES widen (see that constant's comment above) on
+# having observed the aggressor for at least CONFIDENCE_MIN_HANDS hands
+# THIS session (TableTurnover.hands_played_for, already tracked for
+# turnover/session-length purposes -- no new infrastructure needed,
+# reused as-is). When opponent_confidence isn't passed at all (the
+# common case for every other test in this file), this is a pure no-op
+# -- only degrades from baseline when the signal is actually present and
+# still thin. CONFIDENCE_MIN_HANDS=20 is a reasonable placeholder (not
+# fit to a measured breakeven point), same disclosed-guess status as
+# several other thresholds in this file (e.g. SB_BIGGER_OPEN_SIZING).
+CONFIDENCE_GATED_ARCHETYPE_READ = False
+CONFIDENCE_MIN_HANDS = 20
+
 
 def _last_aggressor_this_street(hand: Hand) -> int | None:
     street_bets = [a for a in hand.actions if a.street == hand.street and a.action in ("bets", "raises")]
@@ -3043,6 +3109,35 @@ FLOAT_TURN_IN_POSITION = True  # 2026-08-21: confirmed POSITIVE both seeds (scri
 FOLD_MARGINAL_VS_BIG_DONK = False
 BIG_DONK_POT_FRACTION = 0.66
 
+# 2026-08-22 (untested), Tier 6 #4: every bet-size-gated rule in this
+# file (FOLD_MARGINAL_VS_BIG_DONK above, FOLD_TOP_PAIR_VS_OVERBET,
+# FOLD_TOP_PAIR_VS_WET_BOARD_TIGHT) is a hard step function -- call
+# below one fixed pot-fraction cutoff, always fold at/above it. Real
+# opponents don't actually change their strategy at a single sharp
+# threshold; a genuinely different mechanism is a smoothly graduated
+# fold PROBABILITY that scales with bet size, applied broadly (any bet
+# facing a plain top-pair-tier hand, not donk-lead-specific). Below
+# CONTINUOUS_FOLD_SIZE_FLOOR (half pot) folds essentially never; at/
+# above CONTINUOUS_FOLD_SIZE_CEIL (150% pot) folds up to
+# CONTINUOUS_FOLD_MAX_PROB of the time, never higher -- a plain top pair
+# is never abandoned entirely regardless of size. See
+# _hole_card_frequency_roll's docstring for the deterministic-hash
+# mechanism used to make the probability stable/reproducible per hand.
+#
+# 2026-08-22 test result (scripts/tier6_confirm.sh, --comparison current
+# --adaptive): confirmed NEGATIVE both seeds, -0.82+/-0.33 (seed42,
+# 108k hands, 30 divergent) / -0.57+/-0.22 (seed777, 112k hands, 30
+# divergent). A genuinely different mechanism (graduated probability
+# instead of a hard cutoff) still lands in the same place every other
+# "fold more to a bigger bet" idea in this file has -- this population
+# doesn't punish oversized bets the way solver-derived theory predicts,
+# regardless of how the fold trigger is shaped. Stays False,
+# tested-and-rejected.
+CONTINUOUS_FOLD_VS_BET_SIZE = False
+CONTINUOUS_FOLD_SIZE_FLOOR = 0.5
+CONTINUOUS_FOLD_SIZE_CEIL = 1.5
+CONTINUOUS_FOLD_MAX_PROB = 0.5
+
 # Gap 2: `made` calls a bet the same way on a dry rainbow flop and on a
 # 4-flush river -- no board-texture discount at all when calling. Published
 # theory is genuinely split here: high-level guides say fold more on wet,
@@ -3082,6 +3177,7 @@ def choose_abc_action(
     opponent_tilt_states: dict[int, str] | None = None,
     opponent_bluff_tiers_a: dict[int, str] | None = None,
     opponent_bluff_tiers_c: dict[int, str] | None = None,
+    opponent_confidence: dict[int, int] | None = None,
 ) -> tuple[str, float | None]:
     """`opponent_archetypes`: optional {seat: archetype} for the OTHER seats
     at the table. Only used to loosen the postflop calling bar against a
@@ -3113,7 +3209,14 @@ def choose_abc_action(
     bluffing at real showdown" -- see live_dynamics.py's
     BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS comment for the full
     reasoning and coverage numbers. Both mostly read "unknown" for any
-    given opponent."""
+    given opponent.
+
+    `opponent_confidence`: optional {seat: hands_played}, how many hands
+    hero has observed this specific opponent for THIS session (see
+    TableTurnover.hands_played_for). Read by
+    CONFIDENCE_GATED_ARCHETYPE_READ (see LOOSE_ARCHETYPES's comment
+    above) -- Tier 6's "trust an archetype read more once it's backed by
+    more hands" idea."""
     (
         open_ranges,
         call_ranges,
@@ -3838,6 +3941,23 @@ def choose_abc_action(
             aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
             if aggressor_archetype in TIGHT_ARCHETYPES_FOR_DONK_BLUFF:
                 return ("fold", None)
+        # CONTINUOUS_FOLD_VS_BET_SIZE (see the flag's comment above): every
+        # other bet-size-gated rule in this file is a hard step function
+        # (call below a threshold, always-fold at/above it). This one
+        # instead scales a plain top-pair-tier hand's fold PROBABILITY
+        # smoothly with bet size -- a small overbet folds rarely, a huge
+        # one folds close to CONTINUOUS_FOLD_MAX_PROB of the time, instead
+        # of every size above one fixed cutoff being treated identically.
+        # Applies broadly (any bet, not donk-lead-specific like
+        # FOLD_MARGINAL_VS_BIG_DONK) -- a genuinely different mechanism,
+        # not a parameter tweak on an already-rejected idea.
+        if CONTINUOUS_FOLD_VS_BET_SIZE and not very_strong and pot_before_the_bet > 0:
+            bet_frac = to_call / pot_before_the_bet
+            if bet_frac > CONTINUOUS_FOLD_SIZE_FLOOR:
+                span = CONTINUOUS_FOLD_SIZE_CEIL - CONTINUOUS_FOLD_SIZE_FLOOR
+                fold_prob = min(1.0, (bet_frac - CONTINUOUS_FOLD_SIZE_FLOOR) / span) * CONTINUOUS_FOLD_MAX_PROB
+                if _hole_card_frequency_roll(player, fold_prob):
+                    return ("fold", None)
         return ("call", None)
 
     if (
@@ -3849,18 +3969,24 @@ def choose_abc_action(
         aggressor_tilt = opponent_tilt_states.get(aggressor) if opponent_tilt_states and aggressor is not None else None
         aggressor_bluff_a = opponent_bluff_tiers_a.get(aggressor) if opponent_bluff_tiers_a and aggressor is not None else None
         aggressor_bluff_c = opponent_bluff_tiers_c.get(aggressor) if opponent_bluff_tiers_c and aggressor is not None else None
-        is_loose_aggressor = aggressor_archetype in LOOSE_ARCHETYPES
+        aggressor_confidence = opponent_confidence.get(aggressor) if opponent_confidence and aggressor is not None else None
+        archetype_trusted = (
+            not CONFIDENCE_GATED_ARCHETYPE_READ or aggressor_confidence is None or aggressor_confidence >= CONFIDENCE_MIN_HANDS
+        )
+        is_loose_aggressor = aggressor_archetype in LOOSE_ARCHETYPES and archetype_trusted
         is_often_aggressor = WIDER_CALL_VS_OFTEN_TIER and aggressor_freq_tier == "often"
         is_tilting_aggressor = WIDER_CALL_VS_TILTING_OPPONENT and aggressor_tilt not in (None, "none")
         is_frequent_bluffer_a = BLUFF_CATCH_VS_FREQUENT_BLUFFER_A and aggressor_bluff_a == "high"
         is_frequent_bluffer_c = BLUFF_CATCH_VS_FREQUENT_BLUFFER_C and aggressor_bluff_c == "high"
+        short_stack_behind = MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND and n_live_opps_2plus
+        if short_stack_behind:
+            min_other_stack = _min_other_live_stack_bb(hand, seat, exclude=aggressor)
+            short_stack_behind = min_other_stack is not None and min_other_stack < SHORT_STACK_BEHIND_THRESHOLD_BB
         if (
-            is_loose_aggressor
-            or is_often_aggressor
-            or is_tilting_aggressor
-            or is_frequent_bluffer_a
-            or is_frequent_bluffer_c
-        ) and has_any_pair_or_better(player.hole_cards, hand.board):
+            (is_loose_aggressor or is_often_aggressor or is_tilting_aggressor or is_frequent_bluffer_a or is_frequent_bluffer_c)
+            and not short_stack_behind
+            and has_any_pair_or_better(player.hole_cards, hand.board)
+        ):
             return ("call", None)
 
     # pf7 (SPR_SCALED_THRESHOLDS): already near pot-committed (low

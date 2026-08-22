@@ -269,6 +269,18 @@ RULE_TEST_GROUPS = {
         ["BLUFF_CATCH_VS_FREQUENT_BLUFFER_C"],
         "call with any pair or better vs an aggressor read as bluff_tier_c=high (any-street aggressor, reached real showdown, lost -- reliable at >=15 events, 7974/26797 players)",
     ),
+    "multiway-tighten-vs-short-stack-behind": (
+        ["MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND"],
+        "suppress the archetype/tier any-pair-or-better widen when another live opponent (not the aggressor) has a short stack behind, Tier 6 relative-stack idea",
+    ),
+    "continuous-fold-vs-bet-size": (
+        ["CONTINUOUS_FOLD_VS_BET_SIZE"],
+        "graduated fold probability for a plain top-pair-tier hand, scaling smoothly with bet size instead of a hard step-function cutoff, Tier 6 continuous-signal idea",
+    ),
+    "confidence-gated-archetype-read": (
+        ["CONFIDENCE_GATED_ARCHETYPE_READ"],
+        "distrust the LOOSE_ARCHETYPES widen against an aggressor observed for fewer than CONFIDENCE_MIN_HANDS hands this probe run, Tier 6 sample-size-weighted-trust idea",
+    ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
     "fold-marginal-vs-big-donk": (
@@ -612,6 +624,9 @@ ALL_COMPARISON_FLAGS = [
     "WIDER_CALL_VS_TILTING_OPPONENT",
     "BLUFF_CATCH_VS_FREQUENT_BLUFFER_A",
     "BLUFF_CATCH_VS_FREQUENT_BLUFFER_C",
+    "MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND",
+    "CONTINUOUS_FOLD_VS_BET_SIZE",
+    "CONFIDENCE_GATED_ARCHETYPE_READ",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
@@ -1001,6 +1016,16 @@ def _hero_opponent_bluff_tiers(hand, turnover: TableTurnover, variant: str) -> d
     return {s: getter(s) for s in bot_seats if hand.players[s].in_hand}
 
 
+def _hero_opponent_confidence(hand, turnover: TableTurnover) -> dict[int, int] | None:
+    """Ground-truth {seat: hands_played} -- how many hands THIS occupant
+    has played since being seated (TableTurnover.hands_played_for,
+    already tracked for turnover purposes). Used by
+    CONFIDENCE_GATED_ARCHETYPE_READ, Tier 6's sample-size-weighted trust
+    idea."""
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    return {s: turnover.hands_played_for(s) for s in bot_seats if hand.players[s].in_hand}
+
+
 def _should_force_opponent_reraise(hand, seat: int) -> bool:
     """True when `seat` (a non-hero seat) is facing exactly hero's own
     preflop raise -- i.e. this is the decision point where "does the
@@ -1075,6 +1100,7 @@ def _choose_and_apply(
         opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
         opponent_bluff_tiers_a = _hero_opponent_bluff_tiers(hand, turnover, "a")
         opponent_bluff_tiers_c = _hero_opponent_bluff_tiers(hand, turnover, "c")
+        opponent_confidence = _hero_opponent_confidence(hand, turnover)
         action, amount = choose_abc_action(
             hand,
             seat,
@@ -1083,6 +1109,7 @@ def _choose_and_apply(
             opponent_tilt_states=opponent_tilt_states,
             opponent_bluff_tiers_a=opponent_bluff_tiers_a,
             opponent_bluff_tiers_c=opponent_bluff_tiers_c,
+            opponent_confidence=opponent_confidence,
         )
     elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
         action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
@@ -1132,6 +1159,7 @@ def _continue_to_finish(
             opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
             opponent_bluff_tiers_a = _hero_opponent_bluff_tiers(hand, turnover, "a")
             opponent_bluff_tiers_c = _hero_opponent_bluff_tiers(hand, turnover, "c")
+            opponent_confidence = _hero_opponent_confidence(hand, turnover)
             action, amount = choose_abc_action(
                 hand,
                 seat,
@@ -1140,6 +1168,7 @@ def _continue_to_finish(
                 opponent_tilt_states=opponent_tilt_states,
                 opponent_bluff_tiers_a=opponent_bluff_tiers_a,
                 opponent_bluff_tiers_c=opponent_bluff_tiers_c,
+                opponent_confidence=opponent_confidence,
             )
         else:
             archetype = turnover.archetype_for(seat)
@@ -1286,6 +1315,13 @@ def _run_probe_chunk(
             base_turnover.record_hand_for_tilt(base_hand)
         if treat_hand.finished:
             treat_turnover.record_hand_for_tilt(treat_hand)
+        # hands_played, unlike tilt, has no result-dependent forking
+        # ambiguity (it's just a counter) -- safe to increment every
+        # iteration regardless of whether this hand split, keeping both
+        # turnovers' counts in lockstep. See TableTurnover.record_hand_
+        # played's docstring for why this exists at all.
+        base_turnover.record_hand_played()
+        treat_turnover.record_hand_played()
     return divergent
 
 

@@ -466,6 +466,23 @@ the real bottleneck is compound rarity (aggressor + "high" tier + hero
 holding a qualifying hand not already covered elsewhere). Both stay
 `False`.
 
+### 2026-08-22: Tier 6 brainstorm backlog, taken in order
+
+`scripts/tier6_confirm.sh`, both seeds:
+- **`MULTIWAY_TIGHTEN_VS_SHORT_STACK_BEHIND`** (#1, relative stack among
+  multiple opponents, a genuinely new angle -- stack-depth-conditioned,
+  not frequency-conditioned like the three prior failed multiway
+  attempts): ZERO divergent hands both seeds (150k budget). Genuinely
+  untestable, same class as `STEAL_WIDER_VS_NIT`.
+- **`CONTINUOUS_FOLD_VS_BET_SIZE`** (#4, graduated fold probability
+  instead of a hard pot-fraction cutoff): confirmed NEGATIVE both
+  seeds, -0.82±0.33 (seed42) / -0.57±0.22 (seed777). A genuinely
+  different mechanism, same conclusion every prior "fold more to bet
+  size" idea reached -- this population just doesn't punish oversized
+  bets. Tested-and-rejected.
+
+191 tests pass, no behavior change (both flags off).
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting

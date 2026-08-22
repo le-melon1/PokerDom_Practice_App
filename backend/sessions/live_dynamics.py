@@ -327,8 +327,31 @@ class TableTurnover:
     def profile_id_for(self, seat: int) -> str | None:
         return self.occupants[seat].profile_id
 
+    def hands_played_for(self, seat: int) -> int:
+        """How many hands this seat's CURRENT occupant has played since
+        being seated -- already tracked for turnover/session-length
+        purposes, reused as-is for Tier 6's confidence-in-archetype-read
+        idea (see abc_bot.py's CONFIDENCE_GATED_ARCHETYPE_READ comment).
+        Resets to 0 whenever a new occupant is seated, matching "hero
+        hasn't watched this specific opponent long enough yet to trust
+        the read"."""
+        return self.occupants[seat].hands_played
+
     def tilt_tier_for(self, seat: int) -> str:
         return _tilt_tier_from_hands_since(self.occupants[seat].hands_since_cooler)
+
+    def record_hand_played(self) -> None:
+        """Call once per finished hand to increment every occupied seat's
+        hands_played counter -- WITHOUT the reseat-on-session-length/
+        bust logic after_hand() also does. probe_chance_enumeration.py
+        never calls the full after_hand() (archetype identity stays
+        static per seat for a whole probe run, by design), so
+        hands_played would otherwise stay frozen at 0 forever and
+        CONFIDENCE_GATED_ARCHETYPE_READ could never see a "trusted"
+        opponent. Safe to call alongside record_hand_for_tilt -- neither
+        touches the other's state."""
+        for occ in self.occupants.values():
+            occ.hands_played += 1
 
     def record_hand_for_tilt(self, hand) -> None:
         """Call once per finished hand, with the just-finished Hand object,
