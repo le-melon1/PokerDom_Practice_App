@@ -189,6 +189,8 @@ def _step_one_bot() -> float | None:
         archetype = turnover.archetype_for(seat)
         freq_tier = turnover.freq_tier_for(seat)
         tilt_tier = turnover.tilt_tier_for(seat)
+        bluff_tier_a = turnover.bluff_tier_a_for(seat)
+        bluff_tier_c = turnover.bluff_tier_c_for(seat)
         hero_dossier = state["dossier"].by_seat.get(HERO_SEAT)
         action, amount = choose_bot_action(
             hand,
@@ -196,6 +198,8 @@ def _step_one_bot() -> float | None:
             archetype=archetype,
             freq_tier=freq_tier,
             tilt_tier=tilt_tier,
+            bluff_tier_a=bluff_tier_a,
+            bluff_tier_c=bluff_tier_c,
             hero_seat=HERO_SEAT,
             hero_dossier=hero_dossier,
         )

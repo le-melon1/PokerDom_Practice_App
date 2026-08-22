@@ -435,21 +435,36 @@ reads `turnover.tilt_tier_for(seat)` live instead of sampling.
 tilt state (`scripts/tilt_confirm_live.sh`): incidence jumped ~8x (0.20%
 vs 0.024% divergent hero hands before) and seed42 re-confirmed much
 faster, +3.16±1.34 bb/100 (16k hands, 32 divergent). seed777 again found
-zero divergent hands (150k budget) -- but a separate diagnostic
-confirmed this isn't a bug (tilt state actually fires in ~25% of that
-seed's seat-hands, MORE than seed42's ~14%); more likely explanation:
-seed777's population draw happens to put tilting seats on
-already-loose/already-often archetypes, masking any marginal tilt-only
-effect. Still not cross-validated. Stays `False` -- see the flag's own
-comment in `abc_bot.py` for the full history of both attempts.
+zero divergent hands (150k budget) -- a separate diagnostic confirmed
+tilt state itself fires fine for seed777 (~25% of seat-hands, MORE than
+seed42's ~14%), not a bug there.
 
-**The other Tier 4 idea (per-opponent bluff frequency)** hit a different,
-more fundamental blocker: `PokerDom_Microlimits_Analysis/scripts/
-find_frequent_bluffers.py`'s `MIN_RIVER_SHOWDOWNS=40` bar leaves only 49
-reliable players out of 26,797 (0.2%) -- too thin to build a trustworthy
-population tier distribution the way archetype/freq_tier/tilt all could.
-Even at 15 showdowns, only 777 players (2.9%) qualify. Surfaced to the
-user rather than building a pipeline on data this thin.
+**Real bug found and fixed 2026-08-22**: the OPPONENT bots' own
+`choose_bot_action` calls in `probe_chance_enumeration.py` never actually
+passed `tilt_tier` (only hero's ground-truth read did) -- seated
+opponents never behaved differently while tilting during EITHER test
+above, only their label said so. Both seed42-only signals were most
+likely noise. Fixed (opponents now read `tilt_tier` same as
+archetype/freq_tier) and re-tested (`scripts/tilt_and_bluff_confirm.sh`):
+**CONFIRMED POSITIVE both seeds**, +2.60±1.06 (seed42) / +3.09±1.31
+(seed777). Shipped `True`. 191 tests pass, 5000-hand smoke test improved
+(+45.53±12.26 bb/100 excl. monster pots, up from +33.48).
+
+**The other Tier 4 idea (per-opponent bluff frequency)**: built BOTH
+competing definitions per user's "build both, compare" instruction.
+`find_frequent_bluffers.py`'s original (last river aggressor, real
+showdown, lost) only reliably covers 49/26,797 players (0.2%). A second,
+broader definition (any-street aggressor, real showdown, lost) covers
+7,974/26,797 (29.8%, ~10x better) --
+`scripts/compare_bluff_frequency_variants.py` in the analysis project.
+Wired both all the way through the same infra pattern (population
+sampling, real-player lookup, `CAT_FEATURES`, retrain, two candidate
+hero rules `BLUFF_CATCH_VS_FREQUENT_BLUFFER_A`/`_C`). **Both stayed
+untestable even at a 150k-hand-per-seed budget** -- zero divergent
+hands, both seeds, both variants. Better coverage alone didn't fix it:
+the real bottleneck is compound rarity (aggressor + "high" tier + hero
+holding a qualifying hand not already covered elsewhere). Both stay
+`False`.
 
 ### Postflop: what's confirmed and shipped True
 

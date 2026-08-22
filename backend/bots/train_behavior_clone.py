@@ -24,7 +24,10 @@ from sklearn.model_selection import train_test_split
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "behavior_clone_training_data.parquet"
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
-CAT_FEATURES = ["street", "position", "archetype", "freq_tier", "tilt_tier"]
+CAT_FEATURES = ["street", "position", "archetype", "freq_tier", "tilt_tier", "bluff_tier_a", "bluff_tier_c"]
+# 2026-08-22: bluff_tier_a/bluff_tier_c added -- must match behavior_
+# clone.py's CAT_FEATURES exactly, see that file's comment for the two
+# competing definitions being compared.
 # 2026-08-21: tilt_tier ("none"/"acute"/"fading"/"residual") added -- must
 # match behavior_clone.py's CAT_FEATURES exactly, see that file's comment
 # for the real-data finding behind it.

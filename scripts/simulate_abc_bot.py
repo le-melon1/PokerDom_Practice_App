@@ -139,9 +139,18 @@ def run_batch(
                 archetype = turnover.archetype_for(seat)
                 freq_tier = turnover.freq_tier_for(seat)
                 tilt_tier = turnover.tilt_tier_for(seat)
+                bluff_tier_a = turnover.bluff_tier_a_for(seat)
+                bluff_tier_c = turnover.bluff_tier_c_for(seat)
                 bot_seed = _common_seed(seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat) if use_common_random else None
                 action, amount = choose_bot_action(
-                    hand, seat, archetype=archetype, freq_tier=freq_tier, tilt_tier=tilt_tier, seed=bot_seed
+                    hand,
+                    seat,
+                    archetype=archetype,
+                    freq_tier=freq_tier,
+                    tilt_tier=tilt_tier,
+                    bluff_tier_a=bluff_tier_a,
+                    bluff_tier_c=bluff_tier_c,
+                    seed=bot_seed,
                 )
             try:
                 hand.apply_action(seat, action, amount)

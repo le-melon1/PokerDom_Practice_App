@@ -1180,19 +1180,42 @@ script's docstring). Revision history, each one a real measured finding:
   seats that end up tilting in seed777's population draw already qualify
   via LOOSE_ARCHETYPES/WIDER_CALL_VS_OFTEN_TIER, masking any marginal
   tilt-only effect. Still not cross-validated. WIDER_CALL_VS_TILTING_
-  OPPONENT stays False -- see the flag's own comment for the full
-  history of both attempts.
+  OPPONENT stayed False at this point.
 
-  The OTHER Tier 4 idea (per-opponent bluff frequency via dossier.py's
-  SeatDossier.river_bluff_rate) hit a different, more fundamental
-  blocker on investigation: PokerDom_Microlimits_Analysis/scripts/
-  find_frequent_bluffers.py's MIN_RIVER_SHOWDOWNS=40 bar leaves only 49
-  reliable players out of 26,797 (0.2% of the population) -- an order of
-  magnitude too thin to build a trustworthy population-level tier
-  distribution the way archetype/freq_tier/tilt all could. Even at a
-  much lower bar (15 showdowns), only 777 players (2.9%) qualify.
-  Surfaced to the user rather than building a pipeline on data this
-  thin -- decision on how to proceed pending.
+  2026-08-22 CORRECTION AND FINAL RESULT: found and fixed a real bug
+  right after the result above -- probe_chance_enumeration.py's OPPONENT
+  bots' own choose_bot_action calls never actually passed tilt_tier
+  (only hero's ground-truth read via opponent_tilt_states did), so
+  seated opponents never behaved differently while tilting during either
+  test -- only their LABEL said so. Both prior seed42-only signals were
+  most likely noise from a mechanism that couldn't exist with opponent
+  behavior held constant. Fixed (opponent bots now read tilt_tier same
+  as archetype/freq_tier) and RE-TESTED (scripts/tilt_and_bluff_
+  confirm.sh): CONFIRMED POSITIVE both seeds this time,
+  +2.60+/-1.06 (seed42, 34k hands, 32 divergent) / +3.09+/-1.31
+  (seed777, 22k hands, 32 divergent). WIDER_CALL_VS_TILTING_OPPONENT
+  shipped True. 191 tests pass, 5000-hand smoke test improved
+  (+45.53+/-12.26 bb/100 excl. monster pots, up from +33.48 pre-flag).
+
+  Also built (same retrain) the OTHER Tier 4 idea: per-opponent bluff
+  frequency. PokerDom_Microlimits_Analysis/scripts/find_frequent_
+  bluffers.py's original definition (last river aggressor reaches real
+  showdown and loses) only reliably covers 49/26,797 players (0.2%) even
+  on the full dataset -- too thin to build a tier distribution the way
+  archetype/freq_tier/tilt all could. Per user's "build both, compare"
+  instruction, built a SECOND competing definition (bluff_tier_c: ANY-
+  street aggressor reaching a real showdown and losing, a broader but
+  less precise proxy) alongside the original (bluff_tier_a) --
+  scripts/compare_bluff_frequency_variants.py in the analysis project.
+  Variant C covers 7,974/26,797 (29.8%), ~10x better. Both wired all the
+  way through (live_dynamics.py population sampling, build_training_
+  data.py real-player lookup, CAT_FEATURES, retrain, choose_abc_action
+  params, two candidate hero rules BLUFF_CATCH_VS_FREQUENT_BLUFFER_A/C).
+  BOTH stayed untestable even at a 150k-hand-per-seed budget -- zero
+  divergent hands, both seeds, both variants. Better coverage alone
+  didn't fix it: the real bottleneck is COMPOUND rarity (aggressor +
+  "high" tier + hero holding a qualifying hand not already covered by
+  archetype/freq_tier/tilt). Both stay False.
 
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
@@ -2543,32 +2566,43 @@ WIDER_CALL_VS_OFTEN_TIER = True
 # measurably looser for ~10 hands). OR'd with the archetype/freq_tier
 # checks above, not a replacement.
 #
-# Tested TWICE. First attempt (2026-08-21, scripts/tilt_confirm.sh):
-# ground-truth PER-HAND sampling from the real population incidence
-# (disclosed simplification, since probe_chance_enumeration.py started
-# every hand fresh at the time) -- seed42 confirmed_positive +0.70+/-0.30
-# (124k hands, 30 divergent), seed777 zero divergent at 300k.
+# History: two early attempts (ground-truth per-hand sampling, then live
+# TableTurnover-accumulated state) both showed seed42-only signals that
+# turned out to be UNRELIABLE -- root cause found 2026-08-22: the
+# OPPONENT bots' own choose_bot_action calls in probe_chance_
+# enumeration.py never actually passed tilt_tier (only hero's ground-
+# truth read via opponent_tilt_states did), so seated opponents never
+# behaved differently while tilting during either of those tests -- only
+# their LABEL said so, not their real modeled behavior. Fixed by wiring
+# tilt_tier (and bluff_tier_a/c) into the opponents' own action calls too.
 #
-# Second attempt (2026-08-22, scripts/tilt_confirm_live.sh), AFTER
-# _run_probe_chunk was extended to call TableTurnover.record_hand_for_
-# tilt() on every genuinely-finished hand -- tilt state now accumulates
-# from REAL sequences within each probe run, no more sampling. Incidence
-# jumped ~8x (0.20% divergent vs 0.024% before) and seed42 converged much
-# faster: confirmed_positive, +3.16+/-1.34 bb/100 (16k hands, 32
-# divergent). seed777 AGAIN hit zero divergent hands (150k budget) --
-# but a separate diagnostic confirmed the tilt MECHANISM itself works
-# fine for seed777 (tilt state actually occurs in ~25% of seat-hands for
-# that seed's population draw, MORE than seed42's ~14%) -- not a bug.
-# Likely explanation: for seed777's specific archetype/freq_tier
-# population draw, the seats that end up tilting happen to already
-# qualify via LOOSE_ARCHETYPES or WIDER_CALL_VS_OFTEN_TIER, so the OR
-# never gets a chance to show a MARGINAL tilt-only effect on divergent
-# hands, even though tilt state is common.
+# RE-TESTED with the fix in place (scripts/tilt_and_bluff_confirm.sh):
+# CONFIRMED POSITIVE both seeds, +2.60+/-1.06 (seed42, 34k hands, 32
+# divergent) / +3.09+/-1.31 (seed777, 22k hands, 32 divergent). This is
+# the first trustworthy result for this rule -- shipped True.
+WIDER_CALL_VS_TILTING_OPPONENT = True
+
+# 2026-08-22: two candidate rules for the OTHER Tier 4 idea (per-opponent
+# bluff frequency) -- widens the same any-pair-or-better call bar against
+# an aggressor read as a frequent bluffer (bluff_tier == "high": their
+# shown aggression gets caught at real showdown more than most). Two
+# independently toggleable flags, one per competing definition (see
+# BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS comment above) -- built side
+# by side per user's explicit "build both, compare" instruction.
 #
-# NOT cross-validated per this file's own two-seed standard, both times.
-# Stays False -- the seed42-only signal is real and reproducible but not
-# sufficient alone.
-WIDER_CALL_VS_TILTING_OPPONENT = False
+# BOTH untestable at a 150k-hand-per-seed budget: zero divergent hands on
+# BOTH seeds for BOTH variants (scripts/tilt_and_bluff_confirm.sh) --
+# even variant C, whose ~30% population coverage is an order of magnitude
+# better than variant A's ~2.9%. The bottleneck isn't individual coverage
+# alone but the COMPOUND rarity: opponent must currently be the
+# aggressor, be read as "high" bluff tier (~1/3 of the already-thin
+# reliable subset), AND hero must hold exactly a hand this rule would
+# change the decision for (not already covered by archetype/freq_tier/
+# tilt). Variant C might resolve with a much bigger budget (1M+ hands);
+# variant A likely won't at any reasonable budget. Both stay False,
+# not spending more compute on this without being asked.
+BLUFF_CATCH_VS_FREQUENT_BLUFFER_A = False
+BLUFF_CATCH_VS_FREQUENT_BLUFFER_C = False
 
 
 def _last_aggressor_this_street(hand: Hand) -> int | None:
@@ -3046,6 +3080,8 @@ def choose_abc_action(
     opponent_archetypes: dict[int, str] | None = None,
     opponent_freq_tiers: dict[int, str] | None = None,
     opponent_tilt_states: dict[int, str] | None = None,
+    opponent_bluff_tiers_a: dict[int, str] | None = None,
+    opponent_bluff_tiers_c: dict[int, str] | None = None,
 ) -> tuple[str, float | None]:
     """`opponent_archetypes`: optional {seat: archetype} for the OTHER seats
     at the table. Only used to loosen the postflop calling bar against a
@@ -3066,13 +3102,18 @@ def choose_abc_action(
     pot -- see live_dynamics.py's COOLER_MIN_BB/POST_COOLER_WINDOW comment
     for the real-data finding behind it. Read by
     WIDER_CALL_VS_TILTING_OPPONENT (see LOOSE_ARCHETYPES's comment above).
-    In the live app this comes from TableTurnover's real hand-to-hand
-    tracking; probe_chance_enumeration.py can't yet simulate a real
-    cooler-then-follow-up sequence (it starts every probed hand fresh), so
-    it tests this rule via ground-truth PER-HAND sampling from the real
-    population incidence instead -- see the flag's own comment for why
-    that's a defensible ceiling estimate, not the full live-accuracy
-    picture."""
+    probe_chance_enumeration.py's _run_probe_chunk now calls
+    TableTurnover.record_hand_for_tilt() after every genuinely-finished
+    hand, so this reads real accumulated history within a probe run, same
+    as the live app's TableTurnover tracking.
+
+    `opponent_bluff_tiers_a`/`opponent_bluff_tiers_c`: optional {seat:
+    bluff_tier} ("low"/"normal"/"high"/"unknown"), two competing
+    definitions of "how often does this opponent's aggression get caught
+    bluffing at real showdown" -- see live_dynamics.py's
+    BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS comment for the full
+    reasoning and coverage numbers. Both mostly read "unknown" for any
+    given opponent."""
     (
         open_ranges,
         call_ranges,
@@ -3799,19 +3840,27 @@ def choose_abc_action(
                 return ("fold", None)
         return ("call", None)
 
-    if (opponent_archetypes or opponent_freq_tiers or opponent_tilt_states) and not (
-        MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus
-    ):
+    if (
+        opponent_archetypes or opponent_freq_tiers or opponent_tilt_states or opponent_bluff_tiers_a or opponent_bluff_tiers_c
+    ) and not (MULTIWAY_DISABLE_LOOSE_CALL and n_live_opps_2plus):
         aggressor = _last_aggressor_this_street(hand)
         aggressor_archetype = opponent_archetypes.get(aggressor) if opponent_archetypes and aggressor is not None else None
         aggressor_freq_tier = opponent_freq_tiers.get(aggressor) if opponent_freq_tiers and aggressor is not None else None
         aggressor_tilt = opponent_tilt_states.get(aggressor) if opponent_tilt_states and aggressor is not None else None
+        aggressor_bluff_a = opponent_bluff_tiers_a.get(aggressor) if opponent_bluff_tiers_a and aggressor is not None else None
+        aggressor_bluff_c = opponent_bluff_tiers_c.get(aggressor) if opponent_bluff_tiers_c and aggressor is not None else None
         is_loose_aggressor = aggressor_archetype in LOOSE_ARCHETYPES
         is_often_aggressor = WIDER_CALL_VS_OFTEN_TIER and aggressor_freq_tier == "often"
         is_tilting_aggressor = WIDER_CALL_VS_TILTING_OPPONENT and aggressor_tilt not in (None, "none")
-        if (is_loose_aggressor or is_often_aggressor or is_tilting_aggressor) and has_any_pair_or_better(
-            player.hole_cards, hand.board
-        ):
+        is_frequent_bluffer_a = BLUFF_CATCH_VS_FREQUENT_BLUFFER_A and aggressor_bluff_a == "high"
+        is_frequent_bluffer_c = BLUFF_CATCH_VS_FREQUENT_BLUFFER_C and aggressor_bluff_c == "high"
+        if (
+            is_loose_aggressor
+            or is_often_aggressor
+            or is_tilting_aggressor
+            or is_frequent_bluffer_a
+            or is_frequent_bluffer_c
+        ) and has_any_pair_or_better(player.hole_cards, hand.board):
             return ("call", None)
 
     # pf7 (SPR_SCALED_THRESHOLDS): already near pot-committed (low

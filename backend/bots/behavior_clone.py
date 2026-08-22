@@ -258,7 +258,19 @@ if TYPE_CHECKING:
 
 MODEL_DIR = Path(__file__).resolve().parents[2] / "data"
 
-CAT_FEATURES = ["street", "position", "archetype", "freq_tier", "tilt_tier"]
+CAT_FEATURES = ["street", "position", "archetype", "freq_tier", "tilt_tier", "bluff_tier_a", "bluff_tier_c"]
+# 2026-08-22: bluff_tier_a/bluff_tier_c ("low"/"normal"/"high"/"unknown")
+# added -- two competing definitions of "how often does this player's
+# aggression get caught bluffing at real showdown," built and compared
+# side by side per user's explicit "build both" instruction rather than
+# picking one on paper. Variant A = last RIVER aggressor who reached a
+# real showdown and lost (precise concept, only 777/26,797 players
+# reliable). Variant C = aggressor on ANY street who reached a real
+# showdown and lost (broader proxy, 7,974/26,797 reliable -- an order of
+# magnitude better coverage). Both mostly read "unknown" for any given
+# opponent (neither variant covers the majority of the population) --
+# see live_dynamics.py's BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS
+# comment for the full reasoning and coverage numbers.
 # 2026-08-21: tilt_tier ("none"/"acute"/"fading"/"residual") added -- real,
 # confirmed-on-actual-data signal from PokerDom_Microlimits_Analysis/
 # scripts/check_tilt_after_cooler.py: a player who just lost a big pot
@@ -465,7 +477,9 @@ def _style_bias(archetype: str) -> dict[str, float]:
     return {"folds": 1.0, "checks": 1.0, "calls": 1.05, "bets": 1.05, "raises": 1.05}
 
 
-def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str, tilt_tier: str) -> dict:
+def _build_features(
+    hand: Hand, seat: int, archetype: str, freq_tier: str, tilt_tier: str, bluff_tier_a: str, bluff_tier_c: str
+) -> dict:
     player = hand.players[seat]
     legal = hand.legal_actions(seat)
     pot_before = sum(p.total_contributed for p in hand.players.values())
@@ -478,6 +492,8 @@ def _build_features(hand: Hand, seat: int, archetype: str, freq_tier: str, tilt_
         "archetype": archetype,
         "freq_tier": freq_tier,
         "tilt_tier": tilt_tier,
+        "bluff_tier_a": bluff_tier_a,
+        "bluff_tier_c": bluff_tier_c,
         "to_call_frac": (legal["call_amount"] / pot_before) if pot_before > 0 else 0.0,
         "n_raises_this_street": _n_raises_this_street(hand),
         **{f"board_{k}": v for k, v in texture.items()},
@@ -493,6 +509,8 @@ def choose_bot_action(
     archetype: str = "TAG",
     freq_tier: str = "normal",
     tilt_tier: str = "none",
+    bluff_tier_a: str = "unknown",
+    bluff_tier_c: str = "unknown",
     seed: int | None = None,
     hero_seat: int | None = None,
     hero_dossier: "SeatDossier | None" = None,
@@ -510,6 +528,12 @@ def choose_bot_action(
     Defaults to "none" (not currently tilting), the overwhelming majority
     case.
 
+    `bluff_tier_a`/`bluff_tier_c`: "low"/"normal"/"high"/"unknown", two
+    competing bluff-frequency definitions (see CAT_FEATURES comment
+    above). Default "unknown" -- the overwhelming majority case for
+    either variant, since most real players never accumulate enough
+    events for a reliable individual estimate.
+
     `hero_seat`/`hero_dossier`: optional, both None by default (a full no-op
     for every caller that doesn't pass them). When both are given and this
     bot is facing a bet/raise made by hero_seat THIS street, and hero_dossier
@@ -518,7 +542,7 @@ def choose_bot_action(
     action_model, sizing_model = _load_models()
     rng = random.Random(seed)
 
-    features = _build_features(hand, seat, archetype, freq_tier, tilt_tier)
+    features = _build_features(hand, seat, archetype, freq_tier, tilt_tier, bluff_tier_a, bluff_tier_c)
     legal = hand.legal_actions(seat)
 
     row = [[features[f] for f in FEATURES]]

@@ -77,6 +77,31 @@ def _load_tilt_tier_lookup() -> dict[tuple, str]:
     return lookup
 
 
+# 2026-08-22: bluff-frequency tiers, two competing definitions (see
+# live_dynamics.py's BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS comment for
+# the full reasoning) -- built once via scripts/compare_bluff_frequency_
+# variants.py in the analysis project, reused here rather than recomputed.
+# Both a and c share the exact same {player: tier} shape, just different
+# source CSVs and thresholds -- one helper, called twice.
+def _load_bluff_tier_lookup(variant: str) -> dict[str, str]:
+    path = ANALYSIS_ROOT / "data" / "reference" / f"bluff_frequency_variant_{variant}.csv"
+    log(f"loading bluff frequency variant {variant} from {path}...")
+    df = pd.read_csv(path)
+    df = df[df["n_events"] >= 15]
+    q1, q2 = df["shrunk_rate"].quantile([1 / 3, 2 / 3])
+
+    def _tier(rate: float) -> str:
+        if rate < q1:
+            return "low"
+        if rate < q2:
+            return "normal"
+        return "high"
+
+    lookup = {row["player"]: _tier(row["shrunk_rate"]) for _, row in df.iterrows()}
+    log(f"bluff tier variant {variant} lookup: {len(lookup):,} reliable players")
+    return lookup
+
+
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -88,6 +113,8 @@ def _hand_rows(
     archetype_by_player: dict,
     freq_tier_by_player: dict,
     tilt_tier_by_hand_player: dict,
+    bluff_tier_a_by_player: dict,
+    bluff_tier_c_by_player: dict,
 ) -> list[dict]:
     if grp["big_blind"].iloc[0] <= 0:
         return []  # same rare malformed/missed-blind hands filtered elsewhere in the analysis project
@@ -168,6 +195,8 @@ def _hand_rows(
         # but matches choose_bot_action's own default rather than crashing).
         freq_tier = freq_tier_by_player.get(row.player, "normal")
         tilt_tier = tilt_tier_by_hand_player.get((hand_id, row.player), "none")
+        bluff_tier_a = bluff_tier_a_by_player.get(row.player, "unknown")
+        bluff_tier_c = bluff_tier_c_by_player.get(row.player, "unknown")
         remaining_stack = max(row.stack - total_contributed.get(row.player, 0.0), 0.0)
 
         rows.append(
@@ -178,6 +207,8 @@ def _hand_rows(
                 "archetype": archetype,
                 "tilt_tier": tilt_tier,
                 "freq_tier": freq_tier,
+                "bluff_tier_a": bluff_tier_a,
+                "bluff_tier_c": bluff_tier_c,
                 "pot_before": pot_before,
                 "to_call_frac": to_call / pot_before,
                 "n_raises_this_street": n_raises_this_street,
@@ -215,6 +246,8 @@ def build_dataset_streaming(
     archetype_by_player: dict,
     freq_tier_by_player: dict,
     tilt_tier_by_hand_player: dict,
+    bluff_tier_a_by_player: dict,
+    bluff_tier_c_by_player: dict,
     out_path: Path,
 ) -> int:
     """Streams the training dataset straight to `out_path` in bounded
@@ -240,7 +273,16 @@ def build_dataset_streaming(
 
     for hand_id, grp in actions_df.groupby("hand_id", sort=False):
         batch_rows.extend(
-            _hand_rows(hand_id, grp, board_by_hand, archetype_by_player, freq_tier_by_player, tilt_tier_by_hand_player)
+            _hand_rows(
+                hand_id,
+                grp,
+                board_by_hand,
+                archetype_by_player,
+                freq_tier_by_player,
+                tilt_tier_by_hand_player,
+                bluff_tier_a_by_player,
+                bluff_tier_c_by_player,
+            )
         )
         n_hands += 1
         if n_hands % HAND_BATCH_SIZE == 0:
@@ -264,12 +306,23 @@ def main():
     archetype_by_player = dict(zip(stats["player"], stats["archetype"]))
     freq_tier_by_player = dict(zip(stats["player"], stats["postflop_freq_tier"]))
     tilt_tier_by_hand_player = _load_tilt_tier_lookup()
+    bluff_tier_a_by_player = _load_bluff_tier_lookup("a")
+    bluff_tier_c_by_player = _load_bluff_tier_lookup("c")
 
     out_path = Path(__file__).resolve().parent.parent.parent / "data" / "behavior_clone_training_data.parquet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log(f"building decision dataset from {len(actions_df)} actions, streaming to {out_path}...")
-    build_dataset_streaming(actions_df, hands_df, archetype_by_player, freq_tier_by_player, tilt_tier_by_hand_player, out_path)
+    build_dataset_streaming(
+        actions_df,
+        hands_df,
+        archetype_by_player,
+        freq_tier_by_player,
+        tilt_tier_by_hand_player,
+        bluff_tier_a_by_player,
+        bluff_tier_c_by_player,
+        out_path,
+    )
 
 
 if __name__ == "__main__":

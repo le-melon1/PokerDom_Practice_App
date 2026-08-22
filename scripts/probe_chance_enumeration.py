@@ -261,6 +261,14 @@ RULE_TEST_GROUPS = {
         ["WIDER_CALL_VS_TILTING_OPPONENT"],
         "call with any pair or better vs an aggressor currently in a real, live-accumulated post-cooler tilt window (record_hand_for_tilt across this probe run's own hand sequence)",
     ),
+    "bluff-catch-vs-frequent-bluffer-a": (
+        ["BLUFF_CATCH_VS_FREQUENT_BLUFFER_A"],
+        "call with any pair or better vs an aggressor read as bluff_tier_a=high (last river aggressor, reached real showdown, lost -- reliable at >=15 river showdowns, 777/26797 players)",
+    ),
+    "bluff-catch-vs-frequent-bluffer-c": (
+        ["BLUFF_CATCH_VS_FREQUENT_BLUFFER_C"],
+        "call with any pair or better vs an aggressor read as bluff_tier_c=high (any-street aggressor, reached real showdown, lost -- reliable at >=15 events, 7974/26797 players)",
+    ),
     # 2026-08-17, later same day: closing the last 3 postflop gaps from the
     # overnight audit.
     "fold-marginal-vs-big-donk": (
@@ -602,6 +610,8 @@ ALL_COMPARISON_FLAGS = [
     "FLOAT_TURN_IN_POSITION",
     "SIZE_UP_PREMIUM_3BETS",
     "WIDER_CALL_VS_TILTING_OPPONENT",
+    "BLUFF_CATCH_VS_FREQUENT_BLUFFER_A",
+    "BLUFF_CATCH_VS_FREQUENT_BLUFFER_C",
     *sorted(MULTIWAY_SUBFLAGS),
 ]
 
@@ -981,6 +991,16 @@ def _hero_opponent_tilt_states(hand, turnover: TableTurnover) -> dict[int, str] 
     return out
 
 
+def _hero_opponent_bluff_tiers(hand, turnover: TableTurnover, variant: str) -> dict[int, str] | None:
+    """Ground-truth {seat: bluff_tier}, static per-seat label like
+    archetype/freq_tier (not dynamic like tilt) -- `variant` is "a" or "c",
+    see BLUFF_TIER_A_WEIGHTS/BLUFF_TIER_C_WEIGHTS comment in
+    live_dynamics.py for what they mean."""
+    bot_seats = [s for s in range(1, MAX_SEATS + 1) if s != HERO_SEAT]
+    getter = turnover.bluff_tier_a_for if variant == "a" else turnover.bluff_tier_c_for
+    return {s: getter(s) for s in bot_seats if hand.players[s].in_hand}
+
+
 def _should_force_opponent_reraise(hand, seat: int) -> bool:
     """True when `seat` (a non-hero seat) is facing exactly hero's own
     preflop raise -- i.e. this is the decision point where "does the
@@ -1053,20 +1073,36 @@ def _choose_and_apply(
         opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
         opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
         opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
+        opponent_bluff_tiers_a = _hero_opponent_bluff_tiers(hand, turnover, "a")
+        opponent_bluff_tiers_c = _hero_opponent_bluff_tiers(hand, turnover, "c")
         action, amount = choose_abc_action(
             hand,
             seat,
             opponent_archetypes=opponent_archetypes,
             opponent_freq_tiers=opponent_freq_tiers,
             opponent_tilt_states=opponent_tilt_states,
+            opponent_bluff_tiers_a=opponent_bluff_tiers_a,
+            opponent_bluff_tiers_c=opponent_bluff_tiers_c,
         )
     elif force_opponent_reraise and _should_force_opponent_reraise(hand, seat):
         action, amount = _force_reraise_action(hand, seat, hand_index, base_seed)
     else:
         archetype = turnover.archetype_for(seat)
         freq_tier = turnover.freq_tier_for(seat)
+        tilt_tier = turnover.tilt_tier_for(seat)
+        bluff_tier_a = turnover.bluff_tier_a_for(seat)
+        bluff_tier_c = turnover.bluff_tier_c_for(seat)
         bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat)
-        action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier, seed=bot_seed)
+        action, amount = choose_bot_action(
+            hand,
+            seat,
+            archetype=archetype,
+            freq_tier=freq_tier,
+            tilt_tier=tilt_tier,
+            bluff_tier_a=bluff_tier_a,
+            bluff_tier_c=bluff_tier_c,
+            seed=bot_seed,
+        )
 
     try:
         hand.apply_action(seat, action, amount)
@@ -1094,18 +1130,34 @@ def _continue_to_finish(
             opponent_archetypes = _hero_opponent_archetypes(hand, turnover, flag_state)
             opponent_freq_tiers = _hero_opponent_freq_tiers(hand, turnover)
             opponent_tilt_states = _hero_opponent_tilt_states(hand, turnover)
+            opponent_bluff_tiers_a = _hero_opponent_bluff_tiers(hand, turnover, "a")
+            opponent_bluff_tiers_c = _hero_opponent_bluff_tiers(hand, turnover, "c")
             action, amount = choose_abc_action(
                 hand,
                 seat,
                 opponent_archetypes=opponent_archetypes,
                 opponent_freq_tiers=opponent_freq_tiers,
                 opponent_tilt_states=opponent_tilt_states,
+                opponent_bluff_tiers_a=opponent_bluff_tiers_a,
+                opponent_bluff_tiers_c=opponent_bluff_tiers_c,
             )
         else:
             archetype = turnover.archetype_for(seat)
             freq_tier = turnover.freq_tier_for(seat)
+            tilt_tier = turnover.tilt_tier_for(seat)
+            bluff_tier_a = turnover.bluff_tier_a_for(seat)
+            bluff_tier_c = turnover.bluff_tier_c_for(seat)
             bot_seed = _common_seed(base_seed, hand_index, BOT_ACTION_SEED_STREAM, guard, seat, branch_id)
-            action, amount = choose_bot_action(hand, seat, archetype=archetype, freq_tier=freq_tier, seed=bot_seed)
+            action, amount = choose_bot_action(
+                hand,
+                seat,
+                archetype=archetype,
+                freq_tier=freq_tier,
+                tilt_tier=tilt_tier,
+                bluff_tier_a=bluff_tier_a,
+                bluff_tier_c=bluff_tier_c,
+                seed=bot_seed,
+            )
         try:
             hand.apply_action(seat, action, amount)
         except IllegalAction:

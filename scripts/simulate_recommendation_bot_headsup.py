@@ -101,8 +101,16 @@ def run_batch(n_hands: int, rake_percent: float, rake_cap_bb: float, seed: int) 
                 archetype = turnover.archetype_for(seat)
                 freq_tier = turnover.freq_tier_for(seat)
                 tilt_tier = turnover.tilt_tier_for(seat)
+                bluff_tier_a = turnover.bluff_tier_a_for(seat)
+                bluff_tier_c = turnover.bluff_tier_c_for(seat)
                 action, amount = choose_bot_action(
-                    hand, seat, archetype=archetype, freq_tier=freq_tier, tilt_tier=tilt_tier
+                    hand,
+                    seat,
+                    archetype=archetype,
+                    freq_tier=freq_tier,
+                    tilt_tier=tilt_tier,
+                    bluff_tier_a=bluff_tier_a,
+                    bluff_tier_c=bluff_tier_c,
                 )
                 try:
                     hand.apply_action(seat, action, amount)

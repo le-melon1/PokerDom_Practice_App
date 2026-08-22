@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 RAW_SESSIONS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "session_lengths_raw.csv"
+ANALYSIS_ROOT = Path(__file__).resolve().parents[3] / "PokerDom_Microlimits_Analysis"
 ARCHETYPE_POOL = ["Nit", "TAG", "LAG", "Loose-passive", "Station", "Maniac"]
 
 # Real population mix, not a guess: counts of uniquely labeled players (>=100
@@ -121,6 +122,69 @@ def sample_freq_tier(archetype: str, rng: random.Random | None = None) -> str:
     tiers = list(weights.keys())
     return rng.choices(tiers, weights=[weights[t] for t in tiers])[0]
 
+
+# 2026-08-22: fourth session-scoped signal -- "how often does this
+# player's shown aggression get caught bluffing at real showdown."
+# Static per-seat label like archetype/freq_tier (not dynamic like
+# tilt_tier), but with a real coverage problem the other three didn't
+# have: only a minority of real players ever accumulate enough
+# real-showdown-after-aggression events for a trustworthy individual
+# estimate. Two competing definitions built and compared
+# (scripts/compare_bluff_frequency_variants.py in the analysis project),
+# per user's explicit "build both, compare" instruction rather than
+# picking one on paper:
+#   Variant A: last RIVER aggressor who reached a real showdown and lost
+#     (find_frequent_bluffers.py's own original definition). Precise
+#     concept ("led out on the river and got caught"), but only 777/
+#     26,797 players (2.9%) clear a 15-showdown reliability bar.
+#   Variant C: aggressor on ANY street that reached a real showdown and
+#     lost (broader proxy -- "showed aggression this hand, didn't hold
+#     up"). Less precise concept, but 7,974/26,797 players (29.8%) clear
+#     the same 15-event bar -- an order of magnitude better coverage.
+# Both use empirical-Bayes shrinkage (PRIOR_WEIGHT=30, same as
+# find_frequent_bluffers.py) toward the population loss rate to control
+# small-n noise, then a tercile split (low/normal/high) among reliable
+# players. The large majority of simulated opponents will have no
+# individual measurement either way -- "unknown" is sized to reflect
+# that honestly (26,797 minus however many are reliable), not folded
+# into "normal" as if it were a real read.
+BLUFF_TIER_POOL = ["low", "normal", "high", "unknown"]
+TOTAL_ARCHETYPE_POPULATION = 26_797  # same denominator as ARCHETYPE_POPULATION_WEIGHTS' total
+BLUFF_TIER_A_WEIGHTS = {"low": 259, "normal": 251, "high": 267, "unknown": TOTAL_ARCHETYPE_POPULATION - 777}
+BLUFF_TIER_C_WEIGHTS = {"low": 2657, "normal": 2645, "high": 2672, "unknown": TOTAL_ARCHETYPE_POPULATION - 7974}
+
+
+def sample_bluff_tier(weights: dict[str, int], rng: random.Random | None = None) -> str:
+    rng = rng or random
+    tiers = list(weights.keys())
+    return rng.choices(tiers, weights=[weights[t] for t in tiers])[0]
+
+
+_bluff_tier_lookup_cache: dict[str, dict[str, str]] = {}
+
+
+def _load_bluff_tier_lookup(variant: str) -> dict[str, str]:
+    """{player: tier} for real players who cleared the 15-event reliability
+    bar in that variant's CSV -- everyone else is absent (caller should
+    default to "unknown"). Cached at module level, same pattern as
+    player_profile_bots.py's load_profile_pool."""
+    if variant not in _bluff_tier_lookup_cache:
+        path = ANALYSIS_ROOT / "data" / "reference" / f"bluff_frequency_variant_{variant}.csv"
+        df = pd.read_csv(path)
+        df = df[df["n_events"] >= 15]
+        q1, q2 = df["shrunk_rate"].quantile([1 / 3, 2 / 3])
+
+        def _tier(rate: float) -> str:
+            if rate < q1:
+                return "low"
+            if rate < q2:
+                return "normal"
+            return "high"
+
+        _bluff_tier_lookup_cache[variant] = {row["player"]: _tier(row["shrunk_rate"]) for _, row in df.iterrows()}
+    return _bluff_tier_lookup_cache[variant]
+
+
 _lengths_by_archetype: dict[str, list[int]] | None = None
 
 
@@ -144,10 +208,20 @@ def sample_session_length(archetype: str, rng: random.Random | None = None) -> i
 
 
 class SeatOccupant:
-    def __init__(self, archetype: str, planned_length: int, freq_tier: str, profile_id: str | None = None):
+    def __init__(
+        self,
+        archetype: str,
+        planned_length: int,
+        freq_tier: str,
+        bluff_tier_a: str = "unknown",
+        bluff_tier_c: str = "unknown",
+        profile_id: str | None = None,
+    ):
         self.archetype = archetype
         self.planned_length = planned_length
         self.freq_tier = freq_tier
+        self.bluff_tier_a = bluff_tier_a
+        self.bluff_tier_c = bluff_tier_c
         self.hands_played = 0
         # None in normal archetype mode. When set, this seat is a "real
         # player" bot (see backend/bots/player_profile_bots.py) instead of
@@ -212,8 +286,16 @@ class TableTurnover:
             # than sampling since we already know this specific person's
             # postflop frequency.
             freq_tier = _freq_tier_from_af(profile["aggression_factor"])
+            # Real players get their OWN measured bluff tier too, when they
+            # happen to clear the 15-event reliability bar in either
+            # variant's table -- looked up by their real player id, not
+            # sampled. Most won't clear it (same coverage limit as the
+            # population at large), falling back to "unknown" like anyone
+            # else.
+            bluff_tier_a = _load_bluff_tier_lookup("a").get(profile["player"], "unknown")
+            bluff_tier_c = _load_bluff_tier_lookup("c").get(profile["player"], "unknown")
             length = sample_session_length(archetype, self.rng)
-            occ = SeatOccupant(archetype, length, freq_tier, profile_id=profile_id)
+            occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c, profile_id=profile_id)
             self.occupants[seat] = occ
             return occ
 
@@ -223,8 +305,10 @@ class TableTurnover:
             weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
         )[0]
         freq_tier = sample_freq_tier(archetype, self.rng)
+        bluff_tier_a = sample_bluff_tier(BLUFF_TIER_A_WEIGHTS, self.rng)
+        bluff_tier_c = sample_bluff_tier(BLUFF_TIER_C_WEIGHTS, self.rng)
         length = sample_session_length(archetype, self.rng)
-        occ = SeatOccupant(archetype, length, freq_tier)
+        occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c)
         self.occupants[seat] = occ
         return occ
 
@@ -233,6 +317,12 @@ class TableTurnover:
 
     def freq_tier_for(self, seat: int) -> str:
         return self.occupants[seat].freq_tier
+
+    def bluff_tier_a_for(self, seat: int) -> str:
+        return self.occupants[seat].bluff_tier_a
+
+    def bluff_tier_c_for(self, seat: int) -> str:
+        return self.occupants[seat].bluff_tier_c
 
     def profile_id_for(self, seat: int) -> str | None:
         return self.occupants[seat].profile_id
