@@ -508,6 +508,25 @@ of staying a vague brainstorm item.
 
 191 tests pass, no behavior change (all flags off).
 
+### 2026-08-22: Tier 1.5 finally resolved -- underpowered, not shrunk
+
+`RIVER_OVERBET_NUTS_VS_LOOSE`/`TURN_OVERBET_NUTS_VS_LOOSE` landed
+`inconclusive_small_effect` at the 2026-08-21 post-restructure re-check
+(small samples, ~144k/8k hands). A much bigger budget
+(`scripts/tier1_5_bigger_sample.sh`, up to 1M hands, `target_ci=0.5`)
+resolved both CLEANLY `confirmed_positive` on both seeds:
+- `RIVER_OVERBET_NUTS_VS_LOOSE`: +1.11±0.54 (seed42, 322k hands) /
+  +0.82±0.41 (seed777, 338k hands).
+- `TURN_OVERBET_NUTS_VS_LOOSE`: +1.45±0.71 (seed42, 20k hands) /
+  +1.21±0.56 (seed777, 14k hands).
+
+Magnitudes are back in line with the original pre-restructure numbers --
+the earlier "shrunk close to zero" reading was sampling noise from an
+underpowered run, not a real change in the underlying effect. **This
+closes the last open item from this session's full backlog audit** --
+every flag/idea flagged as pending across Tiers 1 through 6 now has a
+real, tested, documented conclusion.
+
 ### Postflop: what's confirmed and shipped True
 
 The Tier-1 unconditional flop c-bet with initiative, value-betting

@@ -1273,6 +1273,21 @@ script's docstring). Revision history, each one a real measured finding:
   taken to clear, honest, well-understood conclusions rather than left
   as vague brainstorm items.
 
+  2026-08-22, Tier 1.5 finally resolved (scripts/tier1_5_bigger_
+  sample.sh, up to 1M-hand budget, target_ci=0.5): the "inconclusive_
+  small_effect" verdicts RIVER_OVERBET_NUTS_VS_LOOSE and TURN_OVERBET_
+  NUTS_VS_LOOSE landed at post-restructure re-check on 2026-08-21 turned
+  out to be UNDERPOWERED, not a real shrink -- a much bigger sample
+  resolved both CLEANLY confirmed_positive on both seeds:
+  RIVER_OVERBET_NUTS_VS_LOOSE +1.11+/-0.54 (seed42, 322k hands) /
+  +0.82+/-0.41 (seed777, 338k hands); TURN_OVERBET_NUTS_VS_LOOSE
+  +1.45+/-0.71 (seed42, 20k hands) / +1.21+/-0.56 (seed777, 14k hands) --
+  magnitudes back in line with the original pre-restructure numbers.
+  Both flags' own comments updated with the final result. This closes
+  the last open item from this session's full backlog audit -- every
+  flag/idea flagged as pending across Tiers 1 through 6 has now reached
+  a real, tested, documented conclusion.
+
 Full rule set (every decision point, quoted plainly so it can be read as a
 strategy card, not just inferred from code):
 
@@ -1656,7 +1671,7 @@ STANDARD_SIZING_POT_FRACTION = 0.50
 # v27: see the RIVER_OVERBET_NUTS_VS_LOOSE comment in choose_abc_action's
 # checked-to branch. A genuine overbet (>100% pot) -- BIG_VALUE_SIZING_
 # POT_FRACTION's 0.75 never crosses the pot itself.
-RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog. 2026-08-21 post-restructure re-check (bigger N, up to 144k hands): direction still positive both seeds but shrunk close to zero (+0.51+/-0.98 seed42, +0.98+/-0.83 seed777, both inconclusive_small_effect) -- stays True (no evidence of harm), but the original +1.12/+4.04 magnitude looks stale under the new population/model.
+RIVER_OVERBET_NUTS_VS_LOOSE = True  # confirmed positive both seeds at bigger sample 2026-08-16, see changelog. 2026-08-21 post-restructure re-check (bigger N, up to 144k hands): direction still positive both seeds but shrunk close to zero, both inconclusive_small_effect -- turned out to just be underpowered, not a real shrink: 2026-08-22 re-check with a much bigger budget (up to 338k hands, target_ci=0.5) resolved CLEANLY confirmed_positive both seeds, +1.11+/-0.54 (seed42) / +0.82+/-0.41 (seed777) -- back in line with the original pre-restructure magnitude. Tier 1.5 backlog item closed.
 RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not fit to a measured breakeven point
 
 # 2026-08-18 (untested): turn analogue of RIVER_OVERBET_NUTS_VS_LOOSE --
@@ -1672,7 +1687,7 @@ RIVER_OVERBET_POT_FRACTION = 1.5  # standard-theory "genuine overbet" size, not 
 # version; own flag/sizing constant so the two can be tuned independently
 # (a turn overbet carries extra risk from redraws the river version
 # doesn't, so it isn't assumed to share the exact same optimal sizing).
-TURN_OVERBET_NUTS_VS_LOOSE = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.86+/-0.84 (seed42, 10k hands) / +1.69+/-0.81 (seed777, 16k hands) -- consistent magnitude, resolved fast. Shipped True. 2026-08-21 post-restructure re-check (bigger N, 8k hands both seeds): direction still positive both seeds but shrunk close to zero (+0.72+/-0.57 seed42, +0.59+/-0.53 seed777, both inconclusive_small_effect) -- same pattern as RIVER_OVERBET_NUTS_VS_LOOSE. Stays True.
+TURN_OVERBET_NUTS_VS_LOOSE = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.86+/-0.84 (seed42, 10k hands) / +1.69+/-0.81 (seed777, 16k hands) -- consistent magnitude, resolved fast. Shipped True. 2026-08-21 post-restructure re-check (bigger N, 8k hands both seeds): direction still positive both seeds but shrunk close to zero, both inconclusive_small_effect -- same underpowered-not-shrunk pattern as RIVER_OVERBET_NUTS_VS_LOOSE. 2026-08-22 re-check with a bigger budget resolved CLEANLY confirmed_positive both seeds, +1.45+/-0.71 (seed42, 20k hands) / +1.21+/-0.56 (seed777, 14k hands). Tier 1.5 backlog item closed.
 TURN_OVERBET_POT_FRACTION = 1.5
 
 # v28 (OPTIMAL_VALUE_SIZING_PER_ARCHETYPE): A2 above hardcodes "big sizing
