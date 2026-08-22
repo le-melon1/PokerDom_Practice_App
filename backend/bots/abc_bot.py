@@ -1389,6 +1389,7 @@ sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from src.analysis.hand_rankings import RANKS, compute_hand_rankings
 from src.analysis.implied_range import implied_range
+from src.engine.range_equity import _expand_range, combos_vs_range_equity_on_board, filter_combos_for_board
 from src.pipeline.board_texture import texture_features
 
 from backend.bots.behavior_clone import _seat_position
@@ -2667,6 +2668,22 @@ def _min_other_live_stack_bb(hand: Hand, seat: int, exclude: int | None) -> floa
 # still thin. CONFIDENCE_MIN_HANDS=20 is a reasonable placeholder (not
 # fit to a measured breakeven point), same disclosed-guess status as
 # several other thresholds in this file (e.g. SB_BIGGER_OPEN_SIZING).
+# 2026-08-22 test result (scripts/confidence_gate_confirm.py -- normal
+# long-adaptive-run testing doesn't work here, see that script's own
+# docstring for why; uses many independent 25-hand sessions instead):
+# confirmed NEGATIVE both seeds, -32.67+/-10.06 bb/100 (seed42, 5000
+# hands, 86 divergent) / -29.75+/-8.64 (seed777, 5000 hands, 77
+# divergent). Real, structural reason, not noise: in THIS self-play
+# simulation, opponent_archetypes is always ground truth from hand 1 --
+# there's no actual estimation error for "confidence" to protect
+# against. Distrusting a read that's already 100% accurate can only ever
+# throw away real value (falling back to the stricter top-pair-or-better
+# bar against a genuinely loose aggressor for no reason), never prevent
+# a mistake. This idea would need to be tested against a NOISY read
+# (e.g. the live app's dossier-based style estimate, which genuinely is
+# unreliable early) to have any chance of showing a real effect -- this
+# probe's ground-truth-everywhere design structurally can't represent
+# that. Stays False.
 CONFIDENCE_GATED_ARCHETYPE_READ = False
 CONFIDENCE_MIN_HANDS = 20
 
@@ -2900,6 +2917,30 @@ SEMI_BLUFF_RAISE_DRAWS_TURN = True  # 2026-08-18: confirmed POSITIVE both seeds,
 NUT_ADVANTAGE_SIZING = True
 NUT_ADVANTAGE_MIN_TOP_RANK = "Q"
 NUT_ADVANTAGE_POT_FRACTION = 0.75  # same number as BIG_VALUE_SIZING_POT_FRACTION, kept as its own constant so the two can diverge later
+
+# 2026-08-22 (untested), Tier 6 #3: NUT_ADVANTAGE_SIZING's own comment
+# above already named the honest fix -- a real range-vs-range read
+# instead of the (top-card-rank, wet/dry) proxy. Turns out that engine
+# already exists and is tested: PokerDom_Microlimits_Analysis's
+# src/engine/range_equity.py, used by the live EV panel
+# (backend/ev/live_ev.py), just never wired into this hand-coded bot's
+# OWN decisions. This flag does that: replaces the proxy with a real
+# Monte Carlo equity read of hero's own preflop-opening range for their
+# position (open_ranges[hero_pos]) vs the single live opponent's
+# implied continuing range (call_ranges[opp_pos]) on the actual board,
+# and sizes up when hero's RANGE (not hero's specific hand) is
+# genuinely ahead on average -- a real, continuous, board-and-position-
+# aware version of "range advantage," not a binary rank/texture proxy.
+# Independently toggleable from NUT_ADVANTAGE_SIZING -- only one of the
+# two mechanisms should be active per test. Heads-up only (a single
+# opponent's range is the only case this file already tracks a
+# continuing-range table for). Kept a SEPARATE flag rather than
+# replacing the confirmed original, per this file's standard practice
+# of never swapping a working confirmed mechanism for an unproven one
+# without its own independent confirmation first.
+REAL_RANGE_NUT_ADVANTAGE_SIZING = False
+REAL_RANGE_EQUITY_THRESHOLD = 0.55
+REAL_RANGE_TRIALS = 300  # kept low deliberately -- Monte Carlo equity is the single most expensive operation in this file by orders of magnitude; every trial added here multiplies the cost of every chance-enumeration probe that touches this branch
 
 # pf5 + pf10 share one mechanism: betting a street hero did NOT bet the
 # previous street, when checked to again. pf5 = hero WITHOUT initiative
