@@ -153,6 +153,14 @@ RULE_TEST_GROUPS = {
         ["BB_DEFEND_MDF_SCALED"],
         "r24 BB continuing range scaled by minimum defense frequency (MDF), any raiser position",
     ),
+    "r19v-bb-defend-vs-steal-minraise-plain": (
+        ["BB_DEFEND_VS_STEAL_MINRAISE"],
+        "r19v plain on/off test of BB_DEFEND_VS_STEAL_MINRAISE at its currently shipped sizing params (unlike the r19v-* PARAMETER_VARIANTS presets, which only compare different sizing params with the flag already on in both arms)",
+    ),
+    "r16v-limp-behind-plain": (
+        ["LIMP_BEHIND_OVER_LIMPERS"],
+        "r16v plain on/off test of LIMP_BEHIND_OVER_LIMPERS at its currently shipped VPIP multiplier (unlike the r16v-* PARAMETER_VARIANTS presets, which only compare different multipliers with the flag already on in both arms)",
+    ),
     "r25-bluff-3bet-blocker-range": (
         ["BLUFF_3BET_BLOCKER_RANGE_FLAG"],
         "r25 bluff-3bet hand selection built from blocker theory (wheel aces) instead of playability",
