@@ -27,6 +27,75 @@ isn't present at that relative path.
 
 Run via `python3 run_app.py` → `http://127.0.0.1:8001/`.
 
+## Mobile UI (2026-08-23, in progress — user-reported scroll bug NOT fully resolved)
+
+Separate thread from the ABC-bot research below: user wants this app usable
+on a phone (eventually a PWA), starting from design mockups (a Claude
+Design canvas from earlier in this session, URL not saved in this repo)
+then real implementation in `frontend/index.html`. Changes so far:
+
+- Extended the compact-layout breakpoint from `max-width:600px` to
+  `max-width:899px`. The old CSS only had a mobile rule below 600px and a
+  desktop 2-column grid at 900px+, leaving a 600-899px dead zone that fell
+  through to the original *unstyled, scrolling* stack layout (the file's
+  own comment even called this out as intentional: "below 900px wide we
+  fall back to the original stacked, scrollable flow"). This gap is very
+  reachable in practice -- Chrome enforces a ~500-566px window-width
+  floor, and a plain resized browser window lands in this range easily --
+  and is almost certainly what the user kept hitting when reporting "still
+  scrolls" even after the first mobile-shell fix landed.
+- Below 899px: `.app-shell`/`.main-grid`/`.left-col`/`.table-wrap` become a
+  flex column with `min-height:0` so the table screen fits one viewport
+  height, no page scroll. Verified via Playwright at 412/500/700/899px
+  (`document.documentElement.scrollHeight === clientHeight` in every case
+  tried: initial load, raise panel open, post-action bottom sheet open).
+- `.action-log` and the old 4-button `.bottom-toolbar` (Новая раздача /
+  Сбросить стол / История / Playbook) are hidden below 899px --
+  "Новая раздача"/"Сбросить стол" moved to icon buttons in the topbar.
+- `.right-col` (grade card + live EV panel) becomes a `position:fixed`
+  bottom sheet (`#right-col`, toggled via a `.show` class /
+  `openMobileSheet()`/`closeMobileSheet()` in the JS), sliding up AFTER
+  hero acts (wired into `act()`, right after `renderGradeCard(...)`) --
+  NOT before. An earlier version also opened it proactively on hero's own
+  turn (to show hints/live EV), but that sheet covers the bottom of the
+  screen where the Fold/Check/Call/Raise buttons live, so it blocked
+  hero's own turn -- caught via a Playwright click-timeout error, removed.
+  Below 899px there is currently no proactive EV/hints display before
+  acting at all, only the post-action grade.
+- New fixed bottom tab bar (`.mobile-tabbar`): Стол / История / Playbook /
+  Настройки. История and Playbook just call `openModal(...)` on the
+  already-existing `history-modal`/`playbook-modal` -- no new modal markup
+  needed. `.modal-overlay`'s z-index bumped 50→60 so modals render above
+  the new tab bar (equal z-index would have let the tab bar, later in DOM
+  order, paint over an open modal).
+
+**Still open, not resolved**: after the 899px-gap fix, the user reported
+"всё ещё можно листать" / "всё ещё говно" (still scrollable) again.
+Automated Playwright checks across every width from 412 to 1200px, and in
+every interaction state tried (initial load, raise panel open, sheet
+open), show `scrollHeight === clientHeight` -- no reproducible page
+scroll found from this side. The discrepancy between what the user
+actually sees and what automation shows is **not yet explained** -- could
+be a real rendering difference specific to their browser/OS (e.g. elastic
+overscroll/rubber-banding reading as "scrollable" without true overflow),
+a stale/cached tab that didn't pick up a reload, or an interaction state
+not yet reproduced here. **Next step for whoever picks this up: get exact
+repro steps from the user first (window width, which screen, which
+action) or a screen recording, rather than guessing at more CSS fixes
+blind** -- this session tried three rounds of blind fixes and the user's
+own report didn't change each time, which is a sign to stop guessing and
+get a concrete repro instead. One screenshot-debugging attempt this
+session also accidentally captured an unrelated desktop Space (a
+different, unrelated project) instead of the actual browser window --
+confirm the right window/Space is actually on-screen before
+screenshotting again, and never comment on or use content from a
+different project that ends up in frame by accident.
+
+**Also not done yet**: this is CSS/JS-only inside the existing
+single-page app, not a real PWA -- no `manifest.json`, no service worker,
+no "add to home screen" support. Not yet checked pixel-for-pixel against
+the mockup canvas from earlier in this session either.
+
 ## CURRENT STATUS SUMMARY (2026-08-13, read this section first)
 
 This section is the up-to-date answer to "where are we and what's left" --

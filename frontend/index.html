@@ -12,8 +12,11 @@
 
   /* ---- desktop app shell: everything fits in one viewport, no page
      scroll -- table+controls on the left, hints/grade on the right. Below
-     900px wide we fall back to the original stacked, scrollable flow (see
-     the max-width:600px block further down for phones specifically). ---- */
+     900px wide, the max-width:899px block further down takes over (tab
+     bar + bottom sheet) -- there is deliberately no gap between the two:
+     anything narrower than the desktop grid gets the compact treatment,
+     since a plain window resized down (or a real phone) can land anywhere
+     in between and used to fall through to an unstyled, scrolling stack. ---- */
   .app-shell { display: flex; flex-direction: column; gap: 8px; }
   .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .topbar-right { display: flex; align-items: center; gap: 10px; }
@@ -50,7 +53,7 @@
      them never changes the base page height ---- */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-    z-index: 50; align-items: center; justify-content: center; padding: 20px;
+    z-index: 60; align-items: center; justify-content: center; padding: 20px;
   }
   .modal-overlay.show { display: flex; }
   .modal {
@@ -380,10 +383,21 @@
     padding: 1px 8px;
   }
 
-  @media (max-width: 600px) {
-    body { padding: 8px; overflow-x: hidden; }
-    .app-shell { width: 100%; overflow: hidden; }
-    .table-wrap { height: 480px; margin-bottom: 0; }
+  @media (max-width: 899px) {
+    /* ---- viewport-fit shell: the table screen must fit in one screen with
+       no page scroll (real complaint: the old mobile layout just shrank
+       fonts but kept every desktop section -- table, action log, grade
+       card, EV panel, a 4-button toolbar -- stacked in one long column, so
+       it always overflowed and scrolled). Everything that isn't the table
+       itself now lives behind the tab bar / a bottom sheet instead of
+       always occupying vertical space. ---- */
+    html, body { height: 100%; }
+    body { height: 100dvh; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
+    .app-shell { width: 100%; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 8px 8px 0; }
+    .main-grid { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .left-col { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .table-wrap { flex: 1 1 auto; min-height: 0; height: auto; margin-bottom: 0; }
+    .controls { flex: 0 0 auto; margin: 8px 0; }
     .center { top: 30%; }
     .chip-stack { display: none; }
     .seat { width: 98px; padding: 4px 6px; font-size: 0.82em; }
@@ -402,18 +416,63 @@
        still clip at the viewport edge for seats near the left/right of a
        ~370px-wide table. */
     #mobile-dossier {
-      display: none; position: fixed; left: 50%; bottom: 12px;
+      display: none; position: fixed; left: 50%; bottom: 76px;
       transform: translateX(-50%); width: min(280px, 90vw);
       background: #111; border: 1px solid #555; border-radius: 8px;
-      padding: 12px; font-size: 0.95em; z-index: 20;
+      padding: 12px; font-size: 0.95em; z-index: 45;
     }
     #mobile-dossier.show { display: block; }
-    .action-log, .ev-panel { width: 100%; }
+
+    /* action log and the old 4-button toolbar (Новая раздача / Сбросить
+       стол / История / Playbook) no longer sit in the always-visible
+       column -- История/Playbook moved to the tab bar, and the two table
+       actions moved into the topbar as icon buttons (see
+       #mobile-table-actions in the body markup). */
+    .action-log { display: none; }
+    .bottom-toolbar { display: none; }
+
+    /* grade card + live EV panel: was a permanently-visible second column
+       stacked under the table (the main source of the old scroll) -- now a
+       bottom sheet that slides up after you act, above the tab bar, and
+       never occupies space while it's closed. */
+    .right-col {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: #0c1a13; border-top: 1px solid #2a6b46;
+      border-radius: 16px 16px 0 0;
+      max-height: 72vh; overflow-y: auto;
+      padding: 14px 14px calc(64px + 14px);
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      z-index: 40;
+    }
+    .right-col.show { transform: translateY(0); box-shadow: 0 -12px 30px rgba(0,0,0,0.5); }
+    .right-col, .action-log, .ev-panel { width: 100%; }
     .solver-summary .row, .ev-row { align-items: flex-start; gap: 10px; }
     .solver-summary .row span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
     .line-analysis .line-row { grid-template-columns: 1fr; }
     .line-analysis .line-explanation { grid-column: 1; }
     .playbook-grid { grid-template-columns: 1fr; }
+
+    .mobile-table-actions { display: flex; gap: 6px; }
+    .mobile-sheet-close {
+      display: block; margin: 0 auto 10px; width: 40px; height: 4px;
+      border: none; border-radius: 2px; background: #2a6b46; padding: 0;
+    }
+    .mobile-tabbar {
+      display: flex; justify-content: space-around; align-items: center;
+      position: fixed; left: 0; right: 0; bottom: 0; height: 64px;
+      background: rgba(10,30,20,0.98); border-top: 1px solid #2a6b46; z-index: 50;
+    }
+    .mobile-tab {
+      background: none; border: none; display: flex; flex-direction: column;
+      align-items: center; gap: 2px; color: #789; font-size: 10px; cursor: pointer;
+      font-family: inherit; padding: 4px 10px;
+    }
+    .mobile-tab.active { color: #ffe28a; font-weight: 600; }
+    .mobile-tab svg { width: 22px; height: 22px; }
+  }
+  @media (min-width: 900px) {
+    .mobile-tabbar, .mobile-table-actions { display: none; }
   }
 
 </style>
@@ -424,6 +483,10 @@
     <h2>PokerDom Practice</h2>
     <div class="topbar-right">
       <div class="rake-total" id="rake-total"></div>
+      <div class="mobile-table-actions">
+        <button class="icon-btn" onclick="startFreshHand()" title="Новая раздача">↻</button>
+        <button class="icon-btn" onclick="resetTable()" title="Сбросить стол">⟲</button>
+      </div>
       <button class="icon-btn" id="settings-btn" onclick="openSettingsModal()" title="Настройки">⚙</button>
     </div>
   </div>
@@ -458,7 +521,8 @@
       </div>
     </div>
 
-    <div class="right-col">
+    <div class="right-col" id="right-col">
+      <button class="mobile-sheet-close" onclick="closeMobileSheet()" title="Закрыть" aria-label="Закрыть"></button>
       <div class="grade-card" id="grade-card">
         <div class="grade-card-title">Оценка вашего последнего хода</div>
         <div class="grade-card-body" id="grade-card-body">Сделайте ход — здесь появится оценка и объяснение.</div>
@@ -611,6 +675,25 @@
 
 <div id="mobile-dossier" onclick="this.classList.remove('show')"></div>
 
+<div class="mobile-tabbar">
+  <button class="mobile-tab active" id="mobile-tab-table" onclick="mobileTabTable()">
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="11" cy="12" rx="8" ry="5"/><ellipse cx="11" cy="12" rx="4" ry="2.2"/></svg>
+    Стол
+  </button>
+  <button class="mobile-tab" onclick="mobileTabHistory()">
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M11 6v5l4 2"/></svg>
+    История
+  </button>
+  <button class="mobile-tab" onclick="mobileTabPlaybook()">
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5c2-1 5-1 8 1v12c-3-2-6-2-8-1V5z"/><path d="M19 5c-2-1-5-1-8 1v12c3-2 6-2 8-1V5z"/></svg>
+    Playbook
+  </button>
+  <button class="mobile-tab" onclick="mobileTabSettings()">
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="18" y2="7"/><circle cx="14" cy="7" r="2"/><line x1="4" y1="12" x2="18" y2="12"/><circle cx="8" cy="12" r="2"/><line x1="4" y1="17" x2="18" y2="17"/><circle cx="15" cy="17" r="2"/></svg>
+    Настройки
+  </button>
+</div>
+
 <script>
 const API = "";
 let busy = false;
@@ -627,6 +710,43 @@ function setBusy(isBusy) {
   busy = isBusy;
   document.getElementById("waiting-overlay").classList.toggle("show", isBusy);
   document.querySelectorAll(".actions button, .raise-presets button, #raise-confirm").forEach(b => b.disabled = isBusy);
+}
+
+// ---- mobile bottom sheet (grade card + live EV) + tab bar ----
+// On desktop the grade card / EV panel is an always-visible right column.
+// On mobile there's no room for that without causing the page scroll this
+// was built to fix -- it lives in #right-col as a slide-up sheet instead,
+// opened on hero's turn (hints) and after hero acts (the grade, which the
+// settings panel already promises always shows regardless of the hints
+// toggle). No-ops on desktop, where .right-col is never position:fixed.
+function isMobileViewport() {
+  return window.matchMedia("(max-width: 899px)").matches;
+}
+function openMobileSheet() {
+  if (!isMobileViewport()) return;
+  document.getElementById("right-col").classList.add("show");
+}
+function closeMobileSheet() {
+  document.getElementById("right-col").classList.remove("show");
+}
+function setMobileTabActive(id) {
+  document.querySelectorAll(".mobile-tab").forEach(b => b.classList.remove("active"));
+  const el = document.getElementById(id);
+  if (el) el.classList.add("active");
+}
+function mobileTabTable() {
+  closeMobileSheet();
+  setMobileTabActive("mobile-tab-table");
+}
+function mobileTabHistory() {
+  openModal("history-modal");
+  loadHistoryList();
+}
+function mobileTabPlaybook() {
+  openModal("playbook-modal");
+}
+function mobileTabSettings() {
+  openSettingsModal();
 }
 
 // ---- generic modal helpers (settings / history / playbook) ----
@@ -693,6 +813,10 @@ function applyHintsVisibility(enabled) {
     hintsOffNote.style.display = isHeroTurn ? "block" : "none";
   } else {
     hintsOffNote.style.display = "none";
+    // Not auto-opened on mobile before acting -- the sheet sits over the
+    // action buttons (see .controls), so popping it here would cover the
+    // very buttons hero needs to tap. It still opens right after hero acts
+    // (see act()), which is the point of this panel on a phone anyway.
     if (isHeroTurn) { evPanel.style.display = "block"; refreshEV(); }
   }
 }
@@ -825,6 +949,7 @@ async function act(action, amount) {
     render(s);
     if (s.trainer_feedback) {
       renderGradeCard(s.trainer_feedback, ACTION_LABEL[action] || action, amount);
+      openMobileSheet();
     }
     await driveBotsIfNeeded();
   } catch (e) {
