@@ -1934,8 +1934,10 @@ DONK_BLUFF_VS_TIGHT = True  # flip False to A/B-test against the baseline (no do
 # already share that exact archetype gate (DONK_BLUFF_VS_TIGHT,
 # BARREL_BLUFF_VS_TIGHT, RIVER_BLUFF_MISSED_DRAW) -- OR'd with the
 # existing archetype check in each, either being true is enough to fire.
-# Needs its own A/B confirmation before shipping True.
-BLUFF_VS_RARE_TIER = False
+# 2026-08-23: confirmed POSITIVE both seeds (item 4 axis-generalization
+# batch, scripts/item4_axis_generalization_confirm.sh): +15.11+/-7.25
+# (seed42, 6k hands) / +9.92+/-4.72 (seed777, 16k hands). Shipped True.
+BLUFF_VS_RARE_TIER = True
 
 # v25 (BARREL_BLUFF_VS_TIGHT): before this, the bot's only air-bluffing
 # mechanisms were a single flop cbet (UNCONDITIONAL_FLOP_CBET, flop-only)
@@ -2028,8 +2030,29 @@ WIDER_3BET_VS_LOOSE = True  # 2026-08-20: was "active but unconfirmed" (old whol
 # as postflop_freq_tier="often" continues against 3-bets more than most,
 # regardless of their broader preflop archetype, the same real signal
 # LOOSE_ARCHETYPES_FOR_3BET is a proxy for. OR'd with the existing
-# archetype check, either being true is enough to widen. Needs its own
-# A/B confirmation before shipping True.
+# archetype check, either being true is enough to widen.
+# 2026-08-23: item 4 axis-generalization batch found a genuine cross-seed
+# asymmetry, not a normal split verdict -- seed777 confirmed POSITIVE,
+# +1.11+/-0.55 bb/100 (48k hands, 48 divergent), but seed42 found ZERO
+# divergent hands even after a bigger-cap re-check up to the full 500k-hand
+# budget (scripts had originally capped at 150k; extended to match
+# max-hands after the first null). A true population incidence anywhere
+# near seed777's ~0.1% observed rate would make 0-in-500k astronomically
+# unlikely by chance alone -- so this isn't "just a rare spot that got
+# unlucky," it's a real seed-dependent effect on which specific archetypes
+# end up seated. Best explanation: postflop_freq_tier="often" correlates
+# strongly with LOOSE_ARCHETYPES_FOR_3BET membership in this population
+# (aggressive players tend to also be Maniac/Station), so the marginal
+# case this flag targets (often-tier AND NOT already loose-archetype) is
+# genuinely rare and its incidence in any one self-play sample depends
+# heavily on which specific opponents that seed's table-turnover happened
+# to seat -- the same compound-rarity class of finding as
+# BLUFF_CATCH_VS_FREQUENT_BLUFFER_A/C. Doesn't clear this file's own
+# both-seeds-agree bar (one confirmed positive, one genuinely 0-hands, not
+# a disagreement in sign but a disagreement in whether the spot exists at
+# all). Stays False -- the seed777 read is suggestive of a real, small
+# positive effect when the spot does occur, but not confirmed to this
+# file's standard.
 WIDER_3BET_VS_OFTEN_TIER = False
 
 # v21: a squeeze spot (facing one raise that's ALREADY been called by at
