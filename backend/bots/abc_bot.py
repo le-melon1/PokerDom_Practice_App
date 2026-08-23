@@ -2969,16 +2969,39 @@ DRY_CBET_POT_FRACTION = 0.33
 # when hero was NOT already the one who bet this street (raising your own
 # bet makes no sense). Sizing mirrors VALUE_RAISE_MULTIPLIER's existing "3x
 # the bet" convention rather than inventing a new number.
-SEMI_BLUFF_RAISE_DRAWS = True
+# 2026-08-18: confirmed POSITIVE both seeds at the time, +1.70/+2.79 bb/100
+# (pre-restructure population). 2026-08-23: full re-validation sweep against
+# the post-2026-08-19/20 archetype-restructure population flagged a
+# concerning reversal on a modest sample -- pushed to a much bigger,
+# well-powered re-check (scripts/semibluff_seed42_bigger_precision.sh,
+# min-divergent=2900) rather than trust the small sample either way (this
+# session's own Tier 1.5 lesson). Result: seed42 -4.81+/-0.76 (362k hands,
+# 2901 divergent, confirmed_negative), seed777 +0.82+/-0.55 (390k hands,
+# 3004 divergent, confirmed_positive) -- a REAL split between two
+# independently, well-powered seeds, not an underpowered artifact this
+# time. Honest read: whatever edge this rule had against the old
+# population did not survive the restructure intact -- the effect is not
+# reliably positive anymore, close to a wash on average. Flipped to False.
+SEMI_BLUFF_RAISE_DRAWS = False
 SEMI_BLUFF_RAISE_STREETS = {"flop"}
 SEMI_BLUFF_RAISE_MULTIPLIER = 3.0
 
-# 2026-08-18 (untested): the turn extension flagged as a separate open
-# question above ("semi-bluff-raising a turn draw commits far more with
-# one card left, a bigger and separately-untested question") -- own flag
-# so flop (confirmed) and turn (not) can be confirmed/rejected
-# independently rather than bundled.
-SEMI_BLUFF_RAISE_DRAWS_TURN = True  # 2026-08-18: confirmed POSITIVE both seeds, +1.91+/-0.95 (seed42, 216k hands) / +2.08+/-1.04 (seed777, 218k hands). Shipped True.
+# 2026-08-18 (untested at the time): the turn extension flagged as a
+# separate open question above ("semi-bluff-raising a turn draw commits far
+# more with one card left, a bigger and separately-untested question") --
+# own flag so flop and turn could be confirmed/rejected independently
+# rather than bundled. Confirmed POSITIVE both seeds against the
+# pre-restructure population, +1.91/+2.08 bb/100.
+# 2026-08-23: full re-validation sweep against the post-restructure
+# population found BOTH seeds now negative (-3.92+/-3.46 seed42,
+# -4.56+/-4.04 seed777 -- weak samples, but consistent direction). Pushed
+# seed42 to a much bigger, well-powered re-check (same script as above,
+# min-divergent=2900): -6.18+/-0.82 at 312k hands, 1450+ divergent hands en
+# route to target, cleanly confirmed_negative -- reinforces the small
+# sample rather than resolving positive the way Tier 1.5 did. All three
+# independent readings (2 small + 1 large) agree in direction. Flipped to
+# False.
+SEMI_BLUFF_RAISE_DRAWS_TURN = False
 
 # pf4: bet bigger on a board that favors hero's OWN preflop range (had
 # initiative) rather than sizing purely by wet/dry texture (pf1) or opponent
