@@ -96,6 +96,88 @@ single-page app, not a real PWA -- no `manifest.json`, no service worker,
 no "add to home screen" support. Not yet checked pixel-for-pixel against
 the mockup canvas from earlier in this session either.
 
+## 2026-08-23: items 3+4 of the "what's left globally" audit -- both fully closed
+
+Following up on the two live-app gaps found earlier this session
+(`live_ev.py` never passing 4 of 6 opponent signals to `choose_abc_action`;
+`dossier.py`'s stale pre-restructure Maniac definition) -- user explicitly
+picked only items 3 (re-validation debt) and 4 (extend the new freq_tier/
+tilt_tier/bluff_tier axes to other archetype-gated rules) this round, NOT
+1/2. Both are done.
+
+**Item 3 -- full re-validation sweep** (`scripts/full_revalidation_sweep.sh`,
+20 flags x 2 seeds against the post-2026-08-19/20 restructure population):
+15 flags cleanly reconfirmed positive both seeds (comments updated in
+`abc_bot.py` with the sweep's numbers -- see each flag's own inline
+comment for exact figures, e.g. `SET_MINE_IMPLIED_ODDS`,
+`TIGHT_BIG_ISO_RAISE_LIMPERS`, `SHOVE_AA_KK_VS_3BET_PLUS`,
+`UNCONDITIONAL_FLOP_CBET`, `ALLOW_CALLING_RAISES`, etc.), 2 landed a
+confirmed-positive/inconclusive same-sign split (`SIZE_UP_WITH_VERY_
+STRONG_HAND`, `SIZE_UP_PREMIUM_OPENS` -- kept True, same direction just
+underpowered on one seed), 1 newly understood as structurally untestable
+rather than confirmed (`BB_DEFEND_VS_STEAL_MINRAISE`, 0 divergent both
+seeds at 150k -- same class as `STEAL_WIDER_VS_NIT`, left True on the
+original shipping rationale since there's no evidence against it).
+
+**`SEMI_BLUFF_RAISE_DRAWS`/`SEMI_BLUFF_RAISE_DRAWS_TURN` flipped to
+False** -- the sweep flagged a reversal on modest samples. Per this
+session's own Tier 1.5 lesson (don't trust a small-sample negative read
+without pushing for more power first), ran a much bigger, well-powered
+re-check (`scripts/semibluff_seed42_bigger_precision.sh`, forced
+`--min-divergent 2900`). Unlike Tier 1.5, more power did NOT resolve this
+positive:
+- Flop: seed42 **-4.81+/-0.76** (362k hands, 2901 divergent, confirmed_
+  negative) vs seed777 **+0.82+/-0.55** (390k hands, 3004 divergent,
+  confirmed_positive) -- a genuine, well-powered cross-seed split, not an
+  underpowered artifact. Whatever edge this had against the old
+  population didn't survive the restructure. **Flipped False.**
+- Turn: all three independent reads (2 small samples + 1 well-powered
+  seed42 rerun, -6.18+/-0.82 @ 312k hands) agree in direction, negative.
+  **Flipped False.**
+
+191 tests pass after the flip. Note the follow-up script's seed777-turn
+leg was deliberately skipped/killed mid-run once the flop split already
+gave a decisive enough answer and the turn direction was already
+consistent across 3 independent samples -- chasing more precision there
+wouldn't have changed the call, so stopped rather than burn more machine
+time (per user's own "why continue if it's already obvious" call).
+
+**Item 4 -- extend the new axes to other archetype-gated rules**
+(`scripts/item4_axis_generalization_confirm.sh`, both seeds):
+- **`BLUFF_VS_RARE_TIER`** (generalizes `DONK_BLUFF_VS_TIGHT`/`BARREL_
+  BLUFF_VS_TIGHT`/`RIVER_BLUFF_MISSED_DRAW`'s tight-archetype gate to also
+  fire vs `postflop_freq_tier="rare"`): confirmed POSITIVE both seeds,
+  +15.11+/-7.25 (seed42) / +9.92+/-4.72 (seed777). **Shipped True.**
+- **`WIDER_3BET_VS_OFTEN_TIER`** (generalizes `WIDER_3BET_VS_LOOSE` to also
+  fire vs `postflop_freq_tier="often"`): a genuinely unusual result --
+  seed777 confirmed positive (+1.11+/-0.55, 48k hands) but seed42 found
+  ZERO divergent hands even after extending the budget to a full 500k-hand
+  run specifically to rule out an early stop. A true ~0.1%-incidence spot
+  landing at exactly 0-in-500k isn't plausible by chance -- real
+  cross-seed asymmetry, most likely because `postflop_freq_tier="often"`
+  correlates with `LOOSE_ARCHETYPES_FOR_3BET` membership in this
+  population (aggressive players tend to already be Maniac/Station), so
+  the marginal "often but not already loose" case is rare enough that
+  whether a given seed's table-turnover happens to seat one at all is
+  essentially a coin flip. Doesn't clear the both-seeds-agree bar.
+  **Stays False**, documented as a real finding, not an unconfirmed
+  guess.
+
+This closes both items 3 and 4 completely. **Still open, NOT done this
+round because the user explicitly didn't select them**: `live_ev.py`
+never passing `opponent_freq_tiers`/`opponent_tilt_states`/`opponent_
+bluff_tiers_a`/`opponent_bluff_tiers_c` to `choose_abc_action` (though on
+closer inspection this matters less than first thought -- `_abc_strategy_
+action` in `live_ev.py` only calls `choose_abc_action` for the PREFLOP
+street, so of the missing signals only `opponent_freq_tiers` is even
+reachable there, for `WIDER_3BET_VS_OFTEN_TIER`/`WIDER_3BET_VS_LOOSE`; the
+three postflop-only signals are irrelevant to this specific gap since
+postflop routes through a separate CFR solver instead); and `dossier.py`'s
+Maniac definition still being pre-restructure/stale. Both would need real
+new work (dossier.py in particular has no freq_tier/tilt_tier/bluff_tier
+estimation logic at all yet, only archetype `.style`) -- don't start
+either without the user asking.
+
 ## CURRENT STATUS SUMMARY (2026-08-13, read this section first)
 
 This section is the up-to-date answer to "where are we and what's left" --
