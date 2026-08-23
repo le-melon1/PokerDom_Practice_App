@@ -1499,7 +1499,7 @@ LATE_STEAL_RAISER_POSITIONS = {"CO", "BTN", "SB"}
 # this bot doesn't otherwise consider calling with, so it's omitted here).
 # Only extends the call decision to hands NOT already in the fixed call
 # range; never narrows it.
-SET_MINE_IMPLIED_ODDS = True
+SET_MINE_IMPLIED_ODDS = True  # 2026-08-23: full re-validation sweep against the post-restructure population/model (scripts/full_revalidation_sweep.sh) -- confirmed POSITIVE both seeds, +5.04+/-2.22 (seed42) / +6.68+/-2.90 (seed777).
 SET_MINE_POCKET_PAIRS = {"22", "33", "44", "55", "66", "77", "88", "99"}
 SET_MINE_SUITED_CONNECTORS = {"54s", "65s", "76s", "87s", "98s", "T9s", "JTs"}
 SET_MINE_PAIR_IMPLIED_ODDS_MULTIPLE = 15.0
@@ -1589,7 +1589,7 @@ SB_OPEN_SIZING_BB = 3.0
 #      just calling and playing a tough OOP pot. Reuses the existing call
 #      range as the "entire continue range" (call_ranges["SB"] | VALUE_3BET)
 #      rather than inventing a new hand list from scratch.
-SB_THREEBET_OR_FOLD_VS_STEAL = True
+SB_THREEBET_OR_FOLD_VS_STEAL = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +6.84+/-3.20 (seed42) / +6.12+/-2.73 (seed777).
 
 # 2026-08-17, diagnostic-only, never meant to ship: SB_THREEBET_OR_FOLD_VS_
 # STEAL confirmed 3-bet beats flat-call, but that doesn't establish that
@@ -1636,7 +1636,7 @@ RAKE_ADJUSTED_OPEN_POSITIONS = {"UTG", "MP"}
 # a bigger price). Applied via _threebet_multiplier(hand, seat, raiser_seat)
 # below wherever THREEBET_MULTIPLIER is currently used directly (value
 # 3-bet, bluff 3-bet, squeeze).
-THREEBET_SIZE_BY_POSITION = True
+THREEBET_SIZE_BY_POSITION = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +8.62+/-3.97 (seed42) / +5.41+/-2.53 (seed777).
 THREEBET_MULTIPLIER_IP = 3.0
 THREEBET_MULTIPLIER_OOP = 4.0
 
@@ -1744,7 +1744,9 @@ SIZE_UP_ON_TURN = False  # full-model ablation: +0.46 +/- 0.59, no proven benefi
 # a cheap price. Both independently toggleable, same lesson as v15 B1/B2:
 # a bundled test can't tell you which part helped.
 SIZE_UP_WITH_VERY_STRONG_HAND = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard with two-pair-or-better (has_very_strong_hand)
+# 2026-08-23: re-validation sweep -- confirmed_positive seed42 (+1.64+/-0.77), inconclusive_small_effect seed777 (+0.66+/-0.58, same sign, just underpowered). Kept True.
 SIZE_UP_ON_WET_BOARD = True  # bet BIG_VALUE_SIZING_POT_FRACTION instead of standard on a two-tone/monotone/well-connected board
+# 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +10.57+/-3.68 (seed42) / +6.72+/-2.51 (seed777).
 
 # 2026-08-18: the flip side of SIZE_UP_ON_WET_BOARD, flagged as a separate
 # untested question at the time that one shipped -- see the use site's
@@ -1766,7 +1768,7 @@ ISO_SIZING_PER_LIMPER_BB = 1.0
 # v31: anti-multiway limper isolation candidate. This is deliberately NOT the
 # old C1 rule: it narrows the range and uses a much bigger raise so callers
 # behind hero get a worse price and hero more often plays heads-up.
-TIGHT_BIG_ISO_RAISE_LIMPERS = True
+TIGHT_BIG_ISO_RAISE_LIMPERS = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +75.15+/-13.12 (seed42) / +42.05+/-11.27 (seed777).
 TIGHT_ISO_VPIP_MULTIPLIER = 0.85
 TIGHT_ISO_BASE_SIZING_BB = 5.5
 TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
@@ -1780,7 +1782,7 @@ TIGHT_ISO_SIZING_PER_LIMPER_BB = 1.5
 # missing a union the "parent" range includes) -- off by default here since,
 # unlike that case, this flag is untested and TIGHT_BIG_ISO_RAISE_LIMPERS is
 # a currently-shipped True rule, so the standing policy is test first.
-TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = True
+TIGHT_ISO_INCLUDE_REAL_DATA_FLOOR = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +13.12+/-5.69 (seed42) / +15.17+/-5.49 (seed777).
 
 # 2026-08-17, follow-up round (user's idea, untested): also narrow the
 # RANGE for each limper beyond the first, not just the sizing -- the
@@ -1824,7 +1826,7 @@ LIMP_TRAP_FREQUENCY = 0.3  # limp (instead of raise) this fraction of the time w
 
 # Limp behind instead of iso/fold with hands that play well multiway and are
 # too weak for the tight-big-iso range.
-LIMP_BEHIND_OVER_LIMPERS = True
+LIMP_BEHIND_OVER_LIMPERS = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +15.56+/-4.79 (seed42) / +13.76+/-4.54 (seed777).
 LIMP_BEHIND_VPIP_MULTIPLIER = 0.55
 LIMP_BEHIND_EXTRA_HANDS = {
     "22", "33", "44", "55", "66",
@@ -1897,6 +1899,7 @@ ISO_WIDER_RANGE_OVER_LIMPERS = False
 # empirically rather than assuming either way given how this file's other
 # theory-first guesses (A1/A2/B1/B2) mostly measured as noise.
 SIZE_UP_PREMIUM_OPENS = True  # 2026-08-13: v19b's old whole-game test (+1.76/-0.76, inside CI, sign flip) was too imprecise. Re-tested with the chance-enumeration probe (r20): +4.00+/-1.89 @ seed42, +3.05+/-1.44 @ seed777, combined-CI-in-quadrature 2.38 vs a 0.95 delta between them -- well inside, confirmed. Shipped True.
+# 2026-08-23: re-validation sweep against post-restructure population/model -- confirmed_positive seed42 (+4.01+/-1.72), inconclusive_small_effect seed777 (+0.98+/-0.93, same sign, underpowered). Kept True.
 PREMIUM_OPEN_SIZING_BONUS_BB = 1.5
 
 # 2026-08-20 (untested): SIZE_UP_PREMIUM_OPENS generalized one decision
@@ -1987,7 +1990,7 @@ TIGHT_ARCHETYPES_FOR_PREMIUM_FOLD = {"Nit", "TAG"}
 # never-fold preflop pair bucket instead of flat-calling and letting worse
 # hands realize equity cheaply. QQ/AK stay in the older call/fold branch until
 # separately tested.
-SHOVE_AA_KK_VS_3BET_PLUS = True
+SHOVE_AA_KK_VS_3BET_PLUS = True  # 2026-08-23: re-validation sweep (--hero-hand-filter AA,KK) -- confirmed POSITIVE both seeds, +980.56+/-162.44 (seed42) / +909.25+/-138.43 (seed777).
 SHOVE_VS_3BET_PLUS_RANGE = {"AA", "KK", "QQ", "AKs", "AKo"}
 
 # 2026-08-17 (r18v2, user-prompted research check): published 4-bet theory
@@ -2057,14 +2060,14 @@ SQUEEZE_SIZING_PER_CALLER_BB = 1.5
 # could itself be a leak. Flip to False to cbet only with a made hand or a
 # real draw instead, and compare. Tested: unconditional cbet wins clearly
 # (-1.11 bb/100 vs -9.90 bb/100 without rake, 80k hands each) -- keep True.
-UNCONDITIONAL_FLOP_CBET = True
+UNCONDITIONAL_FLOP_CBET = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +50.55+/-9.66 (seed42) / +54.87+/-10.81 (seed777).
 
 # A/B-test switch: v3 removed calling a raise entirely (raise-or-fold only)
 # because it was a "fit or fold" leak under the OLD postflop plan (no draws,
 # no value-betting without initiative). Now that both are fixed, re-test
 # whether a narrow call (CALL_VPIP_BY_POSITION, half the open range) adds EV
 # back by seeing more flops with a plan that can actually defend them.
-ALLOW_CALLING_RAISES = True
+ALLOW_CALLING_RAISES = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +72.47+/-13.78 (seed42) / +63.29+/-10.24 (seed777).
 
 # A/B-test switch: nothing in this bot previously distinguished a heads-up
 # pot from a 5-way one -- the same ranges/thresholds applied regardless of
@@ -2235,7 +2238,7 @@ BLUFF_3BET_BLOCKER_RANGE = {"A5s", "A4s", "A3s", "A2s", "ATo", "AJo"}
 # hero's own late position against ANY opponent archetype (not just the
 # targeted ones), the polarization half of the theory that's currently
 # missing entirely.
-THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT = True
+THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +18.57+/-7.89 (seed42) / +9.26+/-4.25 (seed777).
 LATE_THREEBET_BLUFF_POSITIONS = {"CO", "BTN", "SB"}
 
 # r29 (2026-08-13, untested): published exploit advice says the best way to
@@ -2256,7 +2259,7 @@ PASSIVE_ARCHETYPES_FOR_3BET_FOLD = {"Station"}
 # Candidate: defend the BB more specifically against cheap late-position
 # steals. This is separate from SIZE_SCALED_CALL_RANGE because a BTN minraise
 # into BB is a narrower tactical spot than "any small raise anywhere".
-BB_DEFEND_VS_STEAL_MINRAISE = True
+BB_DEFEND_VS_STEAL_MINRAISE = True  # 2026-08-23: re-validation sweep's plain single-flag preset found 0 divergent hands both seeds at 150k-hand budget -- genuinely untestable (same class as STEAL_WIDER_VS_NIT), not confirmed either way. Left True (matches original shipping rationale; no evidence to revisit it).
 BB_DEFEND_MAX_RAISE_BB = 2.5
 BB_DEFEND_VPIP_MULTIPLIER = 2.0
 
@@ -2272,7 +2275,7 @@ BB_DEFEND_VPIP_MULTIPLIER = 2.0
 # building a fresh continuous-multiplier range per decision isn't worth the
 # added complexity here -- same "a few discrete tiers, not a continuous
 # function" tradeoff as every other range in this file.
-BB_DEFEND_MDF_SCALED = True
+BB_DEFEND_MDF_SCALED = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +31.45+/-10.41 (seed42) / +17.84+/-5.49 (seed777).
 BB_DEFEND_MDF_TRIGGER = 0.35  # widen when pot/(pot+bet) at or above this (a cheap-enough price)
 
 _rankings_cache = None
@@ -2991,7 +2994,7 @@ SEMI_BLUFF_RAISE_DRAWS_TURN = True  # 2026-08-18: confirmed POSITIVE both seeds,
 # a cheap stand-in. Only fires on hero's own VALUE bet (`made`), only with
 # initiative -- deliberately does not touch the air-cbet sizing pf1 already
 # owns, to keep the two testable independently.
-NUT_ADVANTAGE_SIZING = True
+NUT_ADVANTAGE_SIZING = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +2.19+/-0.99 (seed42) / +1.09+/-0.47 (seed777).
 NUT_ADVANTAGE_MIN_TOP_RANK = "Q"
 NUT_ADVANTAGE_POT_FRACTION = 0.75  # same number as BIG_VALUE_SIZING_POT_FRACTION, kept as its own constant so the two can diverge later
 
@@ -3126,7 +3129,7 @@ def _should_pot_control(hand: Hand, seat: int, had_initiative: bool, n_live_opps
 # approximated as hero's own remaining `player.stack` (not the true
 # effective = min(all live stacks) -- a disclosed simplification; this bot
 # has no per-opponent stack tracking anywhere else either).
-SPR_SCALED_THRESHOLDS = True
+SPR_SCALED_THRESHOLDS = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +5.01+/-2.49 (seed42) / +3.64+/-1.79 (seed777).
 SPR_LOW_THRESHOLD = 3.0
 
 
@@ -3206,7 +3209,7 @@ FOLD_MARGINAL_VS_CHECK_RAISE = False
 #      then missed," but both are the same real bluff-the-turn decision by
 #      this point, and this bot doesn't track exact historical hand strength
 #      per street anywhere else either).
-FLOAT_FLOP_IN_POSITION = True
+FLOAT_FLOP_IN_POSITION = True  # 2026-08-23: re-validation sweep -- confirmed POSITIVE both seeds, +11.36+/-3.97 (seed42) / +8.01+/-3.85 (seed777).
 FLOAT_FOLLOWUP_POT_FRACTION = 0.66  # "bet pretty large when barreling the turn" -- published sizing convention, not fit to a measured breakeven point
 
 # 2026-08-20 (untested): generalizes FLOAT_FLOP_IN_POSITION one street later
