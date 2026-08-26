@@ -7,3 +7,5 @@ pyarrow>=25.0
 reportlab>=5.0
 playwright>=1.61
 pytest>=9.1
+python-telegram-bot>=22.8
+python-dotenv>=1.2

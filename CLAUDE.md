@@ -27,6 +27,45 @@ isn't present at that relative path.
 
 Run via `python3 run_app.py` → `http://127.0.0.1:8001/`.
 
+## Telegram bot (2026-08-26, new, v1 slice)
+
+Separate frontend to the same engine: `backend/telegram_bot/` lets users
+play against the existing ML bots via Telegram instead of the web UI,
+virtual chips only. Deliberately does NOT import or touch `backend/api.py`
+-- that module is explicitly single-user/single-global-state (see its own
+docstring), so the bot bypasses the FastAPI HTTP layer entirely and imports
+the engine/bot/EV/dossier modules directly, with one `BotSession` per
+Telegram `chat_id` (`backend/telegram_bot/session.py`) instead of one
+global `state` dict. Persistence: one pickle file per chat_id under
+`backend/telegram_bot/data/sessions/`, same "pickle to disk after every
+mutating action" idiom `api.py` already uses, just per-chat instead of
+shared.
+
+- `backend/telegram_bot/session.py` — `BotSession` dataclass, `SessionStore`.
+- `backend/telegram_bot/game.py` — session-parameterized ports of
+  `api.py`'s `_new_table`/`_step_one_bot`/`_on_hand_finished`/
+  `hero_action`/`live_ev` (same call sequence, `state[...]` → `session....`).
+- `backend/telegram_bot/formatting.py` — table state / action keyboard /
+  bet-size presets / EV-hint text as Telegram message text + inline keyboards.
+- `backend/telegram_bot/bot.py` — entrypoint (`python -m
+  backend.telegram_bot.bot`), `python-telegram-bot` v22 handlers, wraps
+  every engine/EV call in `asyncio.to_thread` (the Monte Carlo equity calls
+  in `live_ev.py` are real synchronous work and must not block the bot's
+  event loop), server-side bot-action pacing loop (push-based equivalent of
+  the web app's `driveBotsIfNeeded` polling).
+
+Run: put a token from **@BotFather** in `.env` as `TELEGRAM_BOT_TOKEN=...`
+(see `.env.example`), then `.venv/bin/python3 -m backend.telegram_bot.bot`.
+Runs manually in a terminal for now — no systemd/launchd autostart yet
+(deliberately deferred). No changes to `backend/api.py` or the web
+frontend; 191 existing tests still pass, confirmed unaffected.
+
+**Deferred to a later round, not built yet**: hand-history browsing via
+Telegram (`/history`; `HandHistoryStore` already supports it, just not
+wired to a command), full settings menu (starting stack, archetype pool,
+player-profile pool — only a hints on/off toggle + table reset exist so
+far), concurrent-user load testing, any deployment/autostart automation.
+
 ## Mobile UI (2026-08-23, in progress — user-reported scroll bug NOT fully resolved)
 
 Separate thread from the ABC-bot research below: user wants this app usable

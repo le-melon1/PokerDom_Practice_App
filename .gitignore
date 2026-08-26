@@ -6,6 +6,7 @@ catboost_info/
 *.pkl
 *.pkl.tmp
 .DS_Store
+.env
 
 # Regenerate via backend/bots/build_training_data.py (reads the sibling
 # PokerDom_Microlimits_Analysis repo's processed data) -- 370M, exceeds
