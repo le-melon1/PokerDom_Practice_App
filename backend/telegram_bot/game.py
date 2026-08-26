@@ -9,6 +9,7 @@ side effects -- it loads its own single-user state.pkl on import -- and this
 bot must stay fully independent of the web app's process/state).
 """
 
+from backend.bots.abc_bot import choose_abc_action
 from backend.bots.behavior_clone import bot_think_time, choose_bot_action
 from backend.bots.player_profile_bots import choose_player_profile_action, player_profile_think_time
 from backend.dossier import TableDossier
@@ -180,22 +181,56 @@ def _apply_table_turnover(session: BotSession) -> None:
         session.dossier.reset_seat(seat)
 
 
-def compute_live_ev(session: BotSession, opponent_archetype: str | None = None):
-    """Returns (LiveEVResult, GTORecommendation) for the hero's current
-    decision point -- mirrors api.py's live_ev() handler (equity_trials=1200,
-    same as the web app's hint panel)."""
+def compute_abc_strategy_hint(session: BotSession) -> dict:
+    """Hint powered by the ABC bot (choose_abc_action) -- the rule-based
+    strategy this whole project spent months A/B-testing flag by flag
+    (see abc_bot.py's own changelog docstring), not the equity/CFR panel.
+    Feeds it the SAME live opponent reads (archetype/freq_tier/tilt/bluff
+    tier, from session.turnover) that a seated bot's own decisions already
+    use -- so the hint reflects exactly the opponent-aware rules this
+    session confirmed (WIDER_CALL_VS_OFTEN_TIER, BLUFF_VS_RARE_TIER, etc.),
+    not a generic equity calculation.
+
+    Returns {"action": str, "amount": float|None, "opponents": [{"seat",
+    "name", "archetype", "freq_tier", "tilt_tier"}]} for a live opponent
+    who is still in the hand."""
     hand = session.hand
     if hand is None or hand.finished:
         raise RuntimeError("no hand in progress")
-    ev = estimate_live_ev(
-        hand, session.hero_seat, opponent_archetype=opponent_archetype, dossier=session.dossier, equity_trials=1200
-    )
-    rec = recommend_gto_action(
+    if hand.current_actor() != session.hero_seat:
+        raise RuntimeError("not hero's turn")
+
+    turnover: TableTurnover = session.turnover
+    live_opponents = [
+        seat for seat, p in hand.players.items() if seat != session.hero_seat and p.in_hand
+    ]
+    opponent_archetypes = {s: turnover.archetype_for(s) for s in live_opponents}
+    opponent_freq_tiers = {s: turnover.freq_tier_for(s) for s in live_opponents}
+    opponent_tilt_states = {s: turnover.tilt_tier_for(s) for s in live_opponents}
+    opponent_bluff_tiers_a = {s: turnover.bluff_tier_a_for(s) for s in live_opponents}
+    opponent_bluff_tiers_c = {s: turnover.bluff_tier_c_for(s) for s in live_opponents}
+
+    action, amount = choose_abc_action(
         hand,
         session.hero_seat,
-        opponent_archetype=opponent_archetype,
-        dossier=session.dossier,
-        equity_trials=1200,
-        base=ev,
+        opponent_archetypes=opponent_archetypes,
+        opponent_freq_tiers=opponent_freq_tiers,
+        opponent_tilt_states=opponent_tilt_states,
+        opponent_bluff_tiers_a=opponent_bluff_tiers_a,
+        opponent_bluff_tiers_c=opponent_bluff_tiers_c,
     )
-    return ev, rec
+
+    return {
+        "action": action,
+        "amount": round(amount, 2) if amount is not None else None,
+        "opponents": [
+            {
+                "seat": s,
+                "name": hand.players[s].name,
+                "archetype": opponent_archetypes[s],
+                "freq_tier": opponent_freq_tiers[s],
+                "tilt_tier": opponent_tilt_states[s],
+            }
+            for s in live_opponents
+        ],
+    }

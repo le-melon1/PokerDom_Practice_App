@@ -132,21 +132,41 @@ def build_raise_size_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([row, [InlineKeyboardButton("« Назад", callback_data="act:back")]])
 
 
-def render_hint_text(ev, rec) -> str:
-    lines = ["<b>💡 Подсказка</b>"]
-    if ev.equity_vs_range is not None:
-        lines.append(f"Эквити против диапазона: {ev.equity_vs_range * 100:.1f}%")
-    if ev.breakeven_equity is not None:
-        lines.append(f"Требуется для колла: {ev.breakeven_equity * 100:.1f}%")
-    if ev.ev_call is not None:
-        lines.append(f"EV колла: {ev.ev_call:+.2f}bb")
-    lines.append(f"Рекомендация: <b>{rec.recommended_action}</b>" + (
-        f" до {rec.recommended_amount:.1f}bb" if rec.recommended_amount else ""
-    ))
-    if rec.best_ev is not None:
-        lines.append(f"Лучший EV: {rec.best_ev:+.2f}bb")
-    if ev.confidence_note:
-        lines.append(f"<i>{ev.confidence_note}</i>")
+ACTION_RU = {"fold": "фолд", "check": "чек", "call": "колл", "raise": "рейз/бет", "bet": "рейз/бет"}
+ARCHETYPE_RU = {
+    "Nit": "Нит",
+    "TAG": "TAG",
+    "LAG": "LAG",
+    "Loose-passive": "Лузи-пассив",
+    "Station": "Колл-стэйшн",
+    "Maniac": "Маньяк",
+}
+FREQ_TIER_RU = {"rare": "редко", "normal": "средне", "often": "часто"}
+TILT_TIER_RU = {"none": "спокоен", "acute": "тильт (остро)", "fading": "тильт (спадает)", "residual": "тильт (следы)"}
+
+
+def render_hint_text(hint: dict) -> str:
+    """Renders game.compute_abc_strategy_hint()'s output -- the ABC bot's
+    own recommendation, fed the same live opponent reads a seated bot's
+    decisions use, NOT an equity/CFR panel."""
+    action_ru = ACTION_RU.get(hint["action"], hint["action"])
+    amount = hint["amount"]
+    lines = ["<b>💡 Подсказка (наша стратегия)</b>"]
+    rec_line = f"Рекомендация: <b>{action_ru}</b>"
+    if amount is not None:
+        rec_line += f" до {amount:.1f}bb"
+    lines.append(rec_line)
+
+    opponents = hint["opponents"]
+    if opponents:
+        lines.append("")
+        lines.append("Прочитано по сопернику(ам):")
+        for opp in opponents:
+            archetype = ARCHETYPE_RU.get(opp["archetype"], opp["archetype"])
+            freq = FREQ_TIER_RU.get(opp["freq_tier"], opp["freq_tier"])
+            tilt = TILT_TIER_RU.get(opp["tilt_tier"], opp["tilt_tier"])
+            tilt_part = f", {tilt}" if opp["tilt_tier"] != "none" else ""
+            lines.append(f"  {opp['name']}: {archetype}, играет {freq}{tilt_part}")
     return "\n".join(lines)
 
 

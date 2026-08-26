@@ -132,10 +132,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data == "hint:show":
         try:
-            ev, rec = await _run(game.compute_live_ev, session)
+            hint = await _run(game.compute_abc_strategy_hint, session)
         except RuntimeError:
             return
-        await context.bot.send_message(chat_id, formatting.render_hint_text(ev, rec), parse_mode="HTML")
+        await context.bot.send_message(chat_id, formatting.render_hint_text(hint), parse_mode="HTML")
         return
 
     if data == "settings:hints_toggle":
