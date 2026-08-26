@@ -9,6 +9,8 @@ side effects -- it loads its own single-user state.pkl on import -- and this
 bot must stay fully independent of the web app's process/state).
 """
 
+import random
+
 from backend.bots.abc_bot import choose_abc_action
 from backend.bots.behavior_clone import bot_think_time, choose_bot_action
 from backend.bots.player_profile_bots import choose_player_profile_action, player_profile_think_time
@@ -18,6 +20,7 @@ from backend.engine.table import Table
 from backend.ev.live_ev import estimate_live_ev, recommend_gto_action
 from backend.hand_history import HandHistoryStore, grade_decision
 from backend.sessions.live_dynamics import TableTurnover
+from backend.telegram_bot import drills, forcing
 from backend.telegram_bot.session import BotSession
 
 # PokerDom's real microlimit rake structure -- same constants as
@@ -37,10 +40,20 @@ def new_table(session: BotSession, max_seats: int = 6, starting_stack: float = 2
     )
     dossier = TableDossier()
     bot_seats = [s for s in range(1, max_seats + 1) if s != session.hero_seat]
+
+    # drill mode (2026-08-26): a selected flag's archetype/freq_tier
+    # requirements bias who gets seated -- see drills.py's DrillSpec.
+    merged = drills.merge_specs(session.settings.get("drill_flags", []))
+    allowed_archetypes = session.settings.get("allowed_archetypes")
+    if merged.archetype_filter:
+        allowed_archetypes = list(merged.archetype_filter)
+    forced_freq_tier = drills.freq_tier_assignment(merged, bot_seats) if merged.freq_tier_seats else None
+
     turnover = TableTurnover(
         bot_seats,
-        allowed_archetypes=session.settings.get("allowed_archetypes"),
+        allowed_archetypes=allowed_archetypes,
         player_profile_ids=session.settings.get("player_profile_ids"),
+        forced_freq_tier=forced_freq_tier,
     )
 
     for seat in range(1, max_seats + 1):
@@ -60,10 +73,30 @@ def new_table(session: BotSession, max_seats: int = 6, starting_stack: float = 2
 def new_hand(session: BotSession) -> Hand:
     if session.table is None:
         raise RuntimeError("no table -- call new_table first")
+
+    # drill mode: force hero's seat rotation to land at a specific position
+    # BEFORE dealing (Table.start_new_hand always advances the button by
+    # one first -- see forcing.pick_hero_position_button's own docstring).
+    merged = drills.merge_specs(session.settings.get("drill_flags", []))
+    position = drills.resolve_position(merged, session.hand_number)
+    if position:
+        session.table.button_seat = forcing.pick_hero_position_button(session.table, session.hero_seat, position)
+
     hand = session.table.start_new_hand()
     session.hand = hand
     session.hand_number += 1
     session.hero_decisions = []
+
+    if merged.hero_hand_notations:
+        swap = forcing.pick_hand_swap(hand, set(merged.hero_hand_notations), random.Random(), session.hero_seat)
+        if swap is not None:
+            forcing.apply_hand_swap(hand, swap[0], swap[1], session.hero_seat)
+
+    if merged.force_tilt:
+        for seat, player in hand.players.items():
+            if seat != session.hero_seat and player.in_hand:
+                session.turnover.force_tilt(seat, "acute")
+
     return hand
 
 
@@ -122,30 +155,47 @@ def step_one_bot(session: BotSession) -> float | None:
         return None
 
     turnover: TableTurnover = session.turnover
-    profile_id = turnover.profile_id_for(seat)
-    if profile_id:
-        session_hands_so_far = turnover.occupants[seat].hands_played
-        action, amount = choose_player_profile_action(hand, seat, profile_id, session_hands_so_far)
-        think_time = player_profile_think_time(action)
-    else:
-        archetype = turnover.archetype_for(seat)
-        freq_tier = turnover.freq_tier_for(seat)
-        tilt_tier = turnover.tilt_tier_for(seat)
-        bluff_tier_a = turnover.bluff_tier_a_for(seat)
-        bluff_tier_c = turnover.bluff_tier_c_for(seat)
-        hero_dossier = session.dossier.by_seat.get(session.hero_seat)
-        action, amount = choose_bot_action(
-            hand,
-            seat,
-            archetype=archetype,
-            freq_tier=freq_tier,
-            tilt_tier=tilt_tier,
-            bluff_tier_a=bluff_tier_a,
-            bluff_tier_c=bluff_tier_c,
-            hero_seat=session.hero_seat,
-            hero_dossier=hero_dossier,
-        )
+    merged = drills.merge_specs(session.settings.get("drill_flags", []))
+    forced: tuple[str, float | None] | None = None
+    if merged.force_opponent_reraise and forcing.should_force_clear_for_hero_open(hand, seat, session.hero_seat):
+        forced = forcing.force_fold_action(hand, seat)
+    elif merged.force_opponent_reraise and forcing.should_force_opponent_reraise(hand, seat, session.hero_seat):
+        forced = forcing.force_reraise_action(hand, seat, random.Random())
+    elif merged.force_opponent_open and forcing.should_force_clear_to_open(hand, seat, session.hero_seat):
+        forced = forcing.force_fold_action(hand, seat)
+    elif merged.force_opponent_open and forcing.should_force_opponent_open(hand, seat, session.hero_seat):
+        forced = forcing.force_open_action(hand, seat)
+    elif merged.force_opponent_limp and forcing.should_force_opponent_limp(hand, seat, session.hero_seat):
+        forced = forcing.force_limp_action(hand, seat)
+
+    if forced is not None:
+        action, amount = forced
         think_time = bot_think_time(action)
+    else:
+        profile_id = turnover.profile_id_for(seat)
+        if profile_id:
+            session_hands_so_far = turnover.occupants[seat].hands_played
+            action, amount = choose_player_profile_action(hand, seat, profile_id, session_hands_so_far)
+            think_time = player_profile_think_time(action)
+        else:
+            archetype = turnover.archetype_for(seat)
+            freq_tier = turnover.freq_tier_for(seat)
+            tilt_tier = turnover.tilt_tier_for(seat)
+            bluff_tier_a = turnover.bluff_tier_a_for(seat)
+            bluff_tier_c = turnover.bluff_tier_c_for(seat)
+            hero_dossier = session.dossier.by_seat.get(session.hero_seat)
+            action, amount = choose_bot_action(
+                hand,
+                seat,
+                archetype=archetype,
+                freq_tier=freq_tier,
+                tilt_tier=tilt_tier,
+                bluff_tier_a=bluff_tier_a,
+                bluff_tier_c=bluff_tier_c,
+                hero_seat=session.hero_seat,
+                hero_dossier=hero_dossier,
+            )
+            think_time = bot_think_time(action)
     try:
         hand.apply_action(seat, action, amount)
     except IllegalAction:

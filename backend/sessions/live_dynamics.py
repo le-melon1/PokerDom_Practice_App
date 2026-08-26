@@ -256,7 +256,19 @@ class TableTurnover:
     uniformly, not weighted by their own hand count -- "play against these
     N people" should mean an equal chance of seeing each, not a chance
     proportional to how much historical data happened to exist for them)
-    instead of the population-wide archetype model."""
+    instead of the population-wide archetype model.
+
+    `forced_freq_tier`: optional {seat: tier} override, for the Telegram
+    bot's drill mode (2026-08-26) -- lets a specific seat be forced to a
+    postflop_freq_tier regardless of what its archetype would normally
+    sample, so a rule gated on freq_tier (e.g. WIDER_CALL_VS_OFTEN_TIER)
+    can be drilled reliably. Applied only at seating time, same as a
+    sampled tier would be -- does not persist across a reseat unless
+    re-passed. Note: an archetype+tier combo the ML opponent model rarely
+    saw in training (e.g. Nit+often, a real but skewed combo per
+    ARCHETYPE_FREQ_TIER_WEIGHTS) makes that seat's behavior less
+    calibrated in the forced region -- acceptable for a drill, not
+    something to rely on for population-realistic EV."""
 
     def __init__(
         self,
@@ -264,12 +276,14 @@ class TableTurnover:
         rng_seed: int | None = None,
         allowed_archetypes: list[str] | None = None,
         player_profile_ids: list[str] | None = None,
+        forced_freq_tier: dict[int, str] | None = None,
     ):
         self.rng = random.Random(rng_seed)
         self.allowed_archetypes = [a for a in ARCHETYPE_POOL if a in allowed_archetypes] if allowed_archetypes else list(ARCHETYPE_POOL)
         if not self.allowed_archetypes:
             self.allowed_archetypes = list(ARCHETYPE_POOL)
         self.player_profile_ids = list(player_profile_ids) if player_profile_ids else None
+        self.forced_freq_tier = dict(forced_freq_tier) if forced_freq_tier else {}
         self.occupants: dict[int, SeatOccupant] = {}
         for seat in bot_seats:
             self._seat_new_occupant(seat)
@@ -285,7 +299,7 @@ class TableTurnover:
             # aggression_factor), not a population sample -- more precise
             # than sampling since we already know this specific person's
             # postflop frequency.
-            freq_tier = _freq_tier_from_af(profile["aggression_factor"])
+            freq_tier = self.forced_freq_tier.get(seat, _freq_tier_from_af(profile["aggression_factor"]))
             # Real players get their OWN measured bluff tier too, when they
             # happen to clear the 15-event reliability bar in either
             # variant's table -- looked up by their real player id, not
@@ -304,7 +318,7 @@ class TableTurnover:
             pool,
             weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
         )[0]
-        freq_tier = sample_freq_tier(archetype, self.rng)
+        freq_tier = self.forced_freq_tier.get(seat, sample_freq_tier(archetype, self.rng))
         bluff_tier_a = sample_bluff_tier(BLUFF_TIER_A_WEIGHTS, self.rng)
         bluff_tier_c = sample_bluff_tier(BLUFF_TIER_C_WEIGHTS, self.rng)
         length = sample_session_length(archetype, self.rng)
@@ -339,6 +353,16 @@ class TableTurnover:
 
     def tilt_tier_for(self, seat: int) -> str:
         return _tilt_tier_from_hands_since(self.occupants[seat].hands_since_cooler)
+
+    def force_tilt(self, seat: int, tier: str) -> None:
+        """Telegram bot drill mode (2026-08-26): directly sets a seat's
+        hands_since_cooler to a value that reads back as `tier` via
+        _tilt_tier_from_hands_since's existing thresholds, so a rule gated
+        on tilt (WIDER_CALL_VS_TILTING_OPPONENT) can be drilled without
+        waiting for a real cooler hand to occur naturally. `tier="none"`
+        clears it back to untilted."""
+        mapping = {"acute": 1, "fading": 3, "residual": 6, "none": None}
+        self.occupants[seat].hands_since_cooler = mapping[tier]
 
     def record_hand_played(self) -> None:
         """Call once per finished hand to increment every occupied seat's

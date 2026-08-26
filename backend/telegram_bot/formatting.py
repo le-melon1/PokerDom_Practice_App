@@ -4,6 +4,7 @@ game.py / the engine already computed."""
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from backend.telegram_bot import drills
 from backend.telegram_bot.session import BotSession
 
 SUIT_EMOJI = {"c": "♣", "d": "♦", "h": "♥", "s": "♠"}
@@ -27,6 +28,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     table = session.table
     hand = session.hand
     lines = []
+
+    drill_flags = session.settings.get("drill_flags") or []
+    if drill_flags:
+        labels = [drills.FLAG_LABEL_RU.get(f, f) for f in drill_flags]
+        lines.append(f"🎯 Тренировка: {', '.join(labels)}")
+        lines.append("")
 
     if hand is None:
         lines.append("Стол готов. /newhand -- раздать первую руку.")
@@ -177,4 +184,53 @@ def build_settings_keyboard(session: BotSession) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(hints_label, callback_data="settings:hints_toggle")],
             [InlineKeyboardButton("🔄 Сбросить стол", callback_data="settings:reset")],
         ]
+    )
+
+
+# ---- drill mode menu: /drills -> Префлоп/Постфлоп -> category -> flags ----
+
+
+def build_drill_root_keyboard(session: BotSession) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("Префлоп", callback_data="drill:stage:preflop")],
+        [InlineKeyboardButton("Постфлоп", callback_data="drill:stage:postflop")],
+    ]
+    if session.settings.get("drill_flags"):
+        rows.append([InlineKeyboardButton("🔙 Обычная игра (сбросить тренировку)", callback_data="drill:exit")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_drill_category_keyboard(stage: str) -> InlineKeyboardMarkup:
+    flag_list = drills.PREFLOP_FLAGS if stage == "preflop" else drills.POSTFLOP_FLAGS
+    categories = sorted({drills.FLAG_CATEGORY[f] for f in flag_list})
+    rows = [
+        [InlineKeyboardButton(drills.CATEGORY_LABEL_RU.get(cat, cat), callback_data=f"drill:cat:{cat}")]
+        for cat in categories
+    ]
+    rows.append([InlineKeyboardButton("« Назад", callback_data="drill:root")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_drill_flag_keyboard(session: BotSession, category: str) -> InlineKeyboardMarkup:
+    selected = set(session.settings.get("drill_flags") or [])
+    flags = sorted(f for f, c in drills.FLAG_CATEGORY.items() if c == category)
+    rows = []
+    for flag in flags:
+        mark = "✅ " if flag in selected else "⬜ "
+        label = mark + drills.FLAG_LABEL_RU.get(flag, flag)
+        rows.append([InlineKeyboardButton(label, callback_data=f"drill:toggle:{flag}")])
+    stage = "preflop" if category.startswith("preflop") else "postflop"
+    rows.append([InlineKeyboardButton("« Категории", callback_data=f"drill:stage:{stage}")])
+    if selected:
+        rows.append([InlineKeyboardButton("🎯 Начать тренировку", callback_data="drill:start")])
+    return InlineKeyboardMarkup(rows)
+
+
+def render_drill_intro_text() -> str:
+    return (
+        "<b>Тренировка по правилам</b>\n"
+        "Выбери одно или несколько правил стратегии, чтобы стол специально "
+        "подстраивался под нужный сценарий (архетипы соперников, форсированные "
+        "карты/действия) — сценарий будет встречаться почти каждую раздачу, "
+        "а не раз в тысячу."
     )

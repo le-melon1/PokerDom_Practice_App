@@ -30,6 +30,9 @@ DEFAULT_SETTINGS = {
     "player_profile_ids": None,
     "starting_stack": 200.0,
     "max_seats": 6,
+    # drill mode (2026-08-26): names of abc_bot.py flags (see drills.py's
+    # DRILL_SPECS) the user is currently drilling. Empty = normal play.
+    "drill_flags": [],
 }
 
 

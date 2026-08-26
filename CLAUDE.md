@@ -66,6 +66,85 @@ wired to a command), full settings menu (starting stack, archetype pool,
 player-profile pool — only a hints on/off toggle + table reset exist so
 far), concurrent-user load testing, any deployment/autostart automation.
 
+**2026-08-26, hint source changed**: the "💡 Подсказка" button used to call
+the equity/CFR panel (`estimate_live_ev`/`recommend_gto_action`, same as
+the web app). Per explicit user request ("подсказки должны быть не по
+эквити а по стратегиям которые мы выводили"), it now calls
+`choose_abc_action` directly — `game.compute_abc_strategy_hint`, fed the
+same live opponent reads (archetype/freq_tier/tilt from `session.turnover`)
+a seated bot's own decisions already use, so the hint matches exactly the
+rules this whole project spent months validating, and shows which
+opponent read drove the recommendation instead of raw equity/EV numbers.
+
+## Telegram bot: drill mode (2026-08-26)
+
+New `/drills` command — lets the user pick one or several of the 32
+currently-`True` rules in `abc_bot.py` and has the session engineered so
+that rule's trigger scenario comes up reliably, instead of at its natural
+(sometimes <0.1%) self-play incidence — split into a Preflop/Postflop menu
+per the user's explicit request ("отдельно отработать префлоп и отдельно
+постфлоп"), with categories inside each (range/sizing/calling/bluffing).
+User's own framing: "нужно чтобы я мог реально отработать каждый флаг" —
+verified end-to-end for one flag per lever this round (see below), not
+just built and assumed working.
+
+- `backend/telegram_bot/drills.py` — `DrillSpec` dataclass, `DRILL_SPECS`
+  (all 32 flags, classified by which forcing lever(s) they need),
+  `FLAG_CATEGORY`/`FLAG_LABEL_RU` (menu grouping/labels), `merge_specs`
+  (combines 2+ selected flags: archetype filters union, freq_tier requests
+  each get their own opponent seat, forced positions rotate hand-by-hand),
+  `resolve_position`/`freq_tier_assignment` (per-hand resolution helpers).
+- `backend/telegram_bot/forcing.py` — the actual scenario-forcing
+  primitives, reimplemented cleanly (not imported) from
+  `scripts/probe_chance_enumeration.py`'s own `_pick_hero_hand_swap`/
+  `_apply_hero_hand_swap`/`_should_force_opponent_reraise`/
+  `_force_reraise_action` (same mechanics, adapted from that script's
+  hand_index/base_seed determinism to a plain `random.Random` for a live
+  session). New here: `pick_hero_position_button` (button-rotation math so
+  hero lands at a specific position for a hand), `should_force_clear_to_
+  open`/`should_force_clear_for_hero_open` (force-fold every seat before
+  the target opener so the drill scenario triggers on essentially every
+  hand instead of only when earlier seats happen to fold on their own —
+  found necessary during verification, an earlier version without this
+  only hit the target scenario ~15-30% of hands), `should_force_opponent_
+  limp`/`force_limp_action` (for the iso/limp-behind drills).
+- `backend/sessions/live_dynamics.py` — small, additive, backward-
+  compatible changes (only file outside `backend/telegram_bot/` touched;
+  new params default to off, existing web app unaffected): `TableTurnover`
+  gained `forced_freq_tier: dict[int, str] | None` (per-seat override,
+  consulted in `_seat_new_occupant` before the normal sample) and
+  `force_tilt(seat, tier)` (directly sets `hands_since_cooler` to a value
+  that reads back as the requested tier).
+- `backend/telegram_bot/game.py`/`formatting.py`/`bot.py`: `new_table`/
+  `new_hand`/`step_one_bot` read `session.settings["drill_flags"]` and
+  apply the merged spec (archetype/freq_tier seating bias, forced hero
+  position/hand, forced opponent open/reraise/limp); `/drills` command +
+  `drill:*` callback branches for the 3-level menu (stage → category →
+  flags with ✅/⬜ toggle → "🎯 Начать тренировку").
+
+**Board-texture-gated rules deliberately NOT drillable this round**
+(`SIZE_UP_ON_WET_BOARD`, `NUT_ADVANTAGE_SIZING`) — no "pick a wet/dry
+board" selection logic exists anywhere in this codebase (only the
+unrelated `_force_next_board_card`, an exhaustive-averaging primitive for
+the offline probe, not texture selection); their `DrillSpec` is empty, the
+board stays natural.
+
+**Verified this round** (offline, no live Telegram token yet — same
+technique as the base bot's own verification): archetype-filter drills
+(`STEAL_WIDER_VS_NIT`, multi-select union with `WIDER_3BET_VS_LOOSE`),
+forced freq_tier (`BLUFF_VS_RARE_TIER`), forced tilt
+(`WIDER_CALL_VS_TILTING_OPPONENT`), forced hero position + forced opener
+(`SB_THREEBET_OR_FOLD_VS_STEAL` 15/15, `BB_DEFEND_VS_STEAL_MINRAISE` 15/15,
+`THREEBET_BLUFF_FROM_LATE_POSITION_ANY_OPPONENT` 15/15), forced limp
+(`LIMP_BEHIND_OVER_LIMPERS` 14/15), forced hero hand + forced reraise
+(`SHOVE_AA_KK_VS_3BET_PLUS`, 15/15 on fresh single-hand sessions — a
+same-session multi-hand run showed a lower hit rate, traced to two
+unrelated causes: stacks growing very large after several forced-big-pot
+hands in a row changing the strategy's own choices at that point, and one
+pre-existing `choose_abc_action` quirk returning an illegal raise amount
+at extreme stack depths — not a forcing-mechanism bug, not fixed this
+round, worth a look if it recurs). 191 tests pass throughout.
+
 ## Mobile UI (2026-08-23, in progress — user-reported scroll bug NOT fully resolved)
 
 Separate thread from the ABC-bot research below: user wants this app usable

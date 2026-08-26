@@ -21,7 +21,7 @@ from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from backend.engine.hand import IllegalAction
-from backend.telegram_bot import formatting, game
+from backend.telegram_bot import drills, formatting, game
 from backend.telegram_bot.session import BotSession, SessionStore
 
 load_dotenv()
@@ -111,6 +111,20 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await context.bot.send_message(chat_id, "Настройки:", reply_markup=formatting.build_settings_keyboard(session))
 
 
+async def drills_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    session = store.get(chat_id)
+    if session is None:
+        await context.bot.send_message(chat_id, "Сначала /start")
+        return
+    await context.bot.send_message(
+        chat_id,
+        formatting.render_drill_intro_text(),
+        reply_markup=formatting.build_drill_root_keyboard(session),
+        parse_mode="HTML",
+    )
+
+
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     chat_id = update.effective_chat.id
@@ -165,6 +179,56 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _apply_action_and_continue(context, session, "raise", amount)
         return
 
+    if data == "drill:root":
+        await query.edit_message_text(
+            formatting.render_drill_intro_text(),
+            reply_markup=formatting.build_drill_root_keyboard(session),
+            parse_mode="HTML",
+        )
+        return
+
+    if data.startswith("drill:stage:"):
+        stage = data.split(":", 2)[2]
+        await query.edit_message_reply_markup(reply_markup=formatting.build_drill_category_keyboard(stage))
+        return
+
+    if data.startswith("drill:cat:"):
+        category = data.split(":", 2)[2]
+        await query.edit_message_reply_markup(reply_markup=formatting.build_drill_flag_keyboard(session, category))
+        return
+
+    if data.startswith("drill:toggle:"):
+        flag = data.split(":", 2)[2]
+        selected = list(session.settings.get("drill_flags") or [])
+        if flag in selected:
+            selected.remove(flag)
+        else:
+            selected.append(flag)
+        session.settings["drill_flags"] = selected
+        store.save(session)
+        category = drills.FLAG_CATEGORY.get(flag)
+        if category:
+            await query.edit_message_reply_markup(reply_markup=formatting.build_drill_flag_keyboard(session, category))
+        return
+
+    if data == "drill:start":
+        await _run(game.new_table, session)
+        store.save(session)
+        labels = [drills.FLAG_LABEL_RU.get(f, f) for f in session.settings.get("drill_flags") or []]
+        await context.bot.send_message(chat_id, f"🎯 Тренировка начата: {', '.join(labels)}")
+        session.table_message_id = None
+        await _deal_and_show(context, session)
+        return
+
+    if data == "drill:exit":
+        session.settings["drill_flags"] = []
+        await _run(game.new_table, session)
+        store.save(session)
+        await context.bot.send_message(chat_id, "Обычная игра. Стол сброшен.")
+        session.table_message_id = None
+        await _deal_and_show(context, session)
+        return
+
 
 async def _apply_action_and_continue(
     context: ContextTypes.DEFAULT_TYPE, session: BotSession, action: str, amount: float | None
@@ -189,6 +253,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newhand", newhand))
     app.add_handler(CommandHandler("settings", settings_cmd))
+    app.add_handler(CommandHandler("drills", drills_cmd))
     app.add_handler(CallbackQueryHandler(on_callback))
 
     logger.info("PokerDom Telegram bot starting (polling)...")
