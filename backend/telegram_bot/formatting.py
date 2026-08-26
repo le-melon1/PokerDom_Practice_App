@@ -218,7 +218,12 @@ def build_drill_flag_keyboard(session: BotSession, category: str) -> InlineKeybo
     for flag in flags:
         mark = "✅ " if flag in selected else "⬜ "
         label = mark + drills.FLAG_LABEL_RU.get(flag, flag)
-        rows.append([InlineKeyboardButton(label, callback_data=f"drill:toggle:{flag}")])
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=f"drill:toggle:{flag}"),
+                InlineKeyboardButton("ℹ️", callback_data=f"drill:info:{flag}"),
+            ]
+        )
     stage = "preflop" if category.startswith("preflop") else "postflop"
     rows.append([InlineKeyboardButton("« Категории", callback_data=f"drill:stage:{stage}")])
     if selected:
@@ -232,5 +237,16 @@ def render_drill_intro_text() -> str:
         "Выбери одно или несколько правил стратегии, чтобы стол специально "
         "подстраивался под нужный сценарий (архетипы соперников, форсированные "
         "карты/действия) — сценарий будет встречаться почти каждую раздачу, "
-        "а не раз в тысячу."
+        "а не раз в тысячу.\n\n"
+        "Нажми ℹ️ у любого правила — покажу, что именно оно делает, почему это "
+        "работает и насколько мы в нём уверены (реальные цифры из тестов, а не "
+        "на глаз)."
     )
+
+
+POSITIONS = ["UTG", "MP", "CO", "BTN", "SB"]
+
+
+def build_ranges_position_keyboard() -> InlineKeyboardMarkup:
+    row = [InlineKeyboardButton(pos, callback_data=f"ranges:{pos}") for pos in POSITIONS]
+    return InlineKeyboardMarkup([row])

@@ -145,6 +145,55 @@ pre-existing `choose_abc_action` quirk returning an illegal raise amount
 at extreme stack depths — not a forcing-mechanism bug, not fixed this
 round, worth a look if it recurs). 191 tests pass throughout.
 
+### Per-rule detail (ℹ️) + range charts (2026-08-26, same day)
+
+User asked, right after drill mode shipped: for every rule, show the rule
+itself, how confident we actually are in it, a detailed what/when/why/
+benefit explanation, and -- specifically for "how often to open from which
+position" -- an actual chart image (13x13 grid, one color for hands played,
+another for hands not played), not just numbers.
+
+- `backend/telegram_bot/rule_info.py` -- `RULE_INFO: dict[str, RuleInfo]`,
+  one entry per drillable flag (32/32, verified no missing/typo'd keys),
+  each with `what`/`why`/`confidence`/`stats`. The numbers are the REAL
+  confirmed bb/100 deltas pulled directly from `abc_bot.py`'s own inline
+  comments and `CLAUDE.md`'s changelog (re-read from source this round, not
+  recalled from memory) -- e.g. `TIGHT_BIG_ISO_RAISE_LIMPERS` +75.15±13.12/
+  +42.05±11.27, `STEAL_WIDER_VS_NIT`/`BB_DEFEND_VS_STEAL_MINRAISE` honestly
+  marked "не подтверждено самоигрой" (0 divergent hands both seeds --
+  genuinely untestable by self-play, not silently glossed over).
+  `chart_notations_for(flag)` returns the REAL hand-notation set for the 14
+  range-based flags, read directly from `abc_bot.py`'s own range caches
+  (`_ranges()`) and constants (`VALUE_3BET_WIDE`, `SHOVE_VS_3BET_PLUS_
+  RANGE`, etc.) for the exact position the rule applies at -- NOT reused
+  from `drills.py`'s `DrillSpec.hero_hand_notations` (that field exists for
+  a different purpose, forcing hero's cards during a drill session, and
+  doesn't cover every range-based flag -- an early version of this
+  conflated the two and silently produced no chart for several flags that
+  should have had one; caught and fixed by cross-checking every flag with
+  a chart_title actually returns a non-empty set).
+- `backend/telegram_bot/range_chart.py` -- `render_range_chart(hand_set,
+  title) -> bytes` (PNG), the standard 13x13 grid (pairs diagonal, suited
+  above, offsuit below), green = in range / grey = not, via Pillow (now an
+  explicit `requirements.txt` entry -- was only an implicit transitive dep
+  of `reportlab` before, not safe to rely on for a new direct import).
+- New `/ranges` command: position-picker (UTG/MP/CO/BTN/SB) → sends the
+  REAL open-range chart for that position (`abc_bot._ranges()`'s own
+  `_open_range_cache`, not a textbook chart) as a photo, with hand count
+  and target VPIP% in the caption -- directly answers "как часто открывать
+  с какой позиции" with an actual chart image instead of a number.
+- `/drills`' flag list gained an "ℹ️" button per row (`drill:info:<FLAG>`)
+  -- sends the rule's full explanation, plus a range-chart photo first if
+  the flag is range-based.
+
+**Verified this round**: all 32 flags have a `RULE_INFO` entry (exact set
+match against `drills.DRILL_SPECS`, no missing/extra keys); every flag with
+an associated chart renders a valid, non-empty PNG (checked PNG magic bytes
++ non-zero hand count); all 5 `/ranges` positions render; every drill-menu
+`callback_data` (including the new ℹ️ buttons) stays under Telegram's
+64-byte limit (longest: `drill:info:THREEBET_BLUFF_FROM_LATE_POSITION_
+ANY_OPPONENT` variants, 58-59 bytes). 191 tests pass.
+
 ## Mobile UI (2026-08-23, in progress — user-reported scroll bug NOT fully resolved)
 
 Separate thread from the ABC-bot research below: user wants this app usable

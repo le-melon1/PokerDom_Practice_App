@@ -20,8 +20,9 @@ from telegram import Update
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from backend.bots import abc_bot
 from backend.engine.hand import IllegalAction
-from backend.telegram_bot import drills, formatting, game
+from backend.telegram_bot import drills, formatting, game, range_chart, rule_info
 from backend.telegram_bot.session import BotSession, SessionStore
 
 load_dotenv()
@@ -109,6 +110,15 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await context.bot.send_message(chat_id, "Сначала /start")
         return
     await context.bot.send_message(chat_id, "Настройки:", reply_markup=formatting.build_settings_keyboard(session))
+
+
+async def ranges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id,
+        "Выбери позицию — покажу открывающий диапазон (наша реальная стратегия, не теория из книги).",
+        reply_markup=formatting.build_ranges_position_keyboard(),
+    )
 
 
 async def drills_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -220,6 +230,16 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _deal_and_show(context, session)
         return
 
+    if data.startswith("ranges:"):
+        position = data.split(":", 1)[1]
+        await _send_position_range(context, chat_id, position)
+        return
+
+    if data.startswith("drill:info:"):
+        flag = data.split(":", 2)[2]
+        await _send_rule_info(context, chat_id, flag)
+        return
+
     if data == "drill:exit":
         session.settings["drill_flags"] = []
         await _run(game.new_table, session)
@@ -228,6 +248,31 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         session.table_message_id = None
         await _deal_and_show(context, session)
         return
+
+
+def _build_open_range_photo(position: str) -> tuple[bytes, str]:
+    open_ranges, *_ = abc_bot._ranges()
+    hand_set = open_ranges.get(position, set())
+    vpip = abc_bot.OPEN_VPIP_BY_POSITION.get(position)
+    caption = f"Открывающий диапазон: {position} ({len(hand_set)} рук, целевой VPIP {vpip * 100:.1f}%)" if vpip else f"Открывающий диапазон: {position}"
+    png = range_chart.render_range_chart(hand_set, title=f"Open range: {position}")
+    return png, caption
+
+
+async def _send_position_range(context: ContextTypes.DEFAULT_TYPE, chat_id: int, position: str) -> None:
+    png, caption = await _run(_build_open_range_photo, position)
+    await context.bot.send_photo(chat_id, photo=png, caption=caption)
+
+
+async def _send_rule_info(context: ContextTypes.DEFAULT_TYPE, chat_id: int, flag: str) -> None:
+    text = rule_info.render_rule_info_text(flag)
+    chart = await _run(rule_info.chart_notations_for, flag)
+    if chart is not None:
+        hand_set, subtitle = chart
+        title = drills.FLAG_LABEL_RU.get(flag, flag)
+        png = await _run(range_chart.render_range_chart, hand_set, f"{title} ({subtitle})")
+        await context.bot.send_photo(chat_id, photo=png, caption=f"{len(hand_set)} рук — {subtitle}")
+    await context.bot.send_message(chat_id, text, parse_mode="HTML")
 
 
 async def _apply_action_and_continue(
@@ -254,6 +299,7 @@ def main() -> None:
     app.add_handler(CommandHandler("newhand", newhand))
     app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("drills", drills_cmd))
+    app.add_handler(CommandHandler("ranges", ranges_cmd))
     app.add_handler(CallbackQueryHandler(on_callback))
 
     logger.info("PokerDom Telegram bot starting (polling)...")
