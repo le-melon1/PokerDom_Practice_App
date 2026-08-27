@@ -74,34 +74,58 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             lines.append(review)
     elif trainer_feedback is not None:
         lines.append("")
-        lines.append(f"📊 {trainer_feedback['verdict']}")
+        if _matches_abc_recommendation(trainer_feedback):
+            lines.append("📊 ✅ совпадает со стратегией")
+        else:
+            abc_part = _format_action(trainer_feedback["abc_action"], trainer_feedback["abc_amount"])
+            lines.append(f"📊 ❌ стратегия рекомендовала: {abc_part}")
 
     return "\n".join(lines)
 
 
+def _matches_abc_recommendation(d: dict) -> bool:
+    """Compares hero's actual action against choose_abc_action's own
+    recommendation at that decision point -- action type must match, and
+    for a raise/bet the amount must be reasonably close (within 10%, or
+    0.5bb, whichever is bigger -- preset buttons and the strategy's own
+    formula can differ by rounding). This is the ONLY grading logic used
+    in the bot now -- no equity/CFR solver involved anywhere here, per
+    explicit user request ("нужны советы не по солверу а по правилам абс
+    бота")."""
+    if d["action"] != d["abc_action"]:
+        return False
+    if d["action"] in ("raise", "bet") and d["amount"] is not None and d["abc_amount"] is not None:
+        return abs(d["amount"] - d["abc_amount"]) <= max(0.5, d["abc_amount"] * 0.1)
+    return True
+
+
+def _format_action(action: str, amount: float | None) -> str:
+    action_ru = ACTION_RU.get(action, action)
+    return f"{action_ru}" + (f" {amount:.1f}bb" if amount else "")
+
+
 def render_hand_review(session: BotSession) -> str:
     """Full per-street breakdown of EVERY hero decision this hand (not just
-    the last one) -- what hero did, whether that matched what optimal play
-    was worth (✅/❌, from the existing solver-based EV-loss grade), and
-    what the ABC strategy (choose_abc_action) itself recommended at that
-    exact point. We don't attribute this to one specific abc_bot.py flag by
-    name -- reliably pinpointing which of the ~30 interacting rules drove
-    a single decision would need much deeper instrumentation than exists
-    today; this shows the strategy's actual recommendation instead, which
-    is the honest thing we can compute."""
+    the last one) -- what hero did vs what the ABC strategy
+    (choose_abc_action) itself recommended at that exact point, ✅/❌ purely
+    from whether they match. We don't attribute this to one specific
+    abc_bot.py flag by name -- reliably pinpointing which of the ~30
+    interacting rules drove a single decision would need much deeper
+    instrumentation than exists today; this shows the strategy's actual
+    recommendation instead, which is the honest thing we can compute."""
     decisions = session.street_decisions
     if not decisions:
         return ""
-    lines = ["<b>Разбор по улицам:</b>"]
+    lines = ["<b>Разбор по улицам (по правилам стратегии):</b>"]
     for d in decisions:
         street_ru = STREET_RU.get(d["street"], d["street"])
-        icon = "✅" if d["grade"] == "optimal" else "❌"
-        action_ru = ACTION_RU.get(d["action"], d["action"])
-        action_part = f"{action_ru}" + (f" {d['amount']:.1f}bb" if d["amount"] else "")
-        abc_action_ru = ACTION_RU.get(d["abc_action"], d["abc_action"])
-        abc_part = f"{abc_action_ru}" + (f" {d['abc_amount']:.1f}bb" if d["abc_amount"] else "")
-        lines.append(f"{icon} <b>{street_ru}</b>: вы — {action_part}; стратегия — {abc_part}")
-        lines.append(f"   {d['verdict']}")
+        match = _matches_abc_recommendation(d)
+        icon = "✅" if match else "❌"
+        action_part = _format_action(d["action"], d["amount"])
+        lines.append(f"{icon} <b>{street_ru}</b>: вы — {action_part}")
+        if not match:
+            abc_part = _format_action(d["abc_action"], d["abc_amount"])
+            lines.append(f"   стратегия рекомендовала: {abc_part}")
     return "\n".join(lines)
 
 
@@ -168,17 +192,23 @@ def compute_raise_presets(session: BotSession) -> dict[str, float]:
 
 def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
     """Preflop preset raise-to amounts, using the ACTUAL sizing formulas
-    abc_bot.py's own rules compute (2.5bb open, 5.5bb+1.5bb/limper iso,
-    position-scaled 3-bet multiplier, shove) -- not generic pot fractions.
-    Per explicit user request: only sizes that exist in the real rules,
-    not arbitrary tiers. Real preflop sizing is close to ONE formula-
-    driven number per spot (not several tiers the way postflop's pot-
-    fraction sizing naturally offers), so this returns just that one
-    context-appropriate preset plus the always-available all-in."""
+    abc_bot.py's own rules compute for hero's CURRENT hand and spot (2.5bb
+    open, +1.5bb premium-hand bonus, 5.5bb+1.5bb/limper iso, position-
+    scaled 3-bet multiplier, shove) -- not generic pot fractions. Per
+    explicit user request: only real sizes the strategy actually uses, and
+    EVERY variant that applies to this exact spot -- e.g. the premium-hand
+    open bonus is hand-dependent (checks hero's actual hole cards against
+    VALUE_3BET_TIGHT, same as abc_bot.py's own SIZE_UP_PREMIUM_OPENS
+    check) and was previously missing here, silently showing the plain
+    2.5bb size even with AA. The other size-affecting flags checked below
+    (RAKE_ADJUSTED_OPEN_SIZING, SIZE_UP_PREMIUM_3BETS, SIZED_4BET_INSTEAD_
+    OF_SHOVE) are currently all False in the shipped strategy -- included
+    so this stays correct automatically if any of them ever ships True."""
     hand = session.hand
     seat = session.hero_seat
     legal = hand.legal_actions(seat)
     position = _seat_position(hand, seat)
+    notation = abc_bot._hand_notation(hand.players[seat].hole_cards)
     min_to, max_to = legal["min_raise_to"], legal["max_raise_to"]
 
     def clamp(x: float) -> float:
@@ -191,23 +221,36 @@ def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
         n_limpers = abc_bot._n_limpers_preflop(hand)
         if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1:
             bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
-            amount = clamp(hand.big_blind * bb)
-            presets[f"Изо {bb:.1f}bb"] = amount
+            label = f"Изо {bb:.1f}bb"
         else:
             bb = abc_bot.OPEN_SIZING_BB
             if abc_bot.SB_BIGGER_OPEN_SIZING and position == "SB" and n_limpers == 0:
                 bb = abc_bot.SB_OPEN_SIZING_BB
-            amount = clamp(hand.big_blind * bb)
-            presets[f"Open {bb:.1f}bb"] = amount
+            if abc_bot.RAKE_ADJUSTED_OPEN_SIZING and position in abc_bot.RAKE_ADJUSTED_OPEN_POSITIONS:
+                bb = abc_bot.RAKE_ADJUSTED_OPEN_SIZING_BB
+            label = f"Open {bb:.1f}bb"
+        if abc_bot.SIZE_UP_PREMIUM_OPENS and notation in abc_bot.VALUE_3BET_TIGHT:
+            bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB
+            label += " (премиум)"
+        presets[label] = clamp(hand.big_blind * bb)
     elif n_raises == 1:
         raiser_seat = abc_bot._last_preflop_raiser_seat(hand)
         in_position = raiser_seat is not None and abc_bot._is_hero_in_position_vs_raiser(hand, seat, raiser_seat)
         mult = abc_bot.THREEBET_MULTIPLIER_IP if in_position else abc_bot.THREEBET_MULTIPLIER_OOP
-        amount = clamp(hand.current_bet * mult)
-        presets[f"3-бет {mult:.0f}x"] = amount
-    # n_raises >= 2: the real strategy just shoves here (SHOVE_AA_KK_VS_3BET_PLUS;
-    # SIZED_4BET_INSTEAD_OF_SHOVE was tested and confirmed negative, stays
-    # off) -- nothing to add beyond the all-in preset below.
+        amount = hand.current_bet * mult
+        label = f"3-бет {mult:.0f}x"
+        if abc_bot.SIZE_UP_PREMIUM_3BETS and notation in abc_bot.VALUE_3BET_TIGHT:
+            amount += hand.big_blind * abc_bot.PREMIUM_3BET_SIZING_BONUS_BB
+            label += " (премиум)"
+        presets[label] = clamp(amount)
+    elif n_raises >= 2 and abc_bot.SIZED_4BET_INSTEAD_OF_SHOVE:
+        raiser_seat = abc_bot._last_preflop_raiser_seat(hand)
+        in_position = raiser_seat is not None and abc_bot._is_hero_in_position_vs_raiser(hand, seat, raiser_seat)
+        mult = abc_bot.SIZED_4BET_MULTIPLIER_IP if in_position else abc_bot.SIZED_4BET_MULTIPLIER_OOP
+        presets[f"4-бет {mult:.1f}x"] = clamp(hand.current_bet * mult)
+    # else (facing 3-bet+, SIZED_4BET_INSTEAD_OF_SHOVE off): the real
+    # strategy just shoves here (SHOVE_AA_KK_VS_3BET_PLUS) -- nothing to
+    # add beyond the all-in preset below.
 
     presets["Ва-банк"] = max_to
     return presets

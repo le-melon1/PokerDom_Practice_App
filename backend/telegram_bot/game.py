@@ -186,6 +186,16 @@ def apply_hero_action(session: BotSession, action: str, amount: float | None = N
         _on_hand_finished(session)
 
     return {
+        # ABC-rule-based fields -- what formatting.py's mid-hand feedback
+        # line actually displays (per explicit user request: grading must
+        # be "по правилам абс бота", not the equity/CFR solver).
+        "action": action,
+        "amount": amount,
+        "abc_action": abc_action,
+        "abc_amount": round(abc_amount, 2) if abc_amount is not None else None,
+        # Solver-based fields, kept for hand_history's mistake_count
+        # bookkeeping (HeroDecision.is_mistake) -- not shown to the user
+        # directly anywhere in the bot anymore.
         "grade": decision.trainer_grade,
         "verdict": decision.verdict,
         "ev_loss": round(decision.solver_ev_loss, 3) if decision.solver_ev_loss is not None else None,
