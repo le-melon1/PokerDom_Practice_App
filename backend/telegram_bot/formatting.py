@@ -72,13 +72,13 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if review:
             lines.append("")
             lines.append(review)
-    elif trainer_feedback is not None:
-        lines.append("")
-        if _matches_abc_recommendation(trainer_feedback):
-            lines.append("📊 ✅ совпадает со стратегией")
-        else:
-            abc_part = _format_action(trainer_feedback["abc_action"], trainer_feedback["abc_amount"])
-            lines.append(f"📊 ❌ стратегия рекомендовала: {abc_part}")
+    # No per-street feedback line mid-hand anymore -- per explicit user
+    # request ("оценка должна появляться не когда прошла улица, а когда
+    # закончилась раздача"), grading only shows once, in the full
+    # render_hand_review above, when the hand actually ends. The
+    # `trainer_feedback` param is kept (bot.py still computes and passes
+    # it) since apply_hero_action's return value is used elsewhere, but
+    # it's intentionally not rendered here anymore.
 
     return "\n".join(lines)
 
@@ -217,11 +217,28 @@ def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
     presets: dict[str, float] = {}
     n_raises = _n_raises_this_street(hand)
 
+    # Real, ALWAYS-legal baseline -- per user feedback ("везде на префлопе
+    # есть для рейза только 2 варианта, это неправильно, должны быть все"),
+    # the single formula-matched size alone felt too narrow. min_raise_to
+    # isn't invented (unlike a pot-fraction tier would be) -- it's the
+    # actual legal minimum this exact spot allows, a real distinct action
+    # every player recognizes, so it's a legitimate second real option
+    # alongside the strategy's own computed size.
+    presets["Мин-рейз"] = min_to
+
     if n_raises == 0:
         n_limpers = abc_bot._n_limpers_preflop(hand)
         if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1:
             bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
             label = f"Изо {bb:.1f}bb"
+            # The plain open size is ALSO a real formula (OPEN_SIZING_BB)
+            # this file uses elsewhere -- shown as a second, smaller real
+            # option over limpers, not just the iso-raise TIGHT_BIG_ISO_
+            # RAISE_LIMPERS alone would pick.
+            open_bb = abc_bot.OPEN_SIZING_BB
+            if abc_bot.SIZE_UP_PREMIUM_OPENS and notation in abc_bot.VALUE_3BET_TIGHT:
+                open_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB
+            presets[f"Open {open_bb:.1f}bb"] = clamp(hand.big_blind * open_bb)
         else:
             bb = abc_bot.OPEN_SIZING_BB
             if abc_bot.SB_BIGGER_OPEN_SIZING and position == "SB" and n_limpers == 0:

@@ -2312,12 +2312,77 @@ _limp_behind_range_cache: dict[str, set] = {}
 _bb_defend_range_cache: dict[str, set] = {}
 
 
+def _stronger_sibling(hand: str) -> str | None:
+    """For a suited/offsuit non-pair hand, the next-stronger hand in the
+    same first-rank+suitedness family (same first card, next-better
+    kicker rank) -- e.g. "QTs" -> "QJs". None for pairs, or once the chain
+    reaches the top (kicker already adjacent to the first card)."""
+    if len(hand) != 3:
+        return None
+    r1, r2, suffix = hand[0], hand[1], hand[2]
+    ranks = "AKQJT98765432"
+    first_idx = ranks.index(r1)
+    second_idx = ranks.index(r2)
+    if second_idx - 1 <= first_idx:
+        return None
+    return r1 + ranks[second_idx - 1] + suffix
+
+
+def _smooth_real_data_additions(additions_by_pos: dict[str, set], base_by_pos: dict[str, set]) -> dict[str, set]:
+    """2026-08-27: REAL_DATA_CALL_RANGE_ADDITIONS is built from an
+    independent >=1%-real-frequency test PER HAND -- on a finite dataset
+    (a suited combo is only 4 instances per hand), that leaves real
+    "gaps" where a strictly stronger same-family hand (e.g. QJs) misses
+    the bar while a weaker sibling (QTs) clears it purely by sampling
+    luck, even though hand_rankings.py's own equity table says QJs
+    (percentile 0.166) is objectively stronger than QTs/QJo/QTo
+    (0.20-0.28) -- found via a user spotting exactly this in a rendered
+    range chart ("почему не играем QJ но играем QT"). Measured 12/72
+    (~17%) call-range addition hands had this gap across all 5
+    positions when checked directly against hand_rankings.py; the
+    open-range REAL_DATA_RANGE_ADDITIONS table had none, so isn't
+    touched here. Smooths by adding each missing stronger sibling,
+    recursively until every family chain in the additions set is
+    internally consistent (a hand's own sibling might itself need its
+    sibling added, etc. -- bounded, each chain is at most 12 ranks
+    long). NOT yet re-validated via this project's own chance-
+    enumeration A/B standard -- ALLOW_CALLING_RAISES (the flag whose
+    real behavior this changes) stays shipped True on its EXISTING
+    confirmed numbers (+72.47/+63.29 bb/100), measured against the
+    pre-smoothing range; this is a small, principled widening within
+    that same rule, not itself independently confirmed yet."""
+    smoothed = {}
+    for pos, additions in additions_by_pos.items():
+        base = base_by_pos.get(pos, set())
+        current = set(additions)
+        changed = True
+        while changed:
+            changed = False
+            for hand in list(current):
+                sibling = _stronger_sibling(hand)
+                if sibling and sibling not in current and sibling not in base:
+                    current.add(sibling)
+                    changed = True
+        smoothed[pos] = current
+    return smoothed
+
+
+_smoothed_call_additions_cache: dict[str, set] | None = None
+
+
 def _ranges():
     global _rankings_cache, _open_range_cache, _call_range_cache, _steal_range_cache
     global _tight_iso_range_cache, _call_range_wide_cache, _call_range_narrow_cache
-    global _limp_behind_range_cache, _bb_defend_range_cache
+    global _limp_behind_range_cache, _bb_defend_range_cache, _smoothed_call_additions_cache
     if _rankings_cache is None:
         _rankings_cache = compute_hand_rankings()
+    if _smoothed_call_additions_cache is None:
+        _base_call_range_for_smoothing = {
+            pos: set(implied_range(vpip, _rankings_cache)) for pos, vpip in CALL_VPIP_BY_POSITION.items()
+        }
+        _smoothed_call_additions_cache = _smooth_real_data_additions(
+            REAL_DATA_CALL_RANGE_ADDITIONS, _base_call_range_for_smoothing
+        )
     if not _open_range_cache:
         _open_range_cache = {
             pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_RANGE_ADDITIONS.get(pos, set())
@@ -2325,7 +2390,7 @@ def _ranges():
         }
     if not _call_range_cache:
         _call_range_cache = {
-            pos: set(implied_range(vpip, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            pos: set(implied_range(vpip, _rankings_cache)) | _smoothed_call_additions_cache.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
     if not _steal_range_cache:
@@ -2347,7 +2412,7 @@ def _ranges():
         # steal_ranges, a precomputed alternate tier rather than a fresh
         # per-decision computation.
         _call_range_wide_cache = {
-            pos: set(implied_range(vpip * CALL_VPIP_WIDE_MULTIPLIER, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            pos: set(implied_range(vpip * CALL_VPIP_WIDE_MULTIPLIER, _rankings_cache)) | _smoothed_call_additions_cache.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
     if not _call_range_narrow_cache:
@@ -2359,7 +2424,7 @@ def _ranges():
         # CALL_RANGE's measured -6.46/-5.67 bb/100 (see CLAUDE.md). Fixed to
         # match the other two tiers' construction.
         _call_range_narrow_cache = {
-            pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache)) | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            pos: set(implied_range(vpip * CALL_VPIP_NARROW_MULTIPLIER, _rankings_cache)) | _smoothed_call_additions_cache.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
     if not _limp_behind_range_cache:
@@ -2371,12 +2436,12 @@ def _ranges():
     if not _bb_defend_range_cache:
         _bb_defend_range_cache = {
             pos: set(implied_range(vpip * BB_DEFEND_VPIP_MULTIPLIER, _rankings_cache))
-            | REAL_DATA_CALL_RANGE_ADDITIONS.get(pos, set())
+            | _smoothed_call_additions_cache.get(pos, set())
             for pos, vpip in CALL_VPIP_BY_POSITION.items()
         }
         _bb_defend_range_cache["BB"] = (
             set(implied_range(CALL_VPIP_BY_POSITION["BTN"] * BB_DEFEND_VPIP_MULTIPLIER, _rankings_cache))
-            | REAL_DATA_CALL_RANGE_ADDITIONS["BTN"]
+            | _smoothed_call_additions_cache["BTN"]
         )
     return (
         _open_range_cache,
