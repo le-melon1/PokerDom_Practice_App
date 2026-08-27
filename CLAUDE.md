@@ -1,18 +1,44 @@
-# PokerDom Practice App — handoff notes (2026-08-11)
+# PokerDom Practice App — handoff notes (started 2026-08-11, updated incrementally)
 
 This file exists so a fresh assistant (any model, not just Claude) can pick
 up this project mid-stream without re-deriving everything from git log. It
-is a *snapshot as of 2026-08-11, late afternoon* — always sanity-check
-numbers against actual code/logs before trusting them; things move fast in
-this project.
+started as a *snapshot as of 2026-08-11* and has been extended in place ever
+since (each major addition is its own dated section, newest at the bottom of
+each area) — always sanity-check numbers against actual code/logs before
+trusting them; things move fast in this project. If a dated section
+contradicts an earlier one on the same topic, the later date wins.
 
-## The two-repo relationship (read this first)
+## Project map — everything in one place (read this first)
+
+One question that comes up a lot: "is the mobile app / the training website /
+the Telegram bot / the strategy-research project one repo or several?" Answer:
+
+- **This repo (`PokerDom_Practice_App`) is ONE repo that contains three of
+  those four things**: the training website (`frontend/index.html` + the
+  FastAPI backend, `python3 run_app.py` → `http://127.0.0.1:8001/`), the
+  "mobile app" (there is no separate mobile codebase — it's the SAME
+  `frontend/index.html`, just with responsive CSS/JS so it also works on a
+  phone, see "Mobile UI" below), and the Telegram bot (`backend/telegram_bot/`,
+  a separate chat-based frontend to the same game engine, see "Telegram bot"
+  below). All three share the same underlying engine/bots/strategy code in
+  `backend/`.
+- **The strategy-research project** (`backend/bots/abc_bot.py`, the
+  hand-coded rule-based "ABC bot", plus its validation scripts under
+  `scripts/`) also lives in THIS repo — it's a research vehicle used
+  offline, not a separate project, though it draws on reference data
+  produced by the second repo below.
+- **`PokerDom_Microlimits_Analysis` is a SEPARATE, sibling repo** — it does
+  the offline analysis of a real 3.56M-hand dataset that produces the
+  reference CSVs/helper modules this repo imports at runtime (see below).
+  It is the only one of the four things that is NOT in this repo.
+
+## The two-repo relationship
 
 Two sibling directories, both required, MUST be cloned/kept side by side
 with these exact names:
 
 - `PokerDom_Practice_App` (this repo) — FastAPI backend + vanilla JS
-  frontend, a local practice table against ML bots, plus a hand-coded
+  frontend (doubles as the mobile UI), the Telegram bot, and a hand-coded
   rule-based bot (`backend/bots/abc_bot.py`) used purely as an offline
   research vehicle (see below).
 - `PokerDom_Microlimits_Analysis` — offline analysis of a real 3.56M-hand
