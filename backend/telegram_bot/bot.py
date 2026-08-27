@@ -221,7 +221,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except RuntimeError:
             return
         await context.bot.send_message(
-            chat_id, formatting.render_hint_text(hint), reply_markup=formatting.build_hint_keyboard(), parse_mode="HTML"
+            chat_id,
+            formatting.render_hint_text(hint, session.hand.big_blind),
+            reply_markup=formatting.build_hint_keyboard(),
+            parse_mode="HTML",
         )
         return
 

@@ -41,9 +41,17 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         lines.append("Стол готов. /newhand -- раздать первую руку.")
         return "\n".join(lines)
 
+    # This project's engine works in CHIPS (hand.big_blind=2.0 chips --
+    # a 200-chip starting stack is documented elsewhere in this project
+    # as "100bb effective", i.e. real bb = chips / big_blind). Every
+    # display below divides by big_blind so "Xbb" here means real big
+    # blinds, matching abc_bot.py's own _BB-named sizing constants --
+    # per user report ("почему у нас опен 2.5bb это 5бб"), showing raw
+    # chip counts suffixed "bb" was silently 2x-inflated everywhere.
+    big_blind = hand.big_blind
     street = STREET_RU.get(hand.street, hand.street)
     pot = sum(p.total_contributed for p in hand.players.values())
-    lines.append(f"<b>{street}</b>   Банк: {pot:.1f}bb")
+    lines.append(f"<b>{street}</b>   Банк: {pot / big_blind:.1f}bb")
     lines.append(f"Борд: {_cards(hand.board)}")
     lines.append("")
 
@@ -62,7 +70,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         cards = _cards(_visible_hole_cards(session, seat, p))
         lines.append(
-            f"{marker}[{position}] {p.name}{tag}: {p.stack:.1f}bb (ставка {p.street_contributed:.1f}) {cards}{state}"
+            f"{marker}[{position}] {p.name}{tag}: {p.stack / big_blind:.1f}bb "
+            f"(ставка {p.street_contributed / big_blind:.1f}bb) {cards}{state}"
         )
 
     if hand.finished and hand.result is not None:
@@ -83,25 +92,31 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     return "\n".join(lines)
 
 
-def _matches_abc_recommendation(d: dict) -> bool:
+def _matches_abc_recommendation(d: dict, big_blind: float) -> bool:
     """Compares hero's actual action against choose_abc_action's own
     recommendation at that decision point -- action type must match, and
     for a raise/bet the amount must be reasonably close (within 10%, or
-    0.5bb, whichever is bigger -- preset buttons and the strategy's own
-    formula can differ by rounding). This is the ONLY grading logic used
-    in the bot now -- no equity/CFR solver involved anywhere here, per
-    explicit user request ("нужны советы не по солверу а по правилам абс
-    бота")."""
+    0.5 real bb, whichever is bigger -- preset buttons and the strategy's
+    own formula can differ by rounding). This is the ONLY grading logic
+    used in the bot now -- no equity/CFR solver involved anywhere here,
+    per explicit user request ("нужны советы не по солверу а по правилам
+    абс бота"). `d["amount"]`/`d["abc_amount"]` are stored in CHIPS (see
+    game.py); the 0.5-real-bb tolerance is converted to chips via
+    big_blind so it means what it says regardless of the chip/bb ratio."""
     if d["action"] != d["abc_action"]:
         return False
     if d["action"] in ("raise", "bet") and d["amount"] is not None and d["abc_amount"] is not None:
-        return abs(d["amount"] - d["abc_amount"]) <= max(0.5, d["abc_amount"] * 0.1)
+        return abs(d["amount"] - d["abc_amount"]) <= max(0.5 * big_blind, d["abc_amount"] * 0.1)
     return True
 
 
-def _format_action(action: str, amount: float | None) -> str:
+def _format_action(action: str, amount: float | None, big_blind: float) -> str:
+    """`amount` is in CHIPS (hand.apply_action's unit) -- divided by
+    big_blind here so the displayed "bb" figure is a real big blind
+    count, not a raw, 2x-inflated chip count (see build_raise_size_
+    keyboard's docstring for the same conversion and why it's needed)."""
     action_ru = ACTION_RU.get(action, action)
-    return f"{action_ru}" + (f" {amount:.1f}bb" if amount else "")
+    return f"{action_ru}" + (f" {amount / big_blind:.1f}bb" if amount else "")
 
 
 def render_hand_review(session: BotSession) -> str:
@@ -116,15 +131,16 @@ def render_hand_review(session: BotSession) -> str:
     decisions = session.street_decisions
     if not decisions:
         return ""
+    big_blind = session.hand.big_blind
     lines = ["<b>Разбор по улицам (по правилам стратегии):</b>"]
     for d in decisions:
         street_ru = STREET_RU.get(d["street"], d["street"])
-        match = _matches_abc_recommendation(d)
+        match = _matches_abc_recommendation(d, big_blind)
         icon = "✅" if match else "❌"
-        action_part = _format_action(d["action"], d["amount"])
+        action_part = _format_action(d["action"], d["amount"], big_blind)
         lines.append(f"{icon} <b>{street_ru}</b>: вы — {action_part}")
         if not match:
-            abc_part = _format_action(d["abc_action"], d["abc_amount"])
+            abc_part = _format_action(d["abc_action"], d["abc_amount"], big_blind)
             lines.append(f"   стратегия рекомендовала: {abc_part}")
     return "\n".join(lines)
 
@@ -153,7 +169,7 @@ def build_action_keyboard(session: BotSession) -> InlineKeyboardMarkup | None:
     if legal["can_check"]:
         row.append(InlineKeyboardButton("Чек", callback_data="act:check"))
     else:
-        row.append(InlineKeyboardButton(f"Колл {legal['call_amount']:.1f}", callback_data="act:call"))
+        row.append(InlineKeyboardButton(f"Колл {legal['call_amount'] / hand.big_blind:.1f}bb", callback_data="act:call"))
     if legal["max_raise_to"] > legal["min_raise_to"] - 1e-9:
         row.append(InlineKeyboardButton("Рейз/Бет", callback_data="act:raise_menu"))
 
@@ -191,67 +207,85 @@ def compute_raise_presets(session: BotSession) -> dict[str, float]:
 
 
 def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
-    """Preflop preset raise-to amounts. Per explicit, twice-repeated user
-    request ("должны быть все... все формулы из самой стратегии сразу, не
-    только подходящие"): shows EVERY real, currently-shipped (flag=True)
-    preflop sizing formula abc_bot.py has, unconditionally -- not just the
-    one formula the actual decision-tree branch for this exact spot would
-    pick. Each is still a REAL formula (2.5bb open, +1.5bb premium bonus,
-    5.5bb+1.5bb/limper iso, 3x/4x position-scaled 3-bet) computed from
-    hero's actual current hand/limper-count/current_bet, just not gated on
-    whether choose_abc_action would actually reach that branch right now
-    -- e.g. the iso formula is shown even with 0 limpers (using the real
-    formula at n_limpers=0), and BOTH 3-bet multipliers (IP and OOP) are
-    shown even though only one matches hero's real position, so a human
-    can deliberately practice/compare any of them. Excludes formulas
-    belonging to flags that are False/tested-and-rejected in the shipped
-    strategy (SB_BIGGER_OPEN_SIZING, RAKE_ADJUSTED_OPEN_SIZING,
-    SIZE_UP_PREMIUM_3BETS, SIZED_4BET_INSTEAD_OF_SHOVE) -- those aren't
-    "in the strategy" right now, just tested-off experiments."""
+    """Preflop preset raise-to amounts (in CHIPS -- hand.apply_action's
+    unit -- NOT the "bb" unit these labels display; build_raise_size_
+    keyboard converts for display, see its own docstring for why that
+    conversion is needed).
+
+    Scoped to the ONE real category that actually applies right now --
+    per user correction ("у нас либо первый рейз либо 3бет"), a spot is
+    either an opening/iso decision (n_raises==0) OR a 3-betting decision
+    (n_raises==1), never both, so showing open+iso together with 3-bet
+    sizing in the same menu doesn't reflect a real choice. WITHIN the
+    applicable category, still shows every real sub-variant (open AND
+    iso when unopened; both 3-bet multipliers when facing one raise) --
+    per the earlier "все формулы, не только подходящие" request -- since
+    those sub-variants genuinely are alternative real formulas for the
+    same node, unlike open-vs-3bet which aren't both live at once."""
     hand = session.hand
     seat = session.hero_seat
     legal = hand.legal_actions(seat)
     notation = abc_bot._hand_notation(hand.players[seat].hole_cards)
     min_to, max_to = legal["min_raise_to"], legal["max_raise_to"]
     is_premium = notation in abc_bot.VALUE_3BET_TIGHT
+    n_raises = _n_raises_this_street(hand)
 
     def clamp(x: float) -> float:
         return max(min_to, min(x, max_to))
 
     presets: dict[str, float] = {"Мин-рейз": min_to}
 
-    # Open (always a real, computable formula regardless of whether the
-    # pot is actually unopened right now).
-    open_bb = abc_bot.OPEN_SIZING_BB + (abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0)
-    open_label = f"Open {open_bb:.1f}bb" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
-    presets[open_label] = clamp(hand.big_blind * open_bb)
+    if n_raises == 0:
+        open_bb = abc_bot.OPEN_SIZING_BB + (abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0)
+        open_label = f"Open {open_bb:.1f}bb" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
+        presets[open_label] = clamp(hand.big_blind * open_bb)
 
-    # Iso-over-limpers (TIGHT_BIG_ISO_RAISE_LIMPERS) -- uses the real
-    # current limper count, even if it's 0 right now.
-    if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS:
-        n_limpers = abc_bot._n_limpers_preflop(hand)
-        iso_bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
-        iso_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0
-        presets[f"Изо {iso_bb:.1f}bb"] = clamp(hand.big_blind * iso_bb)
-
-    # 3-bet (THREEBET_SIZE_BY_POSITION) -- both multipliers, not just
-    # whichever matches hero's real position, per the user's explicit
-    # "all formulas, not just applicable" request. current_bet is always
-    # defined (equals the big blind if nobody has raised yet).
-    if abc_bot.THREEBET_SIZE_BY_POSITION:
-        for mult, tag in ((abc_bot.THREEBET_MULTIPLIER_IP, "IP"), (abc_bot.THREEBET_MULTIPLIER_OOP, "OOP")):
-            presets[f"3-бет {mult:.0f}x ({tag})"] = clamp(hand.current_bet * mult)
-    else:
-        presets[f"3-бет {abc_bot.THREEBET_MULTIPLIER:.0f}x"] = clamp(hand.current_bet * abc_bot.THREEBET_MULTIPLIER)
+        if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS:
+            n_limpers = abc_bot._n_limpers_preflop(hand)
+            iso_bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
+            iso_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0
+            presets[f"Изо {iso_bb:.1f}bb"] = clamp(hand.big_blind * iso_bb)
+    elif n_raises == 1:
+        # Both 3-bet multipliers (IP and OOP) -- per the earlier "all
+        # formulas" request, still shown together since they ARE both
+        # live real formulas for a facing-one-raise node (which one
+        # matches hero's actual position doesn't change that both are
+        # real strategy numbers worth comparing).
+        if abc_bot.THREEBET_SIZE_BY_POSITION:
+            for mult, tag in ((abc_bot.THREEBET_MULTIPLIER_IP, "IP"), (abc_bot.THREEBET_MULTIPLIER_OOP, "OOP")):
+                presets[f"3-бет {mult:.0f}x ({tag})"] = clamp(hand.current_bet * mult)
+        else:
+            presets[f"3-бет {abc_bot.THREEBET_MULTIPLIER:.0f}x"] = clamp(hand.current_bet * abc_bot.THREEBET_MULTIPLIER)
+    # n_raises >= 2: the real strategy just shoves here
+    # (SHOVE_AA_KK_VS_3BET_PLUS; SIZED_4BET_INSTEAD_OF_SHOVE is off) --
+    # nothing to add beyond min-raise/all-in.
 
     presets["Ва-банк"] = max_to
     return presets
 
 
 def build_raise_size_keyboard(session: BotSession) -> InlineKeyboardMarkup:
+    """Per user report ("почему у нас опен 2.5bb это 5bb"): this project's
+    engine works in CHIPS (hand.big_blind=2.0 chips, e.g. a 200-chip
+    starting stack = "100bb effective" per this project's own docs), but
+    every preset LABEL above states a real-bb number directly (e.g.
+    "Open 2.5bb" IS 2.5 real bb, by construction -- OPEN_SIZING_BB=2.5 is
+    exactly abc_bot.py's own real-bb-denominated constant). The chip
+    amount attached to each label must therefore be converted back to
+    real bb (divide by hand.big_blind) before display, or the button
+    shows two DIFFERENT numbers side by side that both claim to be "the
+    size" (the label's real-bb figure vs the raw, 2x-inflated chip
+    count) -- exactly the mismatch reported. hand.apply_action still gets
+    the real, unconverted chip amount when the button is pressed (bot.py
+    looks the label up in this same presets dict) -- only the DISPLAYED
+    text changes here."""
     is_preflop = session.hand.street == "preflop"
     presets = compute_preflop_raise_presets(session) if is_preflop else compute_raise_presets(session)
-    buttons = [InlineKeyboardButton(f"{label} ({amount:.1f})", callback_data=f"raise:{label}") for label, amount in presets.items()]
+    big_blind = session.hand.big_blind
+    buttons = [
+        InlineKeyboardButton(f"{label} ({amount / big_blind:.1f}bb)", callback_data=f"raise:{label}")
+        for label, amount in presets.items()
+    ]
     # 2 per row -- 4 buttons in one row truncates on a phone screen (real
     # user report: "Ва-банк (24" cut off mid-number).
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
@@ -272,16 +306,19 @@ FREQ_TIER_RU = {"rare": "редко", "normal": "средне", "often": "час
 TILT_TIER_RU = {"none": "спокоен", "acute": "тильт (остро)", "fading": "тильт (спадает)", "residual": "тильт (следы)"}
 
 
-def render_hint_text(hint: dict) -> str:
+def render_hint_text(hint: dict, big_blind: float) -> str:
     """Renders game.compute_abc_strategy_hint()'s output -- the ABC bot's
     own recommendation, fed the same live opponent reads a seated bot's
-    decisions use, NOT an equity/CFR panel."""
+    decisions use, NOT an equity/CFR panel. `hint["amount"]` is in CHIPS
+    (choose_abc_action's raw unit) -- divided by big_blind here for the
+    same reason build_raise_size_keyboard does (real bb, not raw chips
+    mislabeled "bb")."""
     action_ru = ACTION_RU.get(hint["action"], hint["action"])
     amount = hint["amount"]
     lines = ["<b>💡 Подсказка (наша стратегия)</b>"]
     rec_line = f"Рекомендация: <b>{action_ru}</b>"
     if amount is not None:
-        rec_line += f" до {amount:.1f}bb"
+        rec_line += f" до {amount / big_blind:.1f}bb"
     lines.append(rec_line)
 
     opponents = hint["opponents"]
@@ -423,9 +460,15 @@ def build_persistent_menu() -> ReplyKeyboardMarkup:
 def render_hand_history_text(session: BotSession, limit: int = 10) -> str:
     if session.hand_history is None or not session.hand_history.entries:
         return "Пока нет завершённых раздач в этой сессии."
+    # hero_net is in CHIPS (backend/hand_history.py's own unit) -- same
+    # chips-vs-real-bb conversion as everywhere else in this module.
+    # session.table (not session.hand) since history can be viewed with
+    # no hand currently in progress.
+    big_blind = session.table.big_blind if session.table else 1.0
     lines = ["<b>История раздач</b> (последние):"]
     for summary in session.hand_history.list_summaries(limit=limit):
-        sign = "+" if summary["hero_net"] >= 0 else ""
+        net_bb = summary["hero_net"] / big_blind
+        sign = "+" if net_bb >= 0 else ""
         mistake_part = f", ошибок: {summary['mistake_count']}" if summary["mistake_count"] else ""
-        lines.append(f"#{summary['hand_number']}: {sign}{summary['hero_net']:.1f}bb{mistake_part}")
+        lines.append(f"#{summary['hand_number']}: {sign}{net_bb:.1f}bb{mistake_part}")
     return "\n".join(lines)
