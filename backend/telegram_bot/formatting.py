@@ -12,6 +12,21 @@ from backend.telegram_bot.session import BotSession
 SUIT_EMOJI = {"c": "♣", "d": "♦", "h": "♥", "s": "♠"}
 STREET_RU = {"preflop": "префлоп", "flop": "флоп", "turn": "тёрн", "river": "ривер"}
 
+# Per-seat archetype emoji -- per user request ("хочу визуально знать с
+# кем играю ... перед ботами с помощью эмодзи изображён его тип"),
+# toggleable via settings ("archetype_emoji_enabled"). Not new information
+# hero couldn't already see -- the hint panel already reveals archetype by
+# name for the live aggressor -- just a faster-to-scan visual shorthand
+# for every seat at once.
+ARCHETYPE_EMOJI = {
+    "Nit": "🔒",
+    "TAG": "🎯",
+    "LAG": "🔥",
+    "Loose-passive": "🐟",
+    "Station": "📞",
+    "Maniac": "🤪",
+}
+
 
 def _card(card: str) -> str:
     if card == "??":
@@ -60,6 +75,11 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         marker = "👉 " if hand.current_actor() == seat else "   "
         tag = " (Вы)" if seat == session.hero_seat else ""
         position = _seat_position(hand, seat)
+        # Dealer-button marker -- a distinct, real-poker "button chip"
+        # visual next to whoever has it this hand, not just the [BTN]
+        # text tag buried in the position label (per user request: "нужно
+        # чтобы кнопка визуально была видна" -- "дилерская [фишка]").
+        button = " 🔘" if seat == table.button_seat else ""
         state_bits = []
         if p.folded:
             state_bits.append("fold")
@@ -69,8 +89,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             state_bits.append("вне игры")
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         cards = _cards(_visible_hole_cards(session, seat, p))
+        archetype_emoji = ""
+        if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
+            archetype = session.turnover.archetype_for(seat)
+            archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
         lines.append(
-            f"{marker}[{position}] {p.name}{tag}: {p.stack / big_blind:.1f}bb "
+            f"{marker}[{position}]{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f}bb "
             f"(ставка {p.street_contributed / big_blind:.1f}bb) {cards}{state}"
         )
 
@@ -342,9 +366,11 @@ def build_hint_keyboard() -> InlineKeyboardMarkup:
 
 def build_settings_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     hints_label = "Подсказки: вкл ✅" if session.settings.get("hints_enabled") else "Подсказки: выкл"
+    emoji_label = "Эмодзи типов ботов: вкл ✅" if session.settings.get("archetype_emoji_enabled", True) else "Эмодзи типов ботов: выкл"
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(hints_label, callback_data="settings:hints_toggle")],
+            [InlineKeyboardButton(emoji_label, callback_data="settings:emoji_toggle")],
             [InlineKeyboardButton("🔄 Сбросить стол", callback_data="settings:reset")],
         ]
     )

@@ -33,6 +33,11 @@ DEFAULT_SETTINGS = {
     # drill mode (2026-08-26): names of abc_bot.py flags (see drills.py's
     # DRILL_SPECS) the user is currently drilling. Empty = normal play.
     "drill_flags": [],
+    # 2026-08-27: show each bot's archetype as an emoji next to its name
+    # in the table view (see formatting.ARCHETYPE_EMOJI). Not new info --
+    # the hint panel already reveals archetype by name for the live
+    # aggressor -- just a toggleable visual shorthand for every seat.
+    "archetype_emoji_enabled": True,
 }
 
 
