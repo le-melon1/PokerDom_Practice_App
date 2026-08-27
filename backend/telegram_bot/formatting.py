@@ -6,7 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
 
 from backend.bots import abc_bot
 from backend.bots.behavior_clone import _n_raises_this_street, _seat_position
-from backend.telegram_bot import drills
+from backend.telegram_bot import drills, game
 from backend.telegram_bot.session import BotSession
 
 SUIT_EMOJI = {"c": "♣", "d": "♦", "h": "♥", "s": "♠"}
@@ -204,11 +204,28 @@ def build_action_keyboard(session: BotSession) -> InlineKeyboardMarkup | None:
 
 
 def compute_raise_presets(session: BotSession) -> dict[str, float]:
-    """Postflop preset raise-to (absolute) amounts, sized relative to the
-    pot AFTER a call. This genuinely matches how abc_bot.py sizes postflop
-    bets (STANDARD_SIZING_POT_FRACTION=0.50, BIG_VALUE_SIZING_POT_FRACTION=
-    0.75, overbets=1.5x pot) -- pot-fraction sizing is the real convention
-    postflop, unlike preflop (see compute_preflop_raise_presets)."""
+    """Postflop preset raise-to (absolute) amounts.
+
+    Postflop sizing in abc_bot.py isn't one flat pot-fraction the way this
+    function used to assume -- it's chosen from 14 different POT_FRACTION
+    constants (BIG_VALUE_SIZING_POT_FRACTION=0.75, STANDARD_SIZING_
+    POT_FRACTION=0.50, RIVER/TURN_OVERBET=1.5, DRY_CBET=0.33, BLOCK_BET=0.3,
+    etc.), gated by a genuinely multi-dimensional condition space (hand
+    strength, board texture, initiative, street, opponent archetype) --
+    unlike preflop's simple n_raises/n_limpers branching (see
+    compute_preflop_raise_presets), there's no small, reliable set of
+    "the applicable category" to hand-replicate here without risking the
+    exact bug this is fixing (real report: strategy recommended 14.6bb,
+    the closest generic-fraction button was nowhere near it -- "но у меня
+    даже такого варианта не было").
+
+    So instead of guessing which of the 14 formulas applies, ask
+    choose_abc_action directly what IT would do here (the exact same call
+    render_hand_review already uses to grade hero after the fact) and
+    guarantee that exact amount is always one of the buttons -- correct by
+    construction, and can never drift out of sync with the real strategy
+    the way a hand-copied formula could. The generic pot-fraction tiers
+    stay alongside it for manual what-if exploration."""
     hand = session.hand
     legal = hand.legal_actions(session.hero_seat)
     player = hand.players[session.hero_seat]
@@ -222,12 +239,17 @@ def compute_raise_presets(session: BotSession) -> dict[str, float]:
     def clamp(x: float) -> float:
         return max(min_to, min(x, max_to))
 
-    return {
-        "1/3 пота": clamp(base + 0.33 * pot_after_call),
-        "1/2 пота": clamp(base + 0.5 * pot_after_call),
-        "Пот": clamp(base + 1.0 * pot_after_call),
-        "Ва-банк": max_to,
-    }
+    presets: dict[str, float] = {}
+
+    abc_action, abc_amount = game._abc_recommendation(session)
+    if abc_action in ("raise", "bet") and abc_amount is not None:
+        presets["Как стратегия"] = clamp(abc_amount)
+
+    presets["1/3 пота"] = clamp(base + 0.33 * pot_after_call)
+    presets["1/2 пота"] = clamp(base + 0.5 * pot_after_call)
+    presets["Пот"] = clamp(base + 1.0 * pot_after_call)
+    presets["Ва-банк"] = max_to
+    return presets
 
 
 def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
