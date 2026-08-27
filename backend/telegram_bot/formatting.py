@@ -5,7 +5,7 @@ game.py / the engine already computed."""
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from backend.bots import abc_bot
-from backend.bots.behavior_clone import _n_raises_this_street, _seat_position
+from backend.bots.behavior_clone import _n_raises_this_street
 from backend.telegram_bot import drills, game
 from backend.telegram_bot.session import BotSession
 
@@ -66,7 +66,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     big_blind = hand.big_blind
     street = STREET_RU.get(hand.street, hand.street)
     pot = sum(p.total_contributed for p in hand.players.values())
-    lines.append(f"<b>{street}</b>   Банк: {pot / big_blind:.1f}bb")
+    lines.append(f"<b>{street}</b>   Банк: {pot / big_blind:.1f}")
     lines.append(f"Борд: {_cards(hand.board)}")
     lines.append("")
 
@@ -74,11 +74,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         p = table.players[seat]
         marker = "👉 " if hand.current_actor() == seat else "   "
         tag = " (Вы)" if seat == session.hero_seat else ""
-        position = _seat_position(hand, seat)
         # Dealer-button marker -- a distinct, real-poker "button chip"
-        # visual next to whoever has it this hand, not just the [BTN]
-        # text tag buried in the position label (per user request: "нужно
-        # чтобы кнопка визуально была видна" -- "дилерская [фишка]").
+        # visual next to whoever has it this hand (per user request: "нужно
+        # чтобы кнопка визуально была видна" -- "дилерская [фишка]"). Per a
+        # later request ("убери надписи позиций... и так понятно если есть
+        # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
+        # removed -- the button chip alone conveys position well enough.
         button = " 🔘" if seat == table.button_seat else ""
         state_bits = []
         if p.folded:
@@ -94,8 +95,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             archetype = session.turnover.archetype_for(seat)
             archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
         lines.append(
-            f"{marker}[{position}]{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f}bb "
-            f"(ставка {p.street_contributed / big_blind:.1f}bb) {cards}{state}"
+            f"{marker}{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f} "
+            f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
         )
 
     if hand.finished and hand.result is not None:
@@ -140,7 +141,7 @@ def _format_action(action: str, amount: float | None, big_blind: float) -> str:
     count, not a raw, 2x-inflated chip count (see build_raise_size_
     keyboard's docstring for the same conversion and why it's needed)."""
     action_ru = ACTION_RU.get(action, action)
-    return f"{action_ru}" + (f" {amount / big_blind:.1f}bb" if amount else "")
+    return f"{action_ru}" + (f" {amount / big_blind:.1f}" if amount else "")
 
 
 def render_hand_review(session: BotSession) -> str:
@@ -193,7 +194,7 @@ def build_action_keyboard(session: BotSession) -> InlineKeyboardMarkup | None:
     if legal["can_check"]:
         row.append(InlineKeyboardButton("Чек", callback_data="act:check"))
     else:
-        row.append(InlineKeyboardButton(f"Колл {legal['call_amount'] / hand.big_blind:.1f}bb", callback_data="act:call"))
+        row.append(InlineKeyboardButton(f"Колл {legal['call_amount'] / hand.big_blind:.1f}", callback_data="act:call"))
     if legal["max_raise_to"] > legal["min_raise_to"] - 1e-9:
         row.append(InlineKeyboardButton("Рейз/Бет", callback_data="act:raise_menu"))
 
@@ -283,14 +284,14 @@ def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
 
     if n_raises == 0:
         open_bb = abc_bot.OPEN_SIZING_BB + (abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0)
-        open_label = f"Open {open_bb:.1f}bb" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
+        open_label = f"Open {open_bb:.1f}" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
         presets[open_label] = clamp(hand.big_blind * open_bb)
 
         if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS:
             n_limpers = abc_bot._n_limpers_preflop(hand)
             iso_bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
             iso_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0
-            presets[f"Изо {iso_bb:.1f}bb"] = clamp(hand.big_blind * iso_bb)
+            presets[f"Изо {iso_bb:.1f}"] = clamp(hand.big_blind * iso_bb)
     elif n_raises == 1:
         # Both 3-bet multipliers (IP and OOP) -- per the earlier "all
         # formulas" request, still shown together since they ARE both
@@ -329,7 +330,7 @@ def build_raise_size_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     presets = compute_preflop_raise_presets(session) if is_preflop else compute_raise_presets(session)
     big_blind = session.hand.big_blind
     buttons = [
-        InlineKeyboardButton(f"{label} ({amount / big_blind:.1f}bb)", callback_data=f"raise:{label}")
+        InlineKeyboardButton(f"{label} ({amount / big_blind:.1f})", callback_data=f"raise:{label}")
         for label, amount in presets.items()
     ]
     # 2 per row -- 4 buttons in one row truncates on a phone screen (real
@@ -364,7 +365,7 @@ def render_hint_text(hint: dict, big_blind: float) -> str:
     lines = ["<b>💡 Подсказка (наша стратегия)</b>"]
     rec_line = f"Рекомендация: <b>{action_ru}</b>"
     if amount is not None:
-        rec_line += f" до {amount / big_blind:.1f}bb"
+        rec_line += f" до {amount / big_blind:.1f}"
     lines.append(rec_line)
 
     opponents = hint["opponents"]
@@ -518,5 +519,5 @@ def render_hand_history_text(session: BotSession, limit: int = 10) -> str:
         net_bb = summary["hero_net"] / big_blind
         sign = "+" if net_bb >= 0 else ""
         mistake_part = f", ошибок: {summary['mistake_count']}" if summary["mistake_count"] else ""
-        lines.append(f"#{summary['hand_number']}: {sign}{net_bb:.1f}bb{mistake_part}")
+        lines.append(f"#{summary['hand_number']}: {sign}{net_bb:.1f}{mistake_part}")
     return "\n".join(lines)
