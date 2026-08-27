@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -362,12 +362,27 @@ async def _apply_action_and_continue(
     store.save(session)
 
 
+# Registered via set_my_commands (post_init below) so Telegram shows this
+# list the instant the user types "/" -- per explicit user request.
+BOT_COMMANDS = [
+    BotCommand("start", "Начать / выбрать режим (сбрасывает игру)"),
+    BotCommand("newhand", "Новая раздача"),
+    BotCommand("drills", "Тренировка по правилам"),
+    BotCommand("ranges", "Диапазоны открытия по позиции"),
+    BotCommand("settings", "Настройки"),
+]
+
+
+async def _post_init(app: Application) -> None:
+    await app.bot.set_my_commands(BOT_COMMANDS)
+
+
 def main() -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN not set -- put it in .env (see @BotFather)")
 
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newhand", newhand))
     app.add_handler(CommandHandler("settings", settings_cmd))
