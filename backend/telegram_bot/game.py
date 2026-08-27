@@ -67,6 +67,7 @@ def new_table(session: BotSession, max_seats: int = 6, starting_stack: float = 2
     session.hand_history = HandHistoryStore()
     session.hand_number = 0
     session.hero_decisions = []
+    session.street_decisions = []
     return table
 
 
@@ -86,6 +87,7 @@ def new_hand(session: BotSession) -> Hand:
     session.hand = hand
     session.hand_number += 1
     session.hero_decisions = []
+    session.street_decisions = []
 
     if merged.hero_hand_notations:
         swap = forcing.pick_hand_swap(hand, set(merged.hero_hand_notations), random.Random(), session.hero_seat)
@@ -100,11 +102,46 @@ def new_hand(session: BotSession) -> Hand:
     return hand
 
 
+def _live_opponent_reads(session: BotSession) -> tuple[list[int], dict, dict, dict, dict, dict]:
+    """The same live opponent-read dicts (archetype/freq_tier/tilt/bluff
+    tier) both the hint and the post-action ABC-recommendation snapshot
+    need -- factored out so they're built identically in both places."""
+    hand = session.hand
+    turnover: TableTurnover = session.turnover
+    live_opponents = [seat for seat, p in hand.players.items() if seat != session.hero_seat and p.in_hand]
+    opponent_archetypes = {s: turnover.archetype_for(s) for s in live_opponents}
+    opponent_freq_tiers = {s: turnover.freq_tier_for(s) for s in live_opponents}
+    opponent_tilt_states = {s: turnover.tilt_tier_for(s) for s in live_opponents}
+    opponent_bluff_tiers_a = {s: turnover.bluff_tier_a_for(s) for s in live_opponents}
+    opponent_bluff_tiers_c = {s: turnover.bluff_tier_c_for(s) for s in live_opponents}
+    return live_opponents, opponent_archetypes, opponent_freq_tiers, opponent_tilt_states, opponent_bluff_tiers_a, opponent_bluff_tiers_c
+
+
+def _abc_recommendation(session: BotSession) -> tuple[str, float | None]:
+    """What choose_abc_action recommends for hero's CURRENT decision point,
+    fed the same live opponent reads compute_abc_strategy_hint uses. Shared
+    by the hint feature and apply_hero_action's per-street review record."""
+    hand = session.hand
+    _, archetypes, freq_tiers, tilt_states, bluff_a, bluff_c = _live_opponent_reads(session)
+    return choose_abc_action(
+        hand,
+        session.hero_seat,
+        opponent_archetypes=archetypes,
+        opponent_freq_tiers=freq_tiers,
+        opponent_tilt_states=tilt_states,
+        opponent_bluff_tiers_a=bluff_a,
+        opponent_bluff_tiers_c=bluff_c,
+    )
+
+
 def apply_hero_action(session: BotSession, action: str, amount: float | None = None) -> dict:
-    """Mirrors backend/api.py's hero_action() handler exactly: grade against
-    the objective (auto/dossier-blended) EV read computed BEFORE the action
-    is applied, then apply it. Returns a dict with the trainer_feedback shape
-    api.py's response also carries, so formatting.py can reuse it directly."""
+    """Mirrors backend/api.py's hero_action() handler: grade against the
+    objective (auto/dossier-blended) EV read computed BEFORE the action is
+    applied, then apply it. Also snapshots what the ABC strategy itself
+    recommends at this exact decision point (session.street_decisions),
+    for the end-of-hand full review -- per-street, not just the last
+    action. Returns a dict with the trainer_feedback shape api.py's
+    response also carries, so formatting.py can reuse it directly."""
     hand = session.hand
     if hand is None or hand.finished:
         raise RuntimeError("no hand in progress")
@@ -125,10 +162,24 @@ def apply_hero_action(session: BotSession, action: str, amount: float | None = N
     decision = grade_decision(street, to_call, action, amount, ev, recommendation=rec)
     session.hero_decisions.append(decision)
 
+    abc_action, abc_amount = _abc_recommendation(session)
+    session.street_decisions.append(
+        {
+            "street": street,
+            "action": action,
+            "amount": amount,
+            "grade": decision.trainer_grade,
+            "verdict": decision.verdict,
+            "abc_action": abc_action,
+            "abc_amount": round(abc_amount, 2) if abc_amount is not None else None,
+        }
+    )
+
     try:
         hand.apply_action(session.hero_seat, action, amount)
     except IllegalAction:
         session.hero_decisions.pop()
+        session.street_decisions.pop()
         raise
 
     if hand.finished:
@@ -250,25 +301,8 @@ def compute_abc_strategy_hint(session: BotSession) -> dict:
     if hand.current_actor() != session.hero_seat:
         raise RuntimeError("not hero's turn")
 
-    turnover: TableTurnover = session.turnover
-    live_opponents = [
-        seat for seat, p in hand.players.items() if seat != session.hero_seat and p.in_hand
-    ]
-    opponent_archetypes = {s: turnover.archetype_for(s) for s in live_opponents}
-    opponent_freq_tiers = {s: turnover.freq_tier_for(s) for s in live_opponents}
-    opponent_tilt_states = {s: turnover.tilt_tier_for(s) for s in live_opponents}
-    opponent_bluff_tiers_a = {s: turnover.bluff_tier_a_for(s) for s in live_opponents}
-    opponent_bluff_tiers_c = {s: turnover.bluff_tier_c_for(s) for s in live_opponents}
-
-    action, amount = choose_abc_action(
-        hand,
-        session.hero_seat,
-        opponent_archetypes=opponent_archetypes,
-        opponent_freq_tiers=opponent_freq_tiers,
-        opponent_tilt_states=opponent_tilt_states,
-        opponent_bluff_tiers_a=opponent_bluff_tiers_a,
-        opponent_bluff_tiers_c=opponent_bluff_tiers_c,
-    )
+    live_opponents, opponent_archetypes, opponent_freq_tiers, opponent_tilt_states, *_ = _live_opponent_reads(session)
+    action, amount = _abc_recommendation(session)
 
     return {
         "action": action,

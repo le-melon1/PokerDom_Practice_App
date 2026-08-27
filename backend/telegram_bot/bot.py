@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.error import BadRequest
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from backend.bots import abc_bot
 from backend.engine.hand import IllegalAction
@@ -89,6 +89,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session, _ = store.get_or_create(chat_id)
     session.table_message_id = None  # next table render starts a fresh message
     store.save(session)
+    # Persistent bottom menu (ReplyKeyboardMarkup) -- a separate message,
+    # since one message can only carry one kind of reply_markup and the
+    # mode-select choice below needs InlineKeyboardMarkup. Once sent it
+    # stays under the text input for the rest of the chat, not just this
+    # one message -- per explicit user request for a menu "как в других
+    # ботах ... не только с ответом на сообщение но и просто снизу".
+    await context.bot.send_message(chat_id, "Меню снизу 👇", reply_markup=formatting.build_persistent_menu())
     await context.bot.send_message(
         chat_id,
         formatting.render_mode_select_text(),
@@ -139,6 +146,40 @@ async def drills_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def on_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes taps on the persistent bottom ReplyKeyboardMarkup -- these
+    arrive as plain text messages, not callback_query, so they need their
+    own handler rather than on_callback."""
+    chat_id = update.effective_chat.id
+    text = update.message.text
+    session = store.get(chat_id)
+    if session is None:
+        await context.bot.send_message(chat_id, "Сначала /start и выбери режим")
+        return
+
+    if text == formatting.MENU_HISTORY:
+        await context.bot.send_message(chat_id, formatting.render_hand_history_text(session), parse_mode="HTML")
+        return
+
+    if text == formatting.MENU_RESET:
+        session.settings["drill_flags"] = []
+        await _run(game.new_table, session)
+        store.save(session)
+        session.table_message_id = None
+        await context.bot.send_message(chat_id, "Стол сброшен, деньги заново.")
+        await _deal_and_show(context, session)
+        return
+
+    if text == formatting.MENU_RULES or text == formatting.MENU_DRILL:
+        await context.bot.send_message(
+            chat_id,
+            formatting.render_drill_intro_text(),
+            reply_markup=formatting.build_drill_root_keyboard(session),
+            parse_mode="HTML",
+        )
+        return
+
+
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     chat_id = update.effective_chat.id
@@ -179,7 +220,17 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             hint = await _run(game.compute_abc_strategy_hint, session)
         except RuntimeError:
             return
-        await context.bot.send_message(chat_id, formatting.render_hint_text(hint), parse_mode="HTML")
+        await context.bot.send_message(
+            chat_id, formatting.render_hint_text(hint), reply_markup=formatting.build_hint_keyboard(), parse_mode="HTML"
+        )
+        return
+
+    if data == "hint:play":
+        try:
+            hint = await _run(game.compute_abc_strategy_hint, session)
+        except RuntimeError:
+            return
+        await _apply_action_and_continue(context, session, hint["action"], hint["amount"])
         return
 
     if data == "settings:hints_toggle":
@@ -202,7 +253,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("raise:"):
         label = data.split(":", 1)[1]
-        presets = formatting.compute_raise_presets(session)  # pure arithmetic, no need for to_thread
+        # pure arithmetic, no to_thread needed -- street-aware, matches build_raise_size_keyboard
+        is_preflop = session.hand is not None and session.hand.street == "preflop"
+        presets = formatting.compute_preflop_raise_presets(session) if is_preflop else formatting.compute_raise_presets(session)
         amount = presets.get(label)
         if amount is None:
             return
@@ -321,6 +374,7 @@ def main() -> None:
     app.add_handler(CommandHandler("drills", drills_cmd))
     app.add_handler(CommandHandler("ranges", ranges_cmd))
     app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_menu_button))
 
     logger.info("PokerDom Telegram bot starting (polling)...")
     app.run_polling()

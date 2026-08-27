@@ -48,6 +48,10 @@ class BotSession:
     hand_history: HandHistoryStore | None = None
     hand_number: int = 0
     hero_decisions: list[HeroDecision] = field(default_factory=list)
+    # Telegram-specific: one dict per hero action THIS hand (street/action/
+    # amount/grade/verdict/abc_action/abc_amount) -- powers the full
+    # per-street end-of-hand review, not just the last action's feedback.
+    street_decisions: list[dict] = field(default_factory=list)
     settings: dict = field(default_factory=lambda: dict(DEFAULT_SETTINGS))
     # Telegram-specific: the chat message currently showing the table, so
     # later updates can edit it in place instead of spamming new messages.
