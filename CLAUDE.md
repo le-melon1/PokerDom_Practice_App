@@ -76,6 +76,23 @@ a seated bot's own decisions already use, so the hint matches exactly the
 rules this whole project spent months validating, and shows which
 opponent read drove the recommendation instead of raw equity/EV numbers.
 
+**2026-08-27, postflop raise presets fixed to match live feedback**: real
+hand report showed the strategy recommending a 14.6bb (75%-pot) bet while
+the postflop preset buttons only offered generic 33/50/100%-pot tiers --
+"но у меня даже такого варианта не было." Same class of bug the preflop
+presets already had fixed (raw chip vs display-bb, and generic-vs-real
+sizing). Postflop sizing has 14 different `*_POT_FRACTION` constants
+gated by a genuinely multi-dimensional condition (hand strength, board
+texture, initiative, street, archetype) -- too easy to hand-replicate
+wrong. `compute_raise_presets` (`formatting.py`) now calls
+`game._abc_recommendation` (the same `choose_abc_action` call the hint
+button and hand-review grading already use) and guarantees that exact
+amount is always offered as a button ("Как стратегия"), correct by
+construction instead of guessed. Verified by direct hand construction
+(TT on a dry 5-8-4 board with initiative, reproducing the reported
+75%-pot spot) -- the button now matches the strategy's real
+recommendation exactly. 191 tests pass.
+
 ## Telegram bot: drill mode (2026-08-26)
 
 New `/drills` command — lets the user pick one or several of the 32
