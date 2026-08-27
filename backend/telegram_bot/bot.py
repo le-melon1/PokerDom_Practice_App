@@ -79,25 +79,29 @@ async def _deal_and_show(context: ContextTypes.DEFAULT_TYPE, session: BotSession
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/start always begins fresh: shows the mode-select menu instead of
+    jumping straight into a hand, and does NOT touch any existing
+    table/hand yet -- that only happens once a mode is actually picked
+    (mode:normal / mode:drill below), matching the user's explicit ask
+    ("надо чтобы когда я вводил старт игра начиналась заново, и вообще
+    надо начинать не с игры а с выбора режима")."""
     chat_id = update.effective_chat.id
-    session, created = store.get_or_create(chat_id)
-    if created:
-        await _run(game.new_table, session)
-        store.save(session)
-        await context.bot.send_message(chat_id, "Стол готов. Раздаю первую руку...")
-        await _deal_and_show(context, session)
-        return
-    if session.hand is None:
-        await _deal_and_show(context, session)
-    else:
-        await _render_table(context, session)
+    session, _ = store.get_or_create(chat_id)
+    session.table_message_id = None  # next table render starts a fresh message
+    store.save(session)
+    await context.bot.send_message(
+        chat_id,
+        formatting.render_mode_select_text(),
+        reply_markup=formatting.build_mode_select_keyboard(),
+        parse_mode="HTML",
+    )
 
 
 async def newhand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     session = store.get(chat_id)
     if session is None or session.table is None:
-        await context.bot.send_message(chat_id, "Сначала /start")
+        await context.bot.send_message(chat_id, "Сначала /start и выбери режим")
         return
     session.table_message_id = None  # start a fresh message for the new hand
     await _deal_and_show(context, session)
@@ -107,7 +111,7 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = update.effective_chat.id
     session = store.get(chat_id)
     if session is None:
-        await context.bot.send_message(chat_id, "Сначала /start")
+        await context.bot.send_message(chat_id, "Сначала /start и выбери режим")
         return
     await context.bot.send_message(chat_id, "Настройки:", reply_markup=formatting.build_settings_keyboard(session))
 
@@ -125,7 +129,7 @@ async def drills_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     chat_id = update.effective_chat.id
     session = store.get(chat_id)
     if session is None:
-        await context.bot.send_message(chat_id, "Сначала /start")
+        await context.bot.send_message(chat_id, "Сначала /start и выбери режим")
         return
     await context.bot.send_message(
         chat_id,
@@ -140,11 +144,27 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     chat_id = update.effective_chat.id
     session = store.get(chat_id)
     if session is None:
-        await query.answer("Сначала /start", show_alert=True)
+        await query.answer("Сначала /start и выбери режим", show_alert=True)
         return
 
     data = query.data
     await query.answer()
+
+    if data == "mode:normal":
+        session.settings["drill_flags"] = []
+        await _run(game.new_table, session)
+        store.save(session)
+        session.table_message_id = None
+        await _deal_and_show(context, session)
+        return
+
+    if data == "mode:drill":
+        await query.edit_message_text(
+            formatting.render_drill_intro_text(),
+            reply_markup=formatting.build_drill_root_keyboard(session),
+            parse_mode="HTML",
+        )
+        return
 
     if data == "act:raise_menu":
         await query.edit_message_reply_markup(reply_markup=formatting.build_raise_size_keyboard(session))

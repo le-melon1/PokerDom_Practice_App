@@ -250,3 +250,22 @@ POSITIONS = ["UTG", "MP", "CO", "BTN", "SB"]
 def build_ranges_position_keyboard() -> InlineKeyboardMarkup:
     row = [InlineKeyboardButton(pos, callback_data=f"ranges:{pos}") for pos in POSITIONS]
     return InlineKeyboardMarkup([row])
+
+
+# ---- mode select: the very first thing /start shows, before any table exists ----
+
+
+def render_mode_select_text() -> str:
+    return (
+        "<b>PokerDom</b>\n"
+        "Выбери режим:"
+    )
+
+
+def build_mode_select_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🎮 Обычная игра", callback_data="mode:normal")],
+            [InlineKeyboardButton("🎯 Тренировка по правилам", callback_data="mode:drill")],
+        ]
+    )
