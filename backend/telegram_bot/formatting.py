@@ -191,83 +191,58 @@ def compute_raise_presets(session: BotSession) -> dict[str, float]:
 
 
 def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
-    """Preflop preset raise-to amounts, using the ACTUAL sizing formulas
-    abc_bot.py's own rules compute for hero's CURRENT hand and spot (2.5bb
-    open, +1.5bb premium-hand bonus, 5.5bb+1.5bb/limper iso, position-
-    scaled 3-bet multiplier, shove) -- not generic pot fractions. Per
-    explicit user request: only real sizes the strategy actually uses, and
-    EVERY variant that applies to this exact spot -- e.g. the premium-hand
-    open bonus is hand-dependent (checks hero's actual hole cards against
-    VALUE_3BET_TIGHT, same as abc_bot.py's own SIZE_UP_PREMIUM_OPENS
-    check) and was previously missing here, silently showing the plain
-    2.5bb size even with AA. The other size-affecting flags checked below
-    (RAKE_ADJUSTED_OPEN_SIZING, SIZE_UP_PREMIUM_3BETS, SIZED_4BET_INSTEAD_
-    OF_SHOVE) are currently all False in the shipped strategy -- included
-    so this stays correct automatically if any of them ever ships True."""
+    """Preflop preset raise-to amounts. Per explicit, twice-repeated user
+    request ("должны быть все... все формулы из самой стратегии сразу, не
+    только подходящие"): shows EVERY real, currently-shipped (flag=True)
+    preflop sizing formula abc_bot.py has, unconditionally -- not just the
+    one formula the actual decision-tree branch for this exact spot would
+    pick. Each is still a REAL formula (2.5bb open, +1.5bb premium bonus,
+    5.5bb+1.5bb/limper iso, 3x/4x position-scaled 3-bet) computed from
+    hero's actual current hand/limper-count/current_bet, just not gated on
+    whether choose_abc_action would actually reach that branch right now
+    -- e.g. the iso formula is shown even with 0 limpers (using the real
+    formula at n_limpers=0), and BOTH 3-bet multipliers (IP and OOP) are
+    shown even though only one matches hero's real position, so a human
+    can deliberately practice/compare any of them. Excludes formulas
+    belonging to flags that are False/tested-and-rejected in the shipped
+    strategy (SB_BIGGER_OPEN_SIZING, RAKE_ADJUSTED_OPEN_SIZING,
+    SIZE_UP_PREMIUM_3BETS, SIZED_4BET_INSTEAD_OF_SHOVE) -- those aren't
+    "in the strategy" right now, just tested-off experiments."""
     hand = session.hand
     seat = session.hero_seat
     legal = hand.legal_actions(seat)
-    position = _seat_position(hand, seat)
     notation = abc_bot._hand_notation(hand.players[seat].hole_cards)
     min_to, max_to = legal["min_raise_to"], legal["max_raise_to"]
+    is_premium = notation in abc_bot.VALUE_3BET_TIGHT
 
     def clamp(x: float) -> float:
         return max(min_to, min(x, max_to))
 
-    presets: dict[str, float] = {}
-    n_raises = _n_raises_this_street(hand)
+    presets: dict[str, float] = {"Мин-рейз": min_to}
 
-    # Real, ALWAYS-legal baseline -- per user feedback ("везде на префлопе
-    # есть для рейза только 2 варианта, это неправильно, должны быть все"),
-    # the single formula-matched size alone felt too narrow. min_raise_to
-    # isn't invented (unlike a pot-fraction tier would be) -- it's the
-    # actual legal minimum this exact spot allows, a real distinct action
-    # every player recognizes, so it's a legitimate second real option
-    # alongside the strategy's own computed size.
-    presets["Мин-рейз"] = min_to
+    # Open (always a real, computable formula regardless of whether the
+    # pot is actually unopened right now).
+    open_bb = abc_bot.OPEN_SIZING_BB + (abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0)
+    open_label = f"Open {open_bb:.1f}bb" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
+    presets[open_label] = clamp(hand.big_blind * open_bb)
 
-    if n_raises == 0:
+    # Iso-over-limpers (TIGHT_BIG_ISO_RAISE_LIMPERS) -- uses the real
+    # current limper count, even if it's 0 right now.
+    if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS:
         n_limpers = abc_bot._n_limpers_preflop(hand)
-        if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1:
-            bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
-            label = f"Изо {bb:.1f}bb"
-            # The plain open size is ALSO a real formula (OPEN_SIZING_BB)
-            # this file uses elsewhere -- shown as a second, smaller real
-            # option over limpers, not just the iso-raise TIGHT_BIG_ISO_
-            # RAISE_LIMPERS alone would pick.
-            open_bb = abc_bot.OPEN_SIZING_BB
-            if abc_bot.SIZE_UP_PREMIUM_OPENS and notation in abc_bot.VALUE_3BET_TIGHT:
-                open_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB
-            presets[f"Open {open_bb:.1f}bb"] = clamp(hand.big_blind * open_bb)
-        else:
-            bb = abc_bot.OPEN_SIZING_BB
-            if abc_bot.SB_BIGGER_OPEN_SIZING and position == "SB" and n_limpers == 0:
-                bb = abc_bot.SB_OPEN_SIZING_BB
-            if abc_bot.RAKE_ADJUSTED_OPEN_SIZING and position in abc_bot.RAKE_ADJUSTED_OPEN_POSITIONS:
-                bb = abc_bot.RAKE_ADJUSTED_OPEN_SIZING_BB
-            label = f"Open {bb:.1f}bb"
-        if abc_bot.SIZE_UP_PREMIUM_OPENS and notation in abc_bot.VALUE_3BET_TIGHT:
-            bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB
-            label += " (премиум)"
-        presets[label] = clamp(hand.big_blind * bb)
-    elif n_raises == 1:
-        raiser_seat = abc_bot._last_preflop_raiser_seat(hand)
-        in_position = raiser_seat is not None and abc_bot._is_hero_in_position_vs_raiser(hand, seat, raiser_seat)
-        mult = abc_bot.THREEBET_MULTIPLIER_IP if in_position else abc_bot.THREEBET_MULTIPLIER_OOP
-        amount = hand.current_bet * mult
-        label = f"3-бет {mult:.0f}x"
-        if abc_bot.SIZE_UP_PREMIUM_3BETS and notation in abc_bot.VALUE_3BET_TIGHT:
-            amount += hand.big_blind * abc_bot.PREMIUM_3BET_SIZING_BONUS_BB
-            label += " (премиум)"
-        presets[label] = clamp(amount)
-    elif n_raises >= 2 and abc_bot.SIZED_4BET_INSTEAD_OF_SHOVE:
-        raiser_seat = abc_bot._last_preflop_raiser_seat(hand)
-        in_position = raiser_seat is not None and abc_bot._is_hero_in_position_vs_raiser(hand, seat, raiser_seat)
-        mult = abc_bot.SIZED_4BET_MULTIPLIER_IP if in_position else abc_bot.SIZED_4BET_MULTIPLIER_OOP
-        presets[f"4-бет {mult:.1f}x"] = clamp(hand.current_bet * mult)
-    # else (facing 3-bet+, SIZED_4BET_INSTEAD_OF_SHOVE off): the real
-    # strategy just shoves here (SHOVE_AA_KK_VS_3BET_PLUS) -- nothing to
-    # add beyond the all-in preset below.
+        iso_bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
+        iso_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0
+        presets[f"Изо {iso_bb:.1f}bb"] = clamp(hand.big_blind * iso_bb)
+
+    # 3-bet (THREEBET_SIZE_BY_POSITION) -- both multipliers, not just
+    # whichever matches hero's real position, per the user's explicit
+    # "all formulas, not just applicable" request. current_bet is always
+    # defined (equals the big blind if nobody has raised yet).
+    if abc_bot.THREEBET_SIZE_BY_POSITION:
+        for mult, tag in ((abc_bot.THREEBET_MULTIPLIER_IP, "IP"), (abc_bot.THREEBET_MULTIPLIER_OOP, "OOP")):
+            presets[f"3-бет {mult:.0f}x ({tag})"] = clamp(hand.current_bet * mult)
+    else:
+        presets[f"3-бет {abc_bot.THREEBET_MULTIPLIER:.0f}x"] = clamp(hand.current_bet * abc_bot.THREEBET_MULTIPLIER)
 
     presets["Ва-банк"] = max_to
     return presets
