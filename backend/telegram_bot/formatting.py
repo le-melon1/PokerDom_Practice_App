@@ -42,6 +42,23 @@ def _cards(cards: list[str]) -> str:
     return " ".join(_card(c) for c in cards)
 
 
+def _seats_who_raised_this_street(hand) -> set[int]:
+    """Per user request ("можем подкрашивать текст когда боты рейзят") --
+    Telegram's HTML has no real text-color entity, so this marks a raiser
+    with an emoji instead. Hand.actions (models.ActionRecord) already logs
+    every action with its own street/seat/kind -- street_contributed alone
+    can't tell a raiser from a caller once both match the same bet amount,
+    but the action log can: take each seat's LAST action this street, keep
+    the ones whose kind is "raises"/"bets" (a player who bet/raised and was
+    then re-raised has "calls" or "folds" as their real last action, so
+    they correctly drop out of this set)."""
+    last_by_seat: dict[int, str] = {}
+    for a in hand.actions:
+        if a.street == hand.street:
+            last_by_seat[a.seat] = a.action
+    return {seat for seat, action in last_by_seat.items() if action in ("raises", "bets")}
+
+
 def _struck_row(marker: str, button: str, archetype_emoji: str, rest: str) -> str:
     """Strikethrough for a folded row, but Telegram doesn't draw the <s>
     line through emoji glyphs -- wrapping the whole row left it visibly
@@ -106,6 +123,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     lines.append(f"Борд: {_cards(hand.board)}")
     lines.append("")
 
+    raised_seats = _seats_who_raised_this_street(hand)
     for seat in sorted(table.players):
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
@@ -158,7 +176,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         name_col = f"{display_name:<6}"
         stack_col = f"{p.stack / big_blind:>6.1f}"
         bet_col = f"{p.street_contributed / big_blind:>5.1f}"
-        rest = f"{name_col}: {stack_col} (ставка {bet_col}) {cards}{state}"
+        raise_marker = " ⬆️" if seat in raised_seats else ""
+        rest = f"{name_col}: {stack_col} (ставка {bet_col}){raise_marker} {cards}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
