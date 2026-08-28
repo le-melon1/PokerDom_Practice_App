@@ -231,12 +231,16 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # in the cards slot now (see _visible_hole_cards), so an empty
         # cards string just means genuinely nothing to display.
         cards_part = f" {cards}" if cards else ""
-        # Bet is the important number to scan for, stack size is
-        # secondary -- per user request, bet goes first (bold, no
-        # "ставка" label -- it's the only number left unlabeled, so
-        # what it is stays obvious from position) and the stack moves
-        # into parens right after the name.
-        rest = f"{name_col}(stack {stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
+        # <code> is inline monospace in Telegram (unlike <pre>, no full-
+        # width code-block styling -- the earlier attempt at that was
+        # reverted for looking bad) -- wraps just the two numbers, since
+        # even a fixed CHARACTER count doesn't guarantee fixed PIXEL width
+        # in a proportional font when different digits render at
+        # different widths (per user: "это ещё зависит от того сколько
+        # денег стек"). No "stack"/"ставка" labels anymore either (per
+        # user: "убери всё-таки надпись стек") -- bet leads, bold; stack
+        # in parens right after the name.
+        rest = f"{name_col}(<code>{stack_col}</code>): <b><code>{bet_col}</code></b>{raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
