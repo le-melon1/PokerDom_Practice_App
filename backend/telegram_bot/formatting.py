@@ -42,42 +42,8 @@ def _cards(cards: list[str]) -> str:
     return " ".join(_card(c) for c in cards)
 
 
-def _struck_row(marker: str, button: str, archetype_emoji: str, rest: str) -> str:
-    """Strikethrough for a folded row, but Telegram doesn't draw the <s>
-    line through emoji glyphs -- wrapping the whole row left it visibly
-    broken (text struck, emoji not). Wraps only the plain-text spans and
-    leaves the button-chip/archetype emoji (if present) unwrapped, so the
-    strike runs right up to each emoji instead of skipping a gap or
-    covering the row inconsistently (per user: "перечёркивание оставляй,
-    просто чтобы он доходил до эмодзи")."""
-    # Mirrors the non-folded row's exact concatenation
-    # (f"{marker}{button} {archetype_emoji}{rest}") segment-for-segment, so
-    # folded and non-folded rows still line up with each other -- only
-    # which spans get wrapped in <s> differs.
-    segments: list[tuple[str, bool]] = [(marker, False)]
-    if button.strip():
-        segments.append((button.strip(), True))
-    else:
-        segments.append((button, False))
-    segments.append((" ", False))
-    if archetype_emoji:
-        segments.append((archetype_emoji.strip(), True))
-        segments.append((" ", False))
-    segments.append((rest, False))
-
-    out = []
-    buf = ""
-    for text, is_emoji in segments:
-        if is_emoji:
-            if buf:
-                out.append(f"<s>{buf}</s>")
-                buf = ""
-            out.append(text)
-        else:
-            buf += text
-    if buf:
-        out.append(f"<s>{buf}</s>")
-    return "".join(out)
+def _html_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def render_table_text(session: BotSession, trainer_feedback: dict | None = None) -> str:
@@ -109,26 +75,37 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     lines.append(f"Борд: {_cards(hand.board)}")
     lines.append("")
 
+    # Real column alignment (stack under stack, bet under bet, name under
+    # name, emoji under emoji) is only possible in a monospace block --
+    # per user request ("хочу чтобы количество фишек у ботов было один
+    # под другим, ставка была одна под другой, имя один под одним эмодзи
+    # тоже"), plain Telegram message text uses a proportional font where
+    # padding with spaces doesn't reliably line up (different characters/
+    # emoji have different widths) -- confirmed broken by two earlier
+    # rounds of this same complaint even after fixed-width placeholders.
+    # <pre> forces a monospace font so fixed-width padding actually works.
+    # Trade-off: Telegram doesn't render nested <b>/<s> entities inside
+    # <pre> reliably, so per-row bold-for-whose-turn and strikethrough-
+    # for-folded were dropped here -- the 👉 marker and the plain "[fold]"
+    # state tag (both already existed independently) still convey the
+    # same information without needing nested formatting.
+    table_lines = []
     for seat in sorted(table.players):
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
-        marker = "👉 " if is_current_actor else "   "
+        marker = "👉" if is_current_actor else "  "
         # Just "Вы", not the engine's internal "Hero" name -- per user
         # request ("слово hero из игры можно убрать оставить только вы").
         display_name = "Вы" if seat == session.hero_seat else p.name
         # Dealer-button marker -- a distinct, real-poker "button chip"
-        # visual next to whoever has it this hand (per user request: "нужно
-        # чтобы кнопка визуально была видна" -- "дилерская [фишка]"). Per a
-        # later request ("убери надписи позиций... и так понятно если есть
-        # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
-        # removed -- the button chip alone conveys position well enough.
-        # Fixed-width placeholder ("  ", matching 🔘's ~2-cell emoji width,
-        # same convention `marker` above already uses) when this seat
-        # ISN'T the button, instead of "" -- an empty string shifted
-        # everything after it left/right depending on who had the button
-        # this hand (per user: "чтобы... фишка диллера... не сдвигала
-        # относительно остальных").
+        # visual next to whoever has it this hand.
         button = "🔘" if seat == table.button_seat else "  "
+        archetype_emoji = "  "
+        if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
+            archetype = session.turnover.archetype_for(seat)
+            emoji = ARCHETYPE_EMOJI.get(archetype, "")
+            if emoji:
+                archetype_emoji = emoji
         state_bits = []
         if p.folded:
             state_bits.append("fold")
@@ -138,29 +115,13 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             state_bits.append("вне игры")
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         cards = _cards(_visible_hole_cards(session, seat, p))
-        archetype_emoji = ""
-        if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
-            archetype = session.turnover.archetype_for(seat)
-            archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
-        rest = (
-            f"{display_name}: {p.stack / big_blind:.1f} "
-            f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
+        name_col = f"{display_name:<6}"
+        stack_col = f"{p.stack / big_blind:>6.1f}"
+        bet_col = f"{p.street_contributed / big_blind:>5.1f}"
+        table_lines.append(
+            f"{marker} {button} {archetype_emoji} {name_col} {stack_col} {bet_col}  {cards}{state}"
         )
-        # Strikethrough marks a folded row, but Telegram doesn't draw the
-        # <s> line through emoji glyphs (button chip/archetype emoji) --
-        # _struck_row wraps only the plain-text spans so the strike runs
-        # right up to each emoji instead of leaving it looking broken
-        # (per user: "перечёркивание оставляй, просто чтобы он доходил до
-        # эмодзи"). Bold highlights whose turn it is now (on top of the
-        # existing 👉 marker); folded and current-actor are mutually
-        # exclusive (a folded seat is never on turn).
-        if p.folded:
-            row = _struck_row(marker, button, archetype_emoji, rest)
-        else:
-            row = f"{marker}{button} {archetype_emoji}{rest}"
-            if is_current_actor:
-                row = f"<b>{row}</b>"
-        lines.append(row)
+    lines.append("<pre>" + _html_escape("\n".join(table_lines)) + "</pre>")
 
     if hand.finished and hand.result is not None:
         lines.append("")
