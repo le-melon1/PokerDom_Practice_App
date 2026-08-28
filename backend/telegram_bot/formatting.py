@@ -42,6 +42,44 @@ def _cards(cards: list[str]) -> str:
     return " ".join(_card(c) for c in cards)
 
 
+def _struck_row(marker: str, button: str, archetype_emoji: str, rest: str) -> str:
+    """Strikethrough for a folded row, but Telegram doesn't draw the <s>
+    line through emoji glyphs -- wrapping the whole row left it visibly
+    broken (text struck, emoji not). Wraps only the plain-text spans and
+    leaves the button-chip/archetype emoji (if present) unwrapped, so the
+    strike runs right up to each emoji instead of skipping a gap or
+    covering the row inconsistently (per user: "перечёркивание оставляй,
+    просто чтобы он доходил до эмодзи")."""
+    # Mirrors the non-folded row's exact concatenation
+    # (f"{marker}{button} {archetype_emoji}{rest}") segment-for-segment, so
+    # folded and non-folded rows still line up with each other -- only
+    # which spans get wrapped in <s> differs.
+    segments: list[tuple[str, bool]] = [(marker, False)]
+    if button.strip():
+        segments.append((button.strip(), True))
+    else:
+        segments.append((button, False))
+    segments.append((" ", False))
+    if archetype_emoji:
+        segments.append((archetype_emoji.strip(), True))
+        segments.append((" ", False))
+    segments.append((rest, False))
+
+    out = []
+    buf = ""
+    for text, is_emoji in segments:
+        if is_emoji:
+            if buf:
+                out.append(f"<s>{buf}</s>")
+                buf = ""
+            out.append(text)
+        else:
+            buf += text
+    if buf:
+        out.append(f"<s>{buf}</s>")
+    return "".join(out)
+
+
 def render_table_text(session: BotSession, trainer_feedback: dict | None = None) -> str:
     table = session.table
     hand = session.hand
@@ -75,14 +113,22 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
         marker = "👉 " if is_current_actor else "   "
-        tag = " (Вы)" if seat == session.hero_seat else ""
+        # Just "Вы", not the engine's internal "Hero" name -- per user
+        # request ("слово hero из игры можно убрать оставить только вы").
+        display_name = "Вы" if seat == session.hero_seat else p.name
         # Dealer-button marker -- a distinct, real-poker "button chip"
         # visual next to whoever has it this hand (per user request: "нужно
         # чтобы кнопка визуально была видна" -- "дилерская [фишка]"). Per a
         # later request ("убери надписи позиций... и так понятно если есть
         # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
         # removed -- the button chip alone conveys position well enough.
-        button = " 🔘" if seat == table.button_seat else ""
+        # Fixed-width placeholder ("  ", matching 🔘's ~2-cell emoji width,
+        # same convention `marker` above already uses) when this seat
+        # ISN'T the button, instead of "" -- an empty string shifted
+        # everything after it left/right depending on who had the button
+        # this hand (per user: "чтобы... фишка диллера... не сдвигала
+        # относительно остальных").
+        button = "🔘" if seat == table.button_seat else "  "
         state_bits = []
         if p.folded:
             state_bits.append("fold")
@@ -96,22 +142,24 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
-        row = (
-            f"{marker}{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f} "
+        rest = (
+            f"{display_name}: {p.stack / big_blind:.1f} "
             f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
         )
-        # Strikethrough (<s>) and the 🔴 prefix a folded row used to get
-        # were both dropped per user feedback -- Telegram doesn't actually
-        # draw the strike line over emoji glyphs (button chip/archetype/
-        # card-back emoji all appear in this row), so the line only looked
-        # struck through in the plain-text parts -- a visibly broken,
-        # inconsistent line rather than a clean effect ("если смайлик
-        # перечеркнуть не получается, тогда слева тоже не надо
-        # перечёркивать"). The plain "[fold]" state tag is the fold
-        # indicator now. Bold still highlights whose turn it is (no
-        # complaint about that one) on top of the existing 👉 marker.
-        if is_current_actor:
-            row = f"<b>{row}</b>"
+        # Strikethrough marks a folded row, but Telegram doesn't draw the
+        # <s> line through emoji glyphs (button chip/archetype emoji) --
+        # _struck_row wraps only the plain-text spans so the strike runs
+        # right up to each emoji instead of leaving it looking broken
+        # (per user: "перечёркивание оставляй, просто чтобы он доходил до
+        # эмодзи"). Bold highlights whose turn it is now (on top of the
+        # existing 👉 marker); folded and current-actor are mutually
+        # exclusive (a folded seat is never on turn).
+        if p.folded:
+            row = _struck_row(marker, button, archetype_emoji, rest)
+        else:
+            row = f"{marker}{button} {archetype_emoji}{rest}"
+            if is_current_actor:
+                row = f"<b>{row}</b>"
         lines.append(row)
 
     if hand.finished and hand.result is not None:
@@ -205,12 +253,12 @@ def build_action_keyboard(session: BotSession) -> InlineKeyboardMarkup | None:
         return None
     legal = hand.legal_actions(session.hero_seat)
 
-    # Per user request: fold=red, call=green, raise=blue -- Bot API's
+    # Per user request: fold=red, check/call=green, raise=blue -- Bot API's
     # per-button "style" (python-telegram-bot 22.7+, Telegram clients
     # released after 2026-02-09; older clients just show unstyled buttons).
     row = [InlineKeyboardButton("Фолд", callback_data="act:fold", style=KeyboardButtonStyle.DANGER)]
     if legal["can_check"]:
-        row.append(InlineKeyboardButton("Чек", callback_data="act:check"))
+        row.append(InlineKeyboardButton("Чек", callback_data="act:check", style=KeyboardButtonStyle.SUCCESS))
     else:
         row.append(
             InlineKeyboardButton(
