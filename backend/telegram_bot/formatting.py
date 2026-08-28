@@ -6,7 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
 from telegram.constants import KeyboardButtonStyle
 
 from backend.bots import abc_bot
-from backend.bots.behavior_clone import _n_raises_this_street
+from backend.bots.behavior_clone import _n_raises_this_street, _seat_position
 from backend.telegram_bot import drills, game
 from backend.telegram_bot.session import BotSession
 
@@ -184,12 +184,18 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         hole_cards = _visible_hole_cards(session, seat, p)
         cards = _cards(hole_cards) if hole_cards else ""
         archetype_emoji = "    "
+        if seat == session.hero_seat:
+            # Hero has no archetype emoji (there's nothing to label about
+            # your own play style) -- per user request, that otherwise-
+            # blank slot now shows hero's own table position (UTG/MP/CO/
+            # BTN/SB/BB) as letters instead.
+            archetype_emoji = f"{_seat_position(hand, seat):<4}"
         # No archetype emoji for a folded bot -- per user request ("чтобы
         # не играющие не сбивали при игре"): a folded seat is out of the
         # hand, so its type icon is just visual noise while you're reading
         # who's still live -- same blank placeholder as if archetype
         # emoji were off entirely.
-        if not p.folded and seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
+        elif not p.folded and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             emoji = ARCHETYPE_EMOJI.get(archetype, "")
             if emoji:
@@ -222,7 +228,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # "ставка" label -- it's the only number left unlabeled, so
         # what it is stays obvious from position) and the stack moves
         # into parens right after the name.
-        rest = f"{name_col}(стек {stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
+        rest = f"{name_col}(stack {stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
