@@ -51,18 +51,15 @@ def _struck_row(marker: str, button: str, archetype_emoji: str, rest: str) -> st
     covering the row inconsistently (per user: "перечёркивание оставляй,
     просто чтобы он доходил до эмодзи")."""
     # Mirrors the non-folded row's exact concatenation
-    # (f"{marker}{button} {archetype_emoji}{rest}") segment-for-segment, so
-    # folded and non-folded rows still line up with each other -- only
+    # (f"{marker} {button} {archetype_emoji} {rest}") segment-for-segment,
+    # so folded and non-folded rows still line up with each other -- only
     # which spans get wrapped in <s> differs.
-    segments: list[tuple[str, bool]] = [(marker, False)]
-    if button.strip():
-        segments.append((button.strip(), True))
-    else:
-        segments.append((button, False))
+    segments: list[tuple[str, bool]] = []
+    for i, slot in enumerate((marker, button, archetype_emoji)):
+        if i > 0:
+            segments.append((" ", False))
+        segments.append((slot, bool(slot.strip())))
     segments.append((" ", False))
-    if archetype_emoji:
-        segments.append((archetype_emoji.strip(), True))
-        segments.append((" ", False))
     segments.append((rest, False))
 
     out = []
@@ -112,7 +109,20 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     for seat in sorted(table.players):
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
-        marker = "👉 " if is_current_actor else "   "
+        # Three left-side "slots" (turn marker, dealer chip, archetype
+        # emoji), each ALWAYS a fixed-width single-character cell -- either
+        # the real emoji or a plain-space placeholder of the same reserved
+        # width -- so a row's name/stack/bet never shifts right depending
+        # on which of these happen to be present this hand. Per user
+        # report with a screenshot: the dealer chip's old 2-space
+        # placeholder wasn't wide enough to match the emoji's real
+        # rendered width, so Bot3 (who had the button) visibly started
+        # further right than Bot2/Bot4 ("нужно достаточное место слева из
+        # пробелов чтобы там помещалась кнопка диллера и рука"). Widened
+        # to 3 spaces per slot, and the archetype slot is now reserved for
+        # EVERY row including hero's (previously 0-width there, which was
+        # its own source of misalignment against bot rows that had it).
+        marker = "👉" if is_current_actor else "   "
         # Just "Вы", not the engine's internal "Hero" name -- per user
         # request ("слово hero из игры можно убрать оставить только вы").
         display_name = "Вы" if seat == session.hero_seat else p.name
@@ -122,13 +132,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # later request ("убери надписи позиций... и так понятно если есть
         # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
         # removed -- the button chip alone conveys position well enough.
-        # Fixed-width placeholder ("  ", matching 🔘's ~2-cell emoji width,
-        # same convention `marker` above already uses) when this seat
-        # ISN'T the button, instead of "" -- an empty string shifted
-        # everything after it left/right depending on who had the button
-        # this hand (per user: "чтобы... фишка диллера... не сдвигала
-        # относительно остальных").
-        button = "🔘" if seat == table.button_seat else "  "
+        button = "🔘" if seat == table.button_seat else "   "
         state_bits = []
         if p.folded:
             state_bits.append("fold")
@@ -138,10 +142,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             state_bits.append("вне игры")
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         cards = _cards(_visible_hole_cards(session, seat, p))
-        archetype_emoji = ""
+        archetype_emoji = "   "
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
-            archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
+            emoji = ARCHETYPE_EMOJI.get(archetype, "")
+            if emoji:
+                archetype_emoji = emoji
         # Fixed-width padding on the name/stack/bet columns -- per user
         # request ("поставь правильное количество пробелов для красивого
         # форматирования"). Telegram's plain message text isn't
@@ -164,7 +170,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if p.folded:
             row = _struck_row(marker, button, archetype_emoji, rest)
         else:
-            row = f"{marker}{button} {archetype_emoji}{rest}"
+            row = f"{marker} {button} {archetype_emoji} {rest}"
             if is_current_actor:
                 row = f"<b>{row}</b>"
         lines.append(row)
