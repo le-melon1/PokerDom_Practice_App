@@ -331,14 +331,54 @@ def render_explain_text(session: BotSession) -> str:
     return "\n".join(lines)
 
 
+# Past-tense action-log labels (Hand.actions/ActionRecord.action, e.g.
+# "raises") -- distinct from ACTION_RU (present-tense, used for hero's own
+# decisions/presets, e.g. "raise") since the engine's own log uses the
+# grammatical form a real hand-history would ("Bot2 raises to X").
+ACTION_LOG_RU = {
+    "folds": "фолд",
+    "checks": "чек",
+    "calls": "колл",
+    "bets": "бет",
+    "raises": "рейз",
+    "small_blind": "малый блайнд",
+    "big_blind": "большой блайнд",
+}
+
+
+def render_action_history_text(session: BotSession) -> str:
+    """"📋 Действия в раздаче" -- the full action-by-action log for every
+    player this hand (not just hero's own decisions), straight from
+    Hand.actions/ActionRecord -- the same log _seats_who_raised_this_street
+    already reads. Distinct from MENU_HISTORY ("📜 История раздач", the
+    across-hand win/loss summary) -- this one is within a single hand."""
+    hand = session.hand
+    if hand is None or not hand.actions:
+        return "Нет истории действий для этой раздачи."
+    big_blind = hand.big_blind
+    lines = ["<b>Действия в раздаче</b>"]
+    current_street = None
+    for a in hand.actions:
+        if a.street != current_street:
+            current_street = a.street
+            lines.append(f"\n<b>{STREET_RU.get(a.street, a.street)}</b>")
+        name = "Вы" if a.seat == session.hero_seat else hand.players[a.seat].name
+        action_ru = ACTION_LOG_RU.get(a.action, a.action)
+        amount_part = f" {a.amount / big_blind:.1f}" if a.amount else ""
+        lines.append(f"{name}: {action_ru}{amount_part}")
+    return "\n".join(lines)
+
+
 def build_hand_finished_keyboard() -> InlineKeyboardMarkup:
     """Shown once a hand ends, per explicit user request -- new
-    hand / explain the strategy's advice / dispute a specific decision."""
+    hand / explain the strategy's advice / dispute a specific decision /
+    the full player-by-player action history."""
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("🆕 Новая раздача", callback_data="hand:new")],
             [InlineKeyboardButton("❓ Объяснить советы", callback_data="hand:explain")],
             [InlineKeyboardButton("⚠️ Оспорить совет", callback_data="hand:dispute")],
+            [InlineKeyboardButton("📋 История действий", callback_data="hand:history")],
         ]
     )
 

@@ -370,6 +370,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await context.bot.send_message(chat_id, formatting.render_explain_text(session), parse_mode="HTML")
         return
 
+    if data == "hand:history":
+        await context.bot.send_message(chat_id, formatting.render_action_history_text(session), parse_mode="HTML")
+        return
+
     if data == "hand:dispute":
         if not session.street_decisions:
             await context.bot.send_message(chat_id, "В этой раздаче не было ваших решений.")
