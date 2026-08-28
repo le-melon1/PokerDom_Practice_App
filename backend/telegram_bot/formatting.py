@@ -3,6 +3,7 @@ InlineKeyboardMarkup. No poker logic here -- everything is read from what
 game.py / the engine already computed."""
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram.constants import KeyboardButtonStyle
 
 from backend.bots import abc_bot
 from backend.bots.behavior_clone import _n_raises_this_street
@@ -72,7 +73,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
 
     for seat in sorted(table.players):
         p = table.players[seat]
-        marker = "👉 " if hand.current_actor() == seat else "   "
+        is_current_actor = hand.current_actor() == seat
+        marker = "👉 " if is_current_actor else "   "
         tag = " (Вы)" if seat == session.hero_seat else ""
         # Dealer-button marker -- a distinct, real-poker "button chip"
         # visual next to whoever has it this hand (per user request: "нужно
@@ -82,8 +84,6 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # removed -- the button chip alone conveys position well enough.
         button = " 🔘" if seat == table.button_seat else ""
         state_bits = []
-        if p.folded:
-            state_bits.append("fold")
         if p.all_in:
             state_bits.append("all-in")
         if p.sitting_out:
@@ -94,10 +94,22 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
-        lines.append(
+        row = (
             f"{marker}{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f} "
             f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
         )
+        # Telegram message text has no real color entity (HTML parse mode
+        # only supports bold/italic/underline/strikethrough/spoiler/code/
+        # pre/blockquote, not arbitrary <font color>) -- per user request
+        # ("фолданули должны выглядеть перечёркнутыми и красными"),
+        # strikethrough is the real part, 🔴 stands in for "red" since
+        # actual red text isn't achievable here. Bold highlights whose
+        # turn it is now, on top of the existing 👉 marker.
+        if p.folded:
+            row = f"🔴 <s>{row}</s>"
+        elif is_current_actor:
+            row = f"<b>{row}</b>"
+        lines.append(row)
 
     if hand.finished and hand.result is not None:
         lines.append("")
@@ -190,13 +202,22 @@ def build_action_keyboard(session: BotSession) -> InlineKeyboardMarkup | None:
         return None
     legal = hand.legal_actions(session.hero_seat)
 
-    row = [InlineKeyboardButton("Фолд", callback_data="act:fold")]
+    # Per user request: fold=red, call=green, raise=blue -- Bot API's
+    # per-button "style" (python-telegram-bot 22.7+, Telegram clients
+    # released after 2026-02-09; older clients just show unstyled buttons).
+    row = [InlineKeyboardButton("Фолд", callback_data="act:fold", style=KeyboardButtonStyle.DANGER)]
     if legal["can_check"]:
         row.append(InlineKeyboardButton("Чек", callback_data="act:check"))
     else:
-        row.append(InlineKeyboardButton(f"Колл {legal['call_amount'] / hand.big_blind:.1f}", callback_data="act:call"))
+        row.append(
+            InlineKeyboardButton(
+                f"Колл {legal['call_amount'] / hand.big_blind:.1f}",
+                callback_data="act:call",
+                style=KeyboardButtonStyle.SUCCESS,
+            )
+        )
     if legal["max_raise_to"] > legal["min_raise_to"] - 1e-9:
-        row.append(InlineKeyboardButton("Рейз/Бет", callback_data="act:raise_menu"))
+        row.append(InlineKeyboardButton("Рейз/Бет", callback_data="act:raise_menu", style=KeyboardButtonStyle.PRIMARY))
 
     rows = [row]
     if session.settings.get("hints_enabled"):
@@ -330,7 +351,9 @@ def build_raise_size_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     presets = compute_preflop_raise_presets(session) if is_preflop else compute_raise_presets(session)
     big_blind = session.hand.big_blind
     buttons = [
-        InlineKeyboardButton(f"{label} ({amount / big_blind:.1f})", callback_data=f"raise:{label}")
+        InlineKeyboardButton(
+            f"{label} ({amount / big_blind:.1f})", callback_data=f"raise:{label}", style=KeyboardButtonStyle.PRIMARY
+        )
         for label, amount in presets.items()
     ]
     # 2 per row -- 4 buttons in one row truncates on a phone screen (real
