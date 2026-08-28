@@ -28,6 +28,14 @@ ARCHETYPE_EMOJI = {
     "Maniac": "🤪",
 }
 
+# Per-seat postflop_freq_tier emoji -- per user request ("у нас не показана
+# в эмодзи степень игры на постфлопе, пусть будет кружочка трёх разных
+# цветов"). Independent axis from archetype (see abc_bot.py's 2026-08-19/20
+# restructure -- preflop archetype and postflop aggression frequency were
+# split apart on purpose), so its own emoji slot, toggleable via settings
+# ("freq_tier_emoji_enabled") the same way archetype_emoji_enabled is.
+FREQ_TIER_EMOJI = {"rare": "🔵", "normal": "🟡", "often": "🔴"}
+
 
 def _card(card: str) -> str:
     if card == "??":
@@ -59,20 +67,20 @@ def _seats_who_raised_this_street(hand) -> set[int]:
     return {seat for seat, action in last_by_seat.items() if action in ("raises", "bets")}
 
 
-def _struck_row(marker: str, button: str, archetype_emoji: str, rest: str) -> str:
+def _struck_row(slots: list[str], rest: str) -> str:
     """Strikethrough for a folded row, but Telegram doesn't draw the <s>
     line through emoji glyphs -- wrapping the whole row left it visibly
     broken (text struck, emoji not). Wraps only the plain-text spans and
-    leaves the button-chip/archetype emoji (if present) unwrapped, so the
-    strike runs right up to each emoji instead of skipping a gap or
-    covering the row inconsistently (per user: "перечёркивание оставляй,
-    просто чтобы он доходил до эмодзи")."""
-    # Mirrors the non-folded row's exact concatenation
-    # (f"{marker} {button} {archetype_emoji} {rest}") segment-for-segment,
-    # so folded and non-folded rows still line up with each other -- only
-    # which spans get wrapped in <s> differs.
+    leaves each real emoji slot unwrapped, so the strike runs right up to
+    each emoji instead of skipping a gap or covering the row inconsistently
+    (per user: "перечёркивание оставляй, просто чтобы он доходил до
+    эмодзи"). `slots` is the row's left-side markers in order (turn/dealer/
+    archetype/freq-tier); mirrors the non-folded row's exact concatenation
+    (f"{' '.join(slots)} {rest}") segment-for-segment, so folded and
+    non-folded rows still line up with each other -- only which spans get
+    wrapped in <s> differs."""
     segments: list[tuple[str, bool]] = []
-    for i, slot in enumerate((marker, button, archetype_emoji)):
+    for i, slot in enumerate(slots):
         if i > 0:
             segments.append((" ", False))
         segments.append((slot, bool(slot.strip())))
@@ -127,8 +135,9 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
     for seat in sorted(table.players):
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
-        # Three left-side "slots" (turn marker, dealer chip, archetype
-        # emoji), each ALWAYS a fixed-width placeholder when the real emoji
+        # Left-side "slots" (turn marker, dealer chip, archetype emoji,
+        # postflop_freq_tier emoji), each ALWAYS a fixed-width placeholder
+        # when the real emoji
         # isn't present, so a row's name/stack/bet never shifts right
         # depending on which of these happen to be present this hand. Per
         # user reports (with screenshots) this kept drifting no matter how
@@ -173,6 +182,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             emoji = ARCHETYPE_EMOJI.get(archetype, "")
             if emoji:
                 archetype_emoji = emoji
+        freq_tier_emoji = "    "
+        if not p.folded and seat != session.hero_seat and session.settings.get("freq_tier_emoji_enabled", True) and session.turnover:
+            freq_tier = session.turnover.freq_tier_for(seat)
+            emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
+            if emoji:
+                freq_tier_emoji = emoji
         # Fixed-width padding on the name/stack/bet columns -- per user
         # request ("поставь правильное количество пробелов для красивого
         # форматирования"). Telegram's plain message text isn't
@@ -199,10 +214,11 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # эмодзи"). Bold highlights whose turn it is now (on top of the
         # existing 👉 marker); folded and current-actor are mutually
         # exclusive (a folded seat is never on turn).
+        slots = [marker, button, archetype_emoji, freq_tier_emoji]
         if p.folded:
-            row = _struck_row(marker, button, archetype_emoji, rest)
+            row = _struck_row(slots, rest)
         else:
-            row = f"{marker} {button} {archetype_emoji} {rest}"
+            row = f"{' '.join(slots)} {rest}"
             if is_current_actor:
                 row = f"<b>{row}</b>"
         lines.append(row)
@@ -585,10 +601,14 @@ def build_hint_keyboard() -> InlineKeyboardMarkup:
 def build_settings_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     hints_label = "Подсказки: вкл ✅" if session.settings.get("hints_enabled") else "Подсказки: выкл"
     emoji_label = "Эмодзи типов ботов: вкл ✅" if session.settings.get("archetype_emoji_enabled", True) else "Эмодзи типов ботов: выкл"
+    freq_tier_label = (
+        "Эмодзи частоты на постфлопе: вкл ✅" if session.settings.get("freq_tier_emoji_enabled", True) else "Эмодзи частоты на постфлопе: выкл"
+    )
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(hints_label, callback_data="settings:hints_toggle")],
             [InlineKeyboardButton(emoji_label, callback_data="settings:emoji_toggle")],
+            [InlineKeyboardButton(freq_tier_label, callback_data="settings:freqtier_toggle")],
             [InlineKeyboardButton("🔄 Сбросить стол", callback_data="settings:reset")],
         ]
     )

@@ -269,6 +269,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await query.edit_message_reply_markup(reply_markup=formatting.build_settings_keyboard(session))
         return
 
+    if data == "settings:freqtier_toggle":
+        session.settings["freq_tier_emoji_enabled"] = not session.settings.get("freq_tier_emoji_enabled", True)
+        store.save(session)
+        await query.edit_message_reply_markup(reply_markup=formatting.build_settings_keyboard(session))
+        return
+
     if data == "settings:reset":
         await _run(game.new_table, session)
         store.save(session)

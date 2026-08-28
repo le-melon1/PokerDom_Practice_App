@@ -38,6 +38,10 @@ DEFAULT_SETTINGS = {
     # the hint panel already reveals archetype by name for the live
     # aggressor -- just a toggleable visual shorthand for every seat.
     "archetype_emoji_enabled": True,
+    # 2026-08-28: same idea, for the independent postflop_freq_tier axis
+    # (see formatting.FREQ_TIER_EMOJI) -- per user request ("не показана в
+    # эмодзи степень игры на постфлопе").
+    "freq_tier_emoji_enabled": True,
 }
 
 
