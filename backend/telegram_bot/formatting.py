@@ -86,7 +86,7 @@ BOT_NAME_TRAILING_SPACES = {
     "Jack": 1,
     "Alex": 2,
     "Ivan": 2,
-    "Вы": 4,
+    "You": 3,
 }
 
 POSITION_TRAILING_SPACES = {
@@ -210,7 +210,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         marker = "👉" if is_current_actor else EMOJI_BLANK
         # Just "Вы", not the engine's internal "Hero" name -- per user
         # request ("слово hero из игры можно убрать оставить только вы").
-        display_name = "Вы" if seat == session.hero_seat else p.name
+        display_name = "You" if seat == session.hero_seat else p.name
         # Dealer-button marker -- a distinct, real-poker "button chip"
         # visual next to whoever has it this hand (per user request: "нужно
         # чтобы кнопка визуально была видна" -- "дилерская [фишка]"). Per a
@@ -265,14 +265,15 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # ":<6" character count left different names at different real
         # widths -- see the measurement block above).
         name_col = display_name + " " * BOT_NAME_TRAILING_SPACES.get(display_name, 2)
-        # LEFT-aligned padding (per user screenshot: "у боба и карла
-        # меньше стек поэтому всё съезжает исправь пробелом") -- a shorter
-        # stack now pads with TRAILING spaces instead of leading ones, so
-        # "(" still sits flush against the first digit (no gap right
-        # after it, the earlier "убери пробел в скобках" request) while
-        # ")"/the rest of the row still lands at the same width regardless
-        # of how many digits the stack has.
-        stack_col = f"{p.stack / big_blind:<6.1f}"
+        # Tight against both parens now -- no padding inside "(...)" at
+        # all. Per user request ("пробелы не перед ), а после :"), the
+        # compensating padding for a shorter stack (Roboto digits are
+        # tabular, so a 4-char stack is genuinely narrower than a 6-char
+        # one) moved to right after the colon instead, computed from how
+        # many digits short of the 6-char reference this stack's text is.
+        stack_str = f"{p.stack / big_blind:.1f}"
+        stack_col = stack_str
+        post_colon_padding = " " * max(0, 6 - len(stack_str))
         # One char narrower than before -- per user request ("после
         # скобок на пробел меньше, и после ставки... перед картами"),
         # less leading padding here means less gap both right after the
@@ -291,15 +292,14 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # numbers. No "stack"/"ставка" labels (per user: "убери всё-таки
         # надпись стек") -- bet leads, bold, unlabeled; stack sits in
         # parens right after the name with no label either.
-        rest = f"{name_col}({stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
+        rest = f"{name_col}({stack_col}):{post_colon_padding} <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
         # right up to each emoji instead of leaving it looking broken
         # (per user: "перечёркивание оставляй, просто чтобы он доходил до
-        # эмодзи"). Bold highlights whose turn it is now (on top of the
-        # existing 👉 marker); folded and current-actor are mutually
-        # exclusive (a folded seat is never on turn).
+        # эмодзи"). No bold for whose turn it is anymore (per user: "игрока
+        # не надо выделять жирным") -- the 👉 marker alone is enough.
         # marker+button concatenated directly (no separator space) -- per
         # user request ("кнопка диллера смещает всё направо, убери пробел
         # перед кнопкой").
@@ -309,8 +309,6 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             row = _struck_row(slots, rest)
         else:
             row = f"{' '.join(slots)} {rest}"
-            if is_current_actor:
-                row = f"<b>{row}</b>"
         lines.append(row)
 
     if hand.finished and hand.result is not None:
@@ -485,7 +483,7 @@ def render_action_history_text(snapshot: dict | None, settings: dict) -> str:
             lines.append(f"\n<b>{header}</b>")
         seat = a["seat"]
         is_hero = seat == hero_seat
-        name = "Вы" if is_hero else snapshot["seat_names"].get(seat, f"seat{seat}")
+        name = "You" if is_hero else snapshot["seat_names"].get(seat, f"seat{seat}")
         emoji = ""
         if not is_hero:
             if show_archetype:
