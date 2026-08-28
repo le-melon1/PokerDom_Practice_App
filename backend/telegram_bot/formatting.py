@@ -267,7 +267,11 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # эмодзи"). Bold highlights whose turn it is now (on top of the
         # existing 👉 marker); folded and current-actor are mutually
         # exclusive (a folded seat is never on turn).
-        slots = [s for s in (marker, button, archetype_emoji, freq_tier_emoji) if s is not None]
+        # marker+button concatenated directly (no separator space) -- per
+        # user request ("кнопка диллера смещает всё направо, убери пробел
+        # перед кнопкой").
+        marker_button = f"{marker}{button}"
+        slots = [s for s in (marker_button, archetype_emoji, freq_tier_emoji) if s is not None]
         if p.folded:
             row = _struck_row(slots, rest)
         else:
