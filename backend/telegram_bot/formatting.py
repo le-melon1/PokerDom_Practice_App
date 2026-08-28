@@ -359,8 +359,17 @@ def compute_preflop_raise_presets(session: BotSession) -> dict[str, float]:
         open_label = f"Open {open_bb:.1f}" + (" (премиум)" if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else "")
         presets[open_label] = clamp(hand.big_blind * open_bb)
 
-        if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS:
-            n_limpers = abc_bot._n_limpers_preflop(hand)
+        # Only offer "Изо" when there's actually a limper to isolate --
+        # choose_abc_action's own gate is `use_tight_big_iso =
+        # TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1` (abc_bot.py).
+        # Showing this preset at n_limpers==0 offered a sizing the
+        # strategy would never actually pick in that spot (it opens with
+        # the plain Open formula instead) -- found while checking the
+        # premium-hand sizing bonus applies correctly to both opens and
+        # isos (real hand: AA+0 limpers -> abc picks "Open 4.0", not the
+        # "Изо 7.0" this used to also show side by side).
+        n_limpers = abc_bot._n_limpers_preflop(hand)
+        if abc_bot.TIGHT_BIG_ISO_RAISE_LIMPERS and n_limpers >= 1:
             iso_bb = abc_bot.TIGHT_ISO_BASE_SIZING_BB + abc_bot.TIGHT_ISO_SIZING_PER_LIMPER_BB * n_limpers
             iso_bb += abc_bot.PREMIUM_OPEN_SIZING_BONUS_BB if abc_bot.SIZE_UP_PREMIUM_OPENS and is_premium else 0
             presets[f"Изо {iso_bb:.1f}"] = clamp(hand.big_blind * iso_bb)
