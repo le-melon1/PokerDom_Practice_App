@@ -22,7 +22,11 @@ STREET_RU = {"preflop": "префлоп", "flop": "флоп", "turn": "тёрн"
 ARCHETYPE_EMOJI = {
     "Nit": "🔒",
     "TAG": "🎯",
-    "LAG": "🔥",
+    # ⚡, not 🔥 -- 🔥 is FREQ_TIER_EMOJI["often"], and a LAG showing up as
+    # "often" (a common real combination) would render as two identical
+    # fire emoji side by side with no way to tell them apart (per user:
+    # "лаг тоже огонёк также как и часто рейзящие на постфлопе").
+    "LAG": "⚡",
     "Loose-passive": "🐟",
     "Station": "📞",
     "Maniac": "🤪",
@@ -213,7 +217,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # in the cards slot now (see _visible_hole_cards), so an empty
         # cards string just means genuinely nothing to display.
         cards_part = f" {cards}" if cards else ""
-        rest = f"{name_col}: {stack_col} (ставка {bet_col}){raise_marker}{cards_part}{state}"
+        # Bet is the important number to scan for, stack size is
+        # secondary -- per user request, bet goes first (bold, no
+        # "ставка" label -- it's the only number left unlabeled, so
+        # what it is stays obvious from position) and the stack moves
+        # into parens right after the name.
+        rest = f"{name_col}({stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
@@ -233,7 +242,9 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
 
     if hand.finished and hand.result is not None:
         lines.append("")
-        lines.append("Раздача завершена. /newhand -- следующая.")
+        # No "/newhand -- следующая" prompt anymore -- per user request,
+        # the next hand now deals itself automatically, so telling the
+        # user to type a command for it is stale/misleading.
         review = render_hand_review(session)
         if review:
             lines.append("")
@@ -418,12 +429,14 @@ def render_action_history_text(snapshot: dict | None, settings: dict) -> str:
 
 
 def build_hand_finished_keyboard() -> InlineKeyboardMarkup:
-    """Shown once a hand ends, per explicit user request -- new
-    hand / explain the strategy's advice / dispute a specific decision /
-    the full player-by-player action history."""
+    """Shown once a hand ends, per explicit user request -- explain the
+    strategy's advice / dispute a specific decision / the full player-by-
+    player action history. No "🆕 Новая раздача" button anymore -- the next
+    hand now deals itself automatically (see bot.py's
+    _auto_new_hand_if_finished), so a manual new-hand button was
+    redundant clutter once that shipped."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🆕 Новая раздача", callback_data="hand:new")],
             [InlineKeyboardButton("❓ Объяснить советы", callback_data="hand:explain")],
             [InlineKeyboardButton("⚠️ Оспорить совет", callback_data="hand:dispute")],
             [InlineKeyboardButton("📋 История действий", callback_data="hand:history")],

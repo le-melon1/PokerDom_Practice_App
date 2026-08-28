@@ -381,13 +381,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _deal_and_show(context, session)
         return
 
-    # Post-hand buttons -- per explicit user request: new hand / explain
-    # the strategy's advice / dispute a specific decision (pick which one,
-    # optionally comment, gets logged to disputes.py for later review).
-    if data == "hand:new":
-        session.table_message_id = None
-        await _deal_and_show(context, session)
-        return
+    # Post-hand buttons -- per explicit user request: explain the
+    # strategy's advice / dispute a specific decision (pick which one,
+    # optionally comment, gets logged to disputes.py for later review) /
+    # the full action history. No "hand:new" branch anymore -- the button
+    # that used it was removed once hands started auto-continuing; /newhand
+    # still exists as its own command for a manual reshuffle.
 
     if data == "hand:explain":
         await context.bot.send_message(chat_id, formatting.render_explain_text(session.last_hand_snapshot), parse_mode="HTML")
