@@ -346,26 +346,57 @@ ACTION_LOG_RU = {
 }
 
 
+# Which board cards get revealed at each street's start -- hand.board only
+# ever holds what's actually been dealt, so for a finished hand this
+# slices out just the cards that were NEW on that particular street rather
+# than reprinting the whole board again on the turn/river.
+_STREET_BOARD_SLICE = {"flop": (0, 3), "turn": (3, 4), "river": (4, 5)}
+
+
 def render_action_history_text(session: BotSession) -> str:
     """"📋 Действия в раздаче" -- the full action-by-action log for every
     player this hand (not just hero's own decisions), straight from
     Hand.actions/ActionRecord -- the same log _seats_who_raised_this_street
     already reads. Distinct from MENU_HISTORY ("📜 История раздач", the
-    across-hand win/loss summary) -- this one is within a single hand."""
+    across-hand win/loss summary) -- this one is within a single hand.
+
+    Per user follow-up request ("нужно чтобы там тоже были эмодзи и чтобы
+    были видны карты которые выкладывают на стол"): each bot's line now
+    carries the same archetype/freq_tier emoji as the table view (subject
+    to the same settings toggles, hero still excluded), and each street
+    header shows the board card(s) that just got dealt on it."""
     hand = session.hand
     if hand is None or not hand.actions:
         return "Нет истории действий для этой раздачи."
     big_blind = hand.big_blind
+    show_archetype = session.settings.get("archetype_emoji_enabled", True) and session.turnover
+    show_freq_tier = session.settings.get("freq_tier_emoji_enabled", True) and session.turnover
     lines = ["<b>Действия в раздаче</b>"]
     current_street = None
     for a in hand.actions:
         if a.street != current_street:
             current_street = a.street
-            lines.append(f"\n<b>{STREET_RU.get(a.street, a.street)}</b>")
-        name = "Вы" if a.seat == session.hero_seat else hand.players[a.seat].name
+            header = STREET_RU.get(a.street, a.street)
+            board_slice = _STREET_BOARD_SLICE.get(a.street)
+            if board_slice:
+                start, end = board_slice
+                dealt = hand.board[start:end]
+                if dealt:
+                    header += f"  {_cards(dealt)}"
+            lines.append(f"\n<b>{header}</b>")
+        is_hero = a.seat == session.hero_seat
+        name = "Вы" if is_hero else hand.players[a.seat].name
+        emoji = ""
+        if not is_hero:
+            if show_archetype:
+                emoji += ARCHETYPE_EMOJI.get(session.turnover.archetype_for(a.seat), "")
+            if show_freq_tier:
+                emoji += FREQ_TIER_EMOJI.get(session.turnover.freq_tier_for(a.seat), "")
+            if emoji:
+                emoji += " "
         action_ru = ACTION_LOG_RU.get(a.action, a.action)
         amount_part = f" {a.amount / big_blind:.1f}" if a.amount else ""
-        lines.append(f"{name}: {action_ru}{amount_part}")
+        lines.append(f"{emoji}{name}: {action_ru}{amount_part}")
     return "\n".join(lines)
 
 
