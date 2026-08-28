@@ -84,6 +84,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # removed -- the button chip alone conveys position well enough.
         button = " 🔘" if seat == table.button_seat else ""
         state_bits = []
+        if p.folded:
+            state_bits.append("fold")
         if p.all_in:
             state_bits.append("all-in")
         if p.sitting_out:
@@ -98,16 +100,17 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             f"{marker}{button} {archetype_emoji}{p.name}{tag}: {p.stack / big_blind:.1f} "
             f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
         )
-        # Telegram message text has no real color entity (HTML parse mode
-        # only supports bold/italic/underline/strikethrough/spoiler/code/
-        # pre/blockquote, not arbitrary <font color>) -- per user request
-        # ("фолданули должны выглядеть перечёркнутыми и красными"),
-        # strikethrough is the real part, 🔴 stands in for "red" since
-        # actual red text isn't achievable here. Bold highlights whose
-        # turn it is now, on top of the existing 👉 marker.
-        if p.folded:
-            row = f"🔴 <s>{row}</s>"
-        elif is_current_actor:
+        # Strikethrough (<s>) and the 🔴 prefix a folded row used to get
+        # were both dropped per user feedback -- Telegram doesn't actually
+        # draw the strike line over emoji glyphs (button chip/archetype/
+        # card-back emoji all appear in this row), so the line only looked
+        # struck through in the plain-text parts -- a visibly broken,
+        # inconsistent line rather than a clean effect ("если смайлик
+        # перечеркнуть не получается, тогда слева тоже не надо
+        # перечёркивать"). The plain "[fold]" state tag is the fold
+        # indicator now. Bold still highlights whose turn it is (no
+        # complaint about that one) on top of the existing 👉 marker.
+        if is_current_actor:
             row = f"<b>{row}</b>"
         lines.append(row)
 
