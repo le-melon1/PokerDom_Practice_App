@@ -183,7 +183,15 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         hole_cards = _visible_hole_cards(session, seat, p)
         cards = _cards(hole_cards) if hole_cards else ""
-        archetype_emoji = "    "
+        # Wider blank placeholder specifically for a folded seat's now-
+        # empty archetype/freq_tier slots -- per user report ("когда
+        # перечёркиваешь должно быть больше пробелов"): the <s> strike
+        # line runs continuously through plain spaces too, visually
+        # compressing the gap a normal (unstruck) space would show, so
+        # folded rows need more actual space characters to end up looking
+        # like the same gap once struck through.
+        folded_blank = "      " if p.folded else "    "
+        archetype_emoji = folded_blank
         if seat == session.hero_seat:
             # Hero's own table position, in ONE slot (freq_tier stays
             # dropped below -- splitting it across two separate chunks,
@@ -208,7 +216,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # stacking a second empty gap right after the position text.
         freq_tier_emoji = None
         if seat != session.hero_seat:
-            freq_tier_emoji = "    "
+            freq_tier_emoji = folded_blank
             if not p.folded and session.settings.get("freq_tier_emoji_enabled", True) and session.turnover:
                 freq_tier = session.turnover.freq_tier_for(seat)
                 emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
