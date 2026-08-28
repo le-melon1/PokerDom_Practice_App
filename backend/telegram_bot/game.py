@@ -268,8 +268,30 @@ def step_one_bot(session: BotSession) -> float | None:
     return think_time
 
 
+def _snapshot_finished_hand(session: BotSession) -> dict:
+    """Freezes everything formatting.py's post-hand explain/dispute/
+    history views need, BEFORE _apply_table_turnover can reseat/rename any
+    bot and before the next new_hand() resets session.street_decisions --
+    see BotSession.last_hand_snapshot's own docstring for why this exists."""
+    hand = session.hand
+    turnover = session.turnover
+    non_hero_seats = [s for s in hand.players if s != session.hero_seat]
+    return {
+        "hand_number": session.hand_number,
+        "hero_seat": session.hero_seat,
+        "big_blind": hand.big_blind,
+        "board": list(hand.board),
+        "actions": [{"seat": a.seat, "street": a.street, "action": a.action, "amount": a.amount} for a in hand.actions],
+        "street_decisions": [dict(d) for d in session.street_decisions],
+        "seat_names": {s: hand.players[s].name for s in non_hero_seats},
+        "seat_archetypes": {s: turnover.archetype_for(s) for s in non_hero_seats},
+        "seat_freq_tiers": {s: turnover.freq_tier_for(s) for s in non_hero_seats},
+    }
+
+
 def _on_hand_finished(session: BotSession) -> None:
     hand = session.hand
+    session.last_hand_snapshot = _snapshot_finished_hand(session)
     session.dossier.record_hand(hand)
     if hand.result is not None and hand.result.rake:
         session.table.record_rake(hand.result.rake)

@@ -302,7 +302,7 @@ def render_hand_review(session: BotSession) -> str:
     return "\n".join(lines)
 
 
-def render_explain_text(session: BotSession) -> str:
+def render_explain_text(snapshot: dict | None) -> str:
     """"❓ Объяснить советы" -- unlike render_hand_review (which only shows
     the strategy's side when hero DIDN'T match it), this walks every street
     and always states both sides plainly, for whoever wants the full
@@ -310,11 +310,18 @@ def render_explain_text(session: BotSession) -> str:
     render_hand_review: no specific abc_bot.py flag is named, since nothing
     in this codebase yet traces a single decision back to which of the
     ~30 interacting rules actually drove it -- points at /drills' own
-    per-rule ℹ️ pages instead, which DO have real confidence/stats."""
-    decisions = session.street_decisions
+    per-rule ℹ️ pages instead, which DO have real confidence/stats.
+
+    Takes BotSession.last_hand_snapshot, not the live session -- per user
+    request, the next hand now starts immediately once one finishes, so by
+    the time this button gets tapped session.hand/street_decisions already
+    belong to the NEW hand."""
+    if not snapshot:
+        return "Пока нет решений в этой раздаче."
+    decisions = snapshot["street_decisions"]
     if not decisions:
         return "Пока нет решений в этой раздаче."
-    big_blind = session.hand.big_blind if session.hand else 1.0
+    big_blind = snapshot["big_blind"]
     lines = ["<b>Объяснение решений стратегии по улицам</b>"]
     for d in decisions:
         street_ru = STREET_RU.get(d["street"], d["street"])
@@ -353,49 +360,59 @@ ACTION_LOG_RU = {
 _STREET_BOARD_SLICE = {"flop": (0, 3), "turn": (3, 4), "river": (4, 5)}
 
 
-def render_action_history_text(session: BotSession) -> str:
+def render_action_history_text(snapshot: dict | None, settings: dict) -> str:
     """"📋 Действия в раздаче" -- the full action-by-action log for every
-    player this hand (not just hero's own decisions), straight from
-    Hand.actions/ActionRecord -- the same log _seats_who_raised_this_street
-    already reads. Distinct from MENU_HISTORY ("📜 История раздач", the
-    across-hand win/loss summary) -- this one is within a single hand.
+    player this hand (not just hero's own decisions). Distinct from
+    MENU_HISTORY ("📜 История раздач", the across-hand win/loss summary)
+    -- this one is within a single hand.
 
     Per user follow-up request ("нужно чтобы там тоже были эмодзи и чтобы
-    были видны карты которые выкладывают на стол"): each bot's line now
+    были видны карты которые выкладывают на стол"): each bot's line
     carries the same archetype/freq_tier emoji as the table view (subject
     to the same settings toggles, hero still excluded), and each street
-    header shows the board card(s) that just got dealt on it."""
-    hand = session.hand
-    if hand is None or not hand.actions:
+    header shows the board card(s) that just got dealt on it.
+
+    Takes BotSession.last_hand_snapshot (frozen at the moment the hand
+    ended -- names/archetypes/freq_tiers included, since a turned-over
+    seat or a settings toggle change after the fact shouldn't rewrite
+    what this specific past hand's history says) rather than the live
+    session -- per user request, the next hand now starts immediately, so
+    by the time this button gets tapped session.hand/turnover already
+    belong to the NEW hand."""
+    if not snapshot or not snapshot["actions"]:
         return "Нет истории действий для этой раздачи."
-    big_blind = hand.big_blind
-    show_archetype = session.settings.get("archetype_emoji_enabled", True) and session.turnover
-    show_freq_tier = session.settings.get("freq_tier_emoji_enabled", True) and session.turnover
+    big_blind = snapshot["big_blind"]
+    hero_seat = snapshot["hero_seat"]
+    show_archetype = settings.get("archetype_emoji_enabled", True)
+    show_freq_tier = settings.get("freq_tier_emoji_enabled", True)
     lines = ["<b>Действия в раздаче</b>"]
     current_street = None
-    for a in hand.actions:
-        if a.street != current_street:
-            current_street = a.street
-            header = STREET_RU.get(a.street, a.street)
-            board_slice = _STREET_BOARD_SLICE.get(a.street)
+    for a in snapshot["actions"]:
+        street = a["street"]
+        if street != current_street:
+            current_street = street
+            header = STREET_RU.get(street, street)
+            board_slice = _STREET_BOARD_SLICE.get(street)
             if board_slice:
                 start, end = board_slice
-                dealt = hand.board[start:end]
+                dealt = snapshot["board"][start:end]
                 if dealt:
                     header += f"  {_cards(dealt)}"
             lines.append(f"\n<b>{header}</b>")
-        is_hero = a.seat == session.hero_seat
-        name = "Вы" if is_hero else hand.players[a.seat].name
+        seat = a["seat"]
+        is_hero = seat == hero_seat
+        name = "Вы" if is_hero else snapshot["seat_names"].get(seat, f"seat{seat}")
         emoji = ""
         if not is_hero:
             if show_archetype:
-                emoji += ARCHETYPE_EMOJI.get(session.turnover.archetype_for(a.seat), "")
+                emoji += ARCHETYPE_EMOJI.get(snapshot["seat_archetypes"].get(seat, ""), "")
             if show_freq_tier:
-                emoji += FREQ_TIER_EMOJI.get(session.turnover.freq_tier_for(a.seat), "")
+                emoji += FREQ_TIER_EMOJI.get(snapshot["seat_freq_tiers"].get(seat, ""), "")
             if emoji:
                 emoji += " "
-        action_ru = ACTION_LOG_RU.get(a.action, a.action)
-        amount_part = f" {a.amount / big_blind:.1f}" if a.amount else ""
+        action_ru = ACTION_LOG_RU.get(a["action"], a["action"])
+        amount = a["amount"]
+        amount_part = f" {amount / big_blind:.1f}" if amount else ""
         lines.append(f"{emoji}{name}: {action_ru}{amount_part}")
     return "\n".join(lines)
 
@@ -414,13 +431,14 @@ def build_hand_finished_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def build_dispute_pick_keyboard(session: BotSession) -> InlineKeyboardMarkup:
+def build_dispute_pick_keyboard(snapshot: dict) -> InlineKeyboardMarkup:
     """One button per street decision this hand, so the user picks
     EXACTLY which recommendation they disagree with (per user: "выбирает
-    совет с которым не согласен")."""
-    big_blind = session.hand.big_blind if session.hand else 1.0
+    совет с которым не согласен"). Takes BotSession.last_hand_snapshot --
+    see render_explain_text's docstring for why."""
+    big_blind = snapshot["big_blind"]
     rows = []
-    for i, d in enumerate(session.street_decisions):
+    for i, d in enumerate(snapshot["street_decisions"]):
         street_ru = STREET_RU.get(d["street"], d["street"])
         abc_part = _format_action(d["abc_action"], d["abc_amount"], big_blind)
         rows.append([InlineKeyboardButton(f"{street_ru}: {abc_part}", callback_data=f"dispute:pick:{i}")])

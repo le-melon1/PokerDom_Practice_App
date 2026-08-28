@@ -84,35 +84,20 @@ async def _run_bot_pacing_loop(context: ContextTypes.DEFAULT_TYPE, session: BotS
             await asyncio.sleep(min(think_time, 2.5))
 
 
-AUTO_NEW_HAND_DELAY_SECONDS = 10.0
-
-
-async def _auto_new_hand_after_delay(context: ContextTypes.DEFAULT_TYPE, session: BotSession, hand_number: int) -> None:
-    await asyncio.sleep(AUTO_NEW_HAND_DELAY_SECONDS)
-    # Skip if the user already started a new hand themselves (manual "🆕
-    # Новая раздача", /newhand, a table reset, etc.) or the hand somehow
-    # isn't finished anymore by the time this wakes up.
-    if session.hand_number != hand_number:
-        return
+async def _auto_new_hand_if_finished(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
+    """Per user request ("новая раздача начинается сама по себе после
+    завершения раздачи ... моментально"): a finished hand rolls straight
+    into the next one, no delay and no "🆕 Новая раздача" tap required.
+    Safe to do immediately (rather than waiting) because the old, now
+    separate finished-hand message's explain/dispute/history buttons read
+    session.last_hand_snapshot -- a frozen copy taken the instant the hand
+    ended (see game.py's _on_hand_finished) -- not live session state, so
+    they keep working for that specific past hand even after this call
+    has already moved session.hand/turnover on to the new one."""
     if session.hand is None or not session.hand.finished:
         return
     session.table_message_id = None
     await _deal_and_show(context, session)
-
-
-def _schedule_auto_new_hand(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
-    """Per user request ("пусть новая раздача начинается сама по себе
-    после завершения раздачи"): a finished hand rolls into the next one on
-    its own after a short delay, instead of always requiring "🆕 Новая
-    раздача". Runs as a background task rather than an inline `await` so
-    this handler returns immediately and the post-hand buttons (explain/
-    dispute/history) stay responsive during the wait -- this bot's
-    Application processes updates sequentially by default (no job-queue
-    extra installed here), so sleeping inline would have blocked every
-    other button press in this chat until the delay finished."""
-    if session.hand is None or not session.hand.finished:
-        return
-    asyncio.create_task(_auto_new_hand_after_delay(context, session, session.hand_number))
 
 
 async def _deal_and_show(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
@@ -121,7 +106,13 @@ async def _deal_and_show(context: ContextTypes.DEFAULT_TYPE, session: BotSession
     await _render_table(context, session)
     await _run_bot_pacing_loop(context, session)
     store.save(session)
-    _schedule_auto_new_hand(context, session)
+    # No auto-continue call here (unlike _apply_action_and_continue below)
+    # -- this function calls itself via _auto_new_hand_if_finished, so
+    # looping it back in here would recurse. The one edge case this misses
+    # (a freshly dealt hand finishing via bots alone, with no hero action
+    # at all -- hero already busted/sitting out) is rare enough to leave
+    # for the manual "🆕 Новая раздача" button instead of adding recursion
+    # risk for it.
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -399,21 +390,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data == "hand:explain":
-        await context.bot.send_message(chat_id, formatting.render_explain_text(session), parse_mode="HTML")
+        await context.bot.send_message(chat_id, formatting.render_explain_text(session.last_hand_snapshot), parse_mode="HTML")
         return
 
     if data == "hand:history":
-        await context.bot.send_message(chat_id, formatting.render_action_history_text(session), parse_mode="HTML")
+        await context.bot.send_message(
+            chat_id, formatting.render_action_history_text(session.last_hand_snapshot, session.settings), parse_mode="HTML"
+        )
         return
 
     if data == "hand:dispute":
-        if not session.street_decisions:
+        snapshot = session.last_hand_snapshot
+        if not snapshot or not snapshot["street_decisions"]:
             await context.bot.send_message(chat_id, "В этой раздаче не было ваших решений.")
             return
         await context.bot.send_message(
             chat_id,
             "С каким советом вы не согласны?",
-            reply_markup=formatting.build_dispute_pick_keyboard(session),
+            reply_markup=formatting.build_dispute_pick_keyboard(snapshot),
         )
         return
 
@@ -425,10 +419,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("dispute:pick:"):
         idx = int(data.split(":", 2)[2])
-        if idx < 0 or idx >= len(session.street_decisions):
+        snapshot = session.last_hand_snapshot
+        if snapshot is None or idx < 0 or idx >= len(snapshot["street_decisions"]):
             return
-        session.pending_dispute = dict(session.street_decisions[idx])
-        session.pending_dispute["hand_number"] = session.hand_number
+        session.pending_dispute = dict(snapshot["street_decisions"][idx])
+        session.pending_dispute["hand_number"] = snapshot["hand_number"]
         store.save(session)
         await query.edit_message_text(
             "Можете написать комментарий (или нажмите «Без комментария»).",
@@ -508,7 +503,7 @@ async def _apply_action_and_continue(
         await asyncio.sleep(1.0)
     await _run_bot_pacing_loop(context, session)
     store.save(session)
-    _schedule_auto_new_hand(context, session)
+    await _auto_new_hand_if_finished(context, session)
 
 
 # Registered via set_my_commands (post_init below) so Telegram shows this

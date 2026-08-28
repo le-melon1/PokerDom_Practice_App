@@ -23,3 +23,8 @@ data/player_profile_training_data.parquet
 # keep versioned -- just a screenshot of whatever table state existed at
 # check time.
 screenshots/
+
+# Runtime data, not source -- session pickles are already covered by
+# *.pkl above; disputes.jsonl (backend/telegram_bot/disputes.py) can
+# carry private user-typed comments and shouldn't be committed either.
+backend/telegram_bot/data/disputes.jsonl

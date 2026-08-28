@@ -73,6 +73,18 @@ class BotSession:
     # buttons. Cleared once the dispute is recorded (or explicitly
     # cancelled).
     pending_dispute: dict | None = None
+    # 2026-08-28: a snapshot of the LAST finished hand's data (hand_number,
+    # big_blind, board, actions, street_decisions, and each seat's name/
+    # archetype/freq_tier at the time it finished) -- taken once, right
+    # when a hand ends (see game.py's _on_hand_finished). Per user request
+    # ("новая раздача начинается сама по себе... кнопки которые были у
+    # прошлой раздачи должны работать именно для прошлой раздачи"): the
+    # next hand now starts immediately, so by the time someone taps
+    # "❓ Объяснить советы" / "⚠️ Оспорить совет" / "📋 История действий" on
+    # the old (now separate, un-edited) message, session.hand/turnover
+    # already point at the NEW hand -- those handlers read this frozen
+    # snapshot instead of live session state.
+    last_hand_snapshot: dict | None = None
 
 
 class SessionStore:
