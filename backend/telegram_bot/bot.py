@@ -61,12 +61,19 @@ async def _render_table(context: ContextTypes.DEFAULT_TYPE, session: BotSession,
 async def _run_bot_pacing_loop(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
     """After hero acts, advance bot decisions one at a time with realistic
     pacing, editing the table message after each -- server-driven equivalent
-    of the web app's driveBotsIfNeeded polling loop."""
+    of the web app's driveBotsIfNeeded polling loop.
+
+    Per user request: once hero has folded this hand, there's no one left
+    who needs reading time for what the bots do -- hero isn't making any
+    more decisions this hand, so the rest plays out with no artificial
+    pauses at all (still one edited message per action, just back to back)."""
+    hand = session.hand
+    hero_folded = hand is not None and hand.players[session.hero_seat].folded
     while session.hand is not None and not session.hand.finished and session.hand.current_actor() != session.hero_seat:
         think_time = await _run(game.step_one_bot, session)
         store.save(session)
         await _render_table(context, session)
-        if think_time:
+        if think_time and not hero_folded:
             await asyncio.sleep(min(think_time, 2.5))
 
 
@@ -367,6 +374,15 @@ async def _apply_action_and_continue(
         return
     store.save(session)
     await _render_table(context, session, trainer_feedback=feedback)
+    # A gap between showing hero's own action and the first bot's reaction
+    # -- previously missing, so if the first bot happened to act fast the
+    # two updates could land close enough together to blur into one. Same
+    # "hero already folded, no one needs reading time" exception as the
+    # bot pacing loop below -- skip it there too.
+    hand = session.hand
+    hero_folded = hand is not None and hand.players[session.hero_seat].folded
+    if not hero_folded:
+        await asyncio.sleep(1.0)
     await _run_bot_pacing_loop(context, session)
     store.save(session)
 
