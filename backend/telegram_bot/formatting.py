@@ -56,50 +56,64 @@ FREQ_TIER_EMOJI = {"rare": "❄️", "normal": "☁️", "often": "🔥"}
 # real font files (googlefonts/roboto-2, googlefonts/noto-emoji) and
 # measured actual glyph advance widths with fontTools:
 #   - Roboto space (U+0020): 0.2476 em.
-#   - NotoColorEmoji: every emoji glyph measured (🔘👉🎯🔒🐟📞🤪⚡❄☁🔥⬆) has
-#     the SAME advance width, 1.2451 em -- confirmed uniform, not a guess.
-#   - 1.2451 / 0.2476 = 5.03 -> 5 spaces matches one emoji's width to
-#     within 0.6%, not the 4 spaces used through most of this file's
-#     earlier iteration (4 spaces = 0.990 em, undershoots by ~26%).
-#   - Roboto's digits (0-9) are TABULAR (all exactly 0.5615 em) -- so
-#     fixed-CHARACTER-count padding for stack/bet numbers (elsewhere in
-#     this file) is mathematically correct as-is, already confirmed by
-#     this same measurement pass.
-#   - Roboto's LETTERS are NOT tabular (e.g. "Tom" measures ~0.5 em wider
-#     than "Carl" even at the same padded character count) -- a real,
-#     previously-unmeasured cause of the repeated "у боба и карла...
-#     съезжает"-style reports. BOT_NAME_TRAILING_SPACES and
-#     POSITION_TRAILING_SPACES below give each specific name/position
-#     string the exact integer space count (not a blanket ":<N") that
-#     brings its real measured width closest to a shared target -- the
-#     widest name/the width of two combined emoji slots, respectively.
+#   - NotoColorEmoji: every emoji glyph measured (fixed emoji set used in
+#     this file) has the SAME advance width, 1.2451 em -- confirmed
+#     uniform, not a guess. 1.2451 / 0.2476 = 5.03 spaces (EMOJI_BLANK).
+#   - Roboto's digits (0-9) are TABULAR (all exactly 0.5615 em), but a
+#     digit is ~2.27x a plain space's width -- a non-integer ratio.
+#   - Roboto's LETTERS are NOT tabular (e.g. "Tom" measures ~0.5em wider
+#     than "Carl" even at the same character count) -- a real, previously
+#     unmeasured cause of the repeated "у боба и карла... съезжает"-style
+#     reports.
+#   - A first pass padded names/positions/stacks with whole spaces only
+#     (rounded to the nearest integer count), which still left up to
+#     ~0.12em of residual per-item error since 1 space rarely divides a
+#     target deficit evenly ("карлу как будто не помешал бы ещё один
+#     пробел" -- Bob ended up +0.123em over target, Carl -0.103em under,
+#     a real, visible 0.226em gap between just those two). Mixing in
+#     U+200A HAIR SPACE (0.1021em, a much finer Unicode space that exists
+#     in Roboto, measured directly) gives a second, smaller denomination
+#     to round with -- every table below now has max residual error under
+#     0.022em, a much tighter fit than whole-space rounding alone.
 # Recompute via scripts/measure_telegram_font_metrics.py if the name pool,
 # position labels, or font choice ever change.
-BOT_NAME_TRAILING_SPACES = {
-    "Bob": 3,
-    "Den": 3,
-    "Carl": 2,
-    "Max": 2,
-    "Leo": 3,
-    "Sam": 1,
-    "Tom": 1,
-    "Jack": 1,
-    "Alex": 2,
-    "Ivan": 2,
-    "You": 3,
+_HAIR = "\u200a"
+
+BOT_NAME_PAD = {
+    "Bob": _HAIR * 6,
+    "Den": " " * 1 + _HAIR * 4,
+    "Carl": " " * 2 + _HAIR * 1,
+    "Max": " " * 1 + _HAIR * 2,
+    "Leo": " " * 3,
+    "Sam": " " * 1 + _HAIR * 1,
+    "Tom": " " * 1 + _HAIR * 1,
+    "Jack": " " * 1,
+    "Alex": " " * 1 + _HAIR * 2,
+    "Ivan": _HAIR * 5,
+    "You": " " * 1 + _HAIR * 4,
 }
 
-POSITION_TRAILING_SPACES = {
-    "UTG": 3,
-    "MP": 5,
-    "CO": 6,
-    "BTN": 3,
-    "SB": 6,
-    "BB": 6,
+POSITION_PAD = {
+    "UTG": _HAIR * 8,
+    "MP": " " * 5,
+    "CO": " " * 4 + _HAIR * 4,
+    "BTN": " " * 2 + _HAIR * 3,
+    "SB": " " * 4 + _HAIR * 5,
+    "BB": " " * 6,
 }
 
-# One emoji's width, in spaces (see the measurement block above).
+# One emoji's width, in spaces.
 EMOJI_BLANK = " " * 5
+
+# Padding to bring a stack number up to a shared reference width (4
+# integer digits, "9999.9"), keyed by how many integer digits THIS stack
+# actually has.
+STACK_PAD = {
+    1: " " * 6 + _HAIR * 2,
+    2: " " * 2 + _HAIR * 6,
+    3: " " * 1 + _HAIR * 3,
+    4: "",
+}
 
 
 def _card(card: str) -> str:
@@ -232,12 +246,10 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         archetype_emoji = EMOJI_BLANK
         if seat == session.hero_seat:
             # Hero's own table position, in ONE slot (freq_tier stays
-            # dropped below). Padded via POSITION_TRAILING_SPACES -- the
-            # exact, measured space count that makes THIS SPECIFIC label's
-            # real width match bots' two combined emoji slots, not a
-            # blanket guess.
+            # dropped below). Padded via POSITION_PAD -- see the measured
+            # font-metrics block above.
             position = _seat_position(hand, seat)
-            archetype_emoji = position + " " * POSITION_TRAILING_SPACES.get(position, 5)
+            archetype_emoji = position + POSITION_PAD.get(position, EMOJI_BLANK)
         # No archetype emoji for a folded bot -- per user request ("чтобы
         # не играющие не сбивали при игре"): a folded seat is out of the
         # hand, so its type icon is just visual noise while you're reading
@@ -259,21 +271,19 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
                 emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
                 if emoji:
                     freq_tier_emoji = emoji
-        # Fixed-width padding on the name column, via BOT_NAME_TRAILING_
-        # SPACES -- the exact, measured space count for THIS SPECIFIC name
-        # (Roboto letters aren't tabular the way digits are, so a blanket
-        # ":<6" character count left different names at different real
-        # widths -- see the measurement block above).
-        name_col = display_name + " " * BOT_NAME_TRAILING_SPACES.get(display_name, 2)
-        # Tight against both parens now -- no padding inside "(...)" at
-        # all. Per user request ("пробелы не перед ), а после :"), the
-        # compensating padding for a shorter stack (Roboto digits are
-        # tabular, so a 4-char stack is genuinely narrower than a 6-char
-        # one) moved to right after the colon instead, computed from how
-        # many digits short of the 6-char reference this stack's text is.
+        # Fixed-width padding on the name column, via BOT_NAME_PAD -- the
+        # exact, measured padding for THIS SPECIFIC name (see the measured
+        # font-metrics block above).
+        name_col = display_name + BOT_NAME_PAD.get(display_name, "  ")
+        # Tight against both parens -- no padding inside "(...)" at all.
+        # Per user request ("пробелы не перед ), а после :"), the
+        # compensating padding for a shorter stack sits right after the
+        # colon instead, via STACK_PAD keyed by integer-digit count (see
+        # the measured font-metrics block above).
         stack_str = f"{p.stack / big_blind:.1f}"
         stack_col = stack_str
-        post_colon_padding = " " * max(0, 6 - len(stack_str))
+        integer_digits = len(stack_str.split(".")[0])
+        post_colon_padding = STACK_PAD.get(integer_digits, "")
         # One char narrower than before -- per user request ("после
         # скобок на пробел меньше, и после ставки... перед картами"),
         # less leading padding here means less gap both right after the
