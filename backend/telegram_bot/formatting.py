@@ -110,19 +110,21 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
         # Three left-side "slots" (turn marker, dealer chip, archetype
-        # emoji), each ALWAYS a fixed-width single-character cell -- either
-        # the real emoji or a plain-space placeholder of the same reserved
-        # width -- so a row's name/stack/bet never shifts right depending
-        # on which of these happen to be present this hand. Per user
-        # report with a screenshot: the dealer chip's old 2-space
-        # placeholder wasn't wide enough to match the emoji's real
-        # rendered width, so Bot3 (who had the button) visibly started
-        # further right than Bot2/Bot4 ("нужно достаточное место слева из
-        # пробелов чтобы там помещалась кнопка диллера и рука"). Widened
-        # to 3 spaces per slot, and the archetype slot is now reserved for
-        # EVERY row including hero's (previously 0-width there, which was
-        # its own source of misalignment against bot rows that had it).
-        marker = "👉" if is_current_actor else "   "
+        # emoji), each ALWAYS a fixed-width placeholder when the real emoji
+        # isn't present, so a row's name/stack/bet never shifts right
+        # depending on which of these happen to be present this hand. Per
+        # user reports (with screenshots) this kept drifting by roughly
+        # half a space no matter how many plain spaces were used -- an
+        # emoji's real rendered width in a proportional font isn't an
+        # integer multiple of a space's width, so no whole number of
+        # spaces closes the gap exactly. Per explicit user instruction,
+        # swapped one space in each placeholder for "|" -- narrower than a
+        # space in most fonts, tried here specifically to soak up that
+        # leftover fractional gap rather than overshoot it with another
+        # full space. This is a per-device/font guess, not something
+        # verifiable without seeing the actual render -- expect another
+        # round of screenshot feedback to confirm or adjust.
+        marker = "👉" if is_current_actor else "  |"
         # Just "Вы", not the engine's internal "Hero" name -- per user
         # request ("слово hero из игры можно убрать оставить только вы").
         display_name = "Вы" if seat == session.hero_seat else p.name
@@ -132,7 +134,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # later request ("убери надписи позиций... и так понятно если есть
         # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
         # removed -- the button chip alone conveys position well enough.
-        button = "🔘" if seat == table.button_seat else "   "
+        button = "🔘" if seat == table.button_seat else "  |"
         state_bits = []
         if p.folded:
             state_bits.append("fold")
@@ -142,7 +144,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             state_bits.append("вне игры")
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         cards = _cards(_visible_hole_cards(session, seat, p))
-        archetype_emoji = "   "
+        archetype_emoji = "  |"
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             emoji = ARCHETYPE_EMOJI.get(archetype, "")
