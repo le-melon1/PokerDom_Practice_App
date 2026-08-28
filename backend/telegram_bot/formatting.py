@@ -160,7 +160,8 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if p.sitting_out:
             state_bits.append("вне игры")
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
-        cards = _cards(_visible_hole_cards(session, seat, p))
+        hole_cards = _visible_hole_cards(session, seat, p)
+        cards = _cards(hole_cards) if hole_cards else ""
         archetype_emoji = "    "
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
@@ -178,7 +179,13 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         stack_col = f"{p.stack / big_blind:>6.1f}"
         bet_col = f"{p.street_contributed / big_blind:>5.1f}"
         raise_marker = " ⬆️" if seat in raised_seats else ""
-        rest = f"{name_col}: {stack_col} (ставка {bet_col}){raise_marker} {cards}{state}"
+        # No trailing "-" placeholder when there's nothing to show (per
+        # user: "у ботов после ставки бессмысленно там же нет ничего") --
+        # only hero's own cards or a real showdown reveal render anything
+        # in the cards slot now (see _visible_hole_cards), so an empty
+        # cards string just means genuinely nothing to display.
+        cards_part = f" {cards}" if cards else ""
+        rest = f"{name_col}: {stack_col} (ставка {bet_col}){raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
