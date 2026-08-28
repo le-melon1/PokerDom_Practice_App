@@ -29,12 +29,20 @@ ARCHETYPE_EMOJI = {
 }
 
 # Per-seat postflop_freq_tier emoji -- per user request ("у нас не показана
-# в эмодзи степень игры на постфлопе, пусть будет кружочка трёх разных
-# цветов"). Independent axis from archetype (see abc_bot.py's 2026-08-19/20
-# restructure -- preflop archetype and postflop aggression frequency were
-# split apart on purpose), so its own emoji slot, toggleable via settings
-# ("freq_tier_emoji_enabled") the same way archetype_emoji_enabled is.
-FREQ_TIER_EMOJI = {"rare": "⬇️", "normal": "🔸", "often": "🔺"}
+# в эмодзи степень игры на постфлопе"). Independent axis from archetype
+# (see abc_bot.py's 2026-08-19/20 restructure -- preflop archetype and
+# postflop aggression frequency were split apart on purpose), so its own
+# emoji slot, toggleable via settings ("freq_tier_emoji_enabled") the same
+# way archetype_emoji_enabled is. Settled on a temperature metaphor after
+# several rounds of live feedback on colored-circle/diamond/triangle
+# options -- no standard emoji set actually offers 3 distinct colors in
+# one small consistent shape (diamonds only come in orange/blue, triangles
+# only in red, colored-circle/square sets have every color but are the
+# "too big" look the user rejected first). Snowflake/cloud/fire read as
+# cold/neutral/hot without forcing an artificial shape match, and the
+# metaphor fits what freq_tier actually measures (how often this
+# opponent's postflop play runs hot).
+FREQ_TIER_EMOJI = {"rare": "❄️", "normal": "☁️", "often": "🔥"}
 
 
 def _card(card: str) -> str:
