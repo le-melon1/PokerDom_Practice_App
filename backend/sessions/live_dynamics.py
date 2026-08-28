@@ -17,6 +17,24 @@ RAW_SESSIONS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "se
 ANALYSIS_ROOT = Path(__file__).resolve().parents[3] / "PokerDom_Microlimits_Analysis"
 ARCHETYPE_POOL = ["Nit", "TAG", "LAG", "Loose-passive", "Station", "Maniac"]
 
+# Short display names for seated bots -- per user request ("дадим всем
+# ботам имена из 3-4 букв типа Bob, Den, Carl"). Assigned per-seat in
+# TableTurnover._seat_new_occupant, avoiding a name already in use by
+# another currently-seated bot at the same table (not a strict never-
+# repeat pool -- once a seat's name-holder leaves via turnover, that name
+# becomes available again elsewhere).
+BOT_NAME_POOL = ["Bob", "Den", "Carl", "Max", "Leo", "Sam", "Tom", "Jack", "Alex", "Ivan"]
+
+# "Ден обязательно должен играть тихо и стандартно" -- whichever seat
+# draws the name "Den" gets its archetype forced to TAG (tight-aggressive,
+# this whole project's own "textbook standard" reference style -- see
+# abc_bot.py's docstring) instead of the normal weighted random draw. Only
+# applied in the synthetic population-archetype branch of _seat_new_
+# occupant, not the real-player-profile branch -- a real player's
+# archetype is a genuine measured fact about that specific person, and a
+# cosmetic name shouldn't override it.
+NAME_FORCED_ARCHETYPE = {"Den": "TAG"}
+
 # Real population mix, not a guess: counts of uniquely labeled players (>=100
 # hands, same MIN_HANDS_FOR_LABEL gate as the analysis project) via
 # pipeline.archetypes.label_archetypes, renormalized over the 6 known
@@ -216,7 +234,9 @@ class SeatOccupant:
         bluff_tier_a: str = "unknown",
         bluff_tier_c: str = "unknown",
         profile_id: str | None = None,
+        name: str = "",
     ):
+        self.name = name
         self.archetype = archetype
         self.planned_length = planned_length
         self.freq_tier = freq_tier
@@ -288,7 +308,13 @@ class TableTurnover:
         for seat in bot_seats:
             self._seat_new_occupant(seat)
 
+    def _pick_name(self, seat: int) -> str:
+        taken = {occ.name for s, occ in self.occupants.items() if s != seat and occ.name}
+        available = [n for n in BOT_NAME_POOL if n not in taken]
+        return self.rng.choice(available or BOT_NAME_POOL)
+
     def _seat_new_occupant(self, seat: int) -> SeatOccupant:
+        name = self._pick_name(seat)
         if self.player_profile_ids:
             from backend.bots.player_profile_bots import load_profile_pool
 
@@ -309,22 +335,34 @@ class TableTurnover:
             bluff_tier_a = _load_bluff_tier_lookup("a").get(profile["player"], "unknown")
             bluff_tier_c = _load_bluff_tier_lookup("c").get(profile["player"], "unknown")
             length = sample_session_length(archetype, self.rng)
-            occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c, profile_id=profile_id)
+            occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c, profile_id=profile_id, name=name)
             self.occupants[seat] = occ
             return occ
 
         pool = self.allowed_archetypes
-        archetype = self.rng.choices(
-            pool,
-            weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
-        )[0]
+        # "Ден обязательно должен играть тихо и стандартно" -- see
+        # NAME_FORCED_ARCHETYPE's own comment above. Only applied when the
+        # forced archetype is actually in this session's allowed pool --
+        # a drill restricted to, say, Nit-only opponents must still get
+        # what it asked for even if the seat happens to draw "Den".
+        forced = NAME_FORCED_ARCHETYPE.get(name)
+        if forced and forced in pool:
+            archetype = forced
+        else:
+            archetype = self.rng.choices(
+                pool,
+                weights=[ARCHETYPE_POPULATION_WEIGHTS[a] for a in pool],
+            )[0]
         freq_tier = self.forced_freq_tier.get(seat, sample_freq_tier(archetype, self.rng))
         bluff_tier_a = sample_bluff_tier(BLUFF_TIER_A_WEIGHTS, self.rng)
         bluff_tier_c = sample_bluff_tier(BLUFF_TIER_C_WEIGHTS, self.rng)
         length = sample_session_length(archetype, self.rng)
-        occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c)
+        occ = SeatOccupant(archetype, length, freq_tier, bluff_tier_a, bluff_tier_c, name=name)
         self.occupants[seat] = occ
         return occ
+
+    def name_for(self, seat: int) -> str:
+        return self.occupants[seat].name
 
     def archetype_for(self, seat: int) -> str:
         return self.occupants[seat].archetype

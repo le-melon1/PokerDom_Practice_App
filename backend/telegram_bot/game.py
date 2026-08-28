@@ -57,7 +57,8 @@ def new_table(session: BotSession, max_seats: int = 6, starting_stack: float = 2
     )
 
     for seat in range(1, max_seats + 1):
-        table.add_player(seat=seat, name=("Hero" if seat == session.hero_seat else f"Bot{seat}"), stack=starting_stack)
+        name = "Hero" if seat == session.hero_seat else turnover.name_for(seat)
+        table.add_player(seat=seat, name=name, stack=starting_stack)
 
     session.table = table
     session.dossier = dossier
@@ -289,6 +290,9 @@ def _apply_table_turnover(session: BotSession) -> None:
             continue
         table.players[seat].stack = session.starting_stack
         table.players[seat].sitting_out = False
+        # A turned-over seat is a new "person" sitting down -- give them
+        # their own new name too, not the previous occupant's.
+        table.players[seat].name = turnover.name_for(seat)
         session.dossier.reset_seat(seat)
 
 
