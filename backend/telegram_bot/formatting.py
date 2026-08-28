@@ -34,7 +34,7 @@ ARCHETYPE_EMOJI = {
 # restructure -- preflop archetype and postflop aggression frequency were
 # split apart on purpose), so its own emoji slot, toggleable via settings
 # ("freq_tier_emoji_enabled") the same way archetype_emoji_enabled is.
-FREQ_TIER_EMOJI = {"rare": "🔵", "normal": "🟡", "often": "🔴"}
+FREQ_TIER_EMOJI = {"rare": "⬇️", "normal": "🔸", "often": "🔺"}
 
 
 def _card(card: str) -> str:
