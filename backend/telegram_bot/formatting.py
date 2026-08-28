@@ -185,11 +185,11 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         cards = _cards(hole_cards) if hole_cards else ""
         archetype_emoji = "    "
         if seat == session.hero_seat:
-            # Hero has no archetype emoji (there's nothing to label about
-            # your own play style) -- per user request, that otherwise-
-            # blank slot now shows hero's own table position (UTG/MP/CO/
-            # BTN/SB/BB) as letters instead.
-            archetype_emoji = f"{_seat_position(hand, seat):<4}"
+            # Hero's own table position, unpadded (no ":<4" -- that extra
+            # padding plus the still-blank freq_tier slot right after it
+            # was literally too many spaces before "Вы" -- per user: "у
+            # нас слишком много пробелов после БТН поэтому всё съезжает").
+            archetype_emoji = _seat_position(hand, seat)
         # No archetype emoji for a folded bot -- per user request ("чтобы
         # не играющие не сбивали при игре"): a folded seat is out of the
         # hand, so its type icon is just visual noise while you're reading
@@ -200,12 +200,17 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
             emoji = ARCHETYPE_EMOJI.get(archetype, "")
             if emoji:
                 archetype_emoji = emoji
-        freq_tier_emoji = "    "
-        if not p.folded and seat != session.hero_seat and session.settings.get("freq_tier_emoji_enabled", True) and session.turnover:
-            freq_tier = session.turnover.freq_tier_for(seat)
-            emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
-            if emoji:
-                freq_tier_emoji = emoji
+        # Hero has no freq_tier of their own to show -- drop this slot
+        # for hero entirely (not even a blank placeholder) instead of
+        # stacking a second empty gap right after the position text.
+        freq_tier_emoji = None
+        if seat != session.hero_seat:
+            freq_tier_emoji = "    "
+            if not p.folded and session.settings.get("freq_tier_emoji_enabled", True) and session.turnover:
+                freq_tier = session.turnover.freq_tier_for(seat)
+                emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
+                if emoji:
+                    freq_tier_emoji = emoji
         # Fixed-width padding on the name/stack/bet columns -- per user
         # request ("поставь правильное количество пробелов для красивого
         # форматирования"). Telegram's plain message text isn't
@@ -237,7 +242,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # эмодзи"). Bold highlights whose turn it is now (on top of the
         # existing 👉 marker); folded and current-actor are mutually
         # exclusive (a folded seat is never on turn).
-        slots = [marker, button, archetype_emoji, freq_tier_emoji]
+        slots = [s for s in (marker, button, archetype_emoji, freq_tier_emoji) if s is not None]
         if p.folded:
             row = _struck_row(slots, rest)
         else:
