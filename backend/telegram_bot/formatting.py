@@ -185,11 +185,14 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         cards = _cards(hole_cards) if hole_cards else ""
         archetype_emoji = "    "
         if seat == session.hero_seat:
-            # Hero's own table position, unpadded (no ":<4" -- that extra
-            # padding plus the still-blank freq_tier slot right after it
-            # was literally too many spaces before "Вы" -- per user: "у
-            # нас слишком много пробелов после БТН поэтому всё съезжает").
-            archetype_emoji = _seat_position(hand, seat)
+            # Hero's own table position, in ONE slot (freq_tier stays
+            # dropped below -- splitting it across two separate chunks,
+            # padded text + a fully blank slot, is what looked like "too
+            # many spaces" last round). Padded to approximate bots' TWO
+            # combined emoji slots in this one continuous span instead of
+            # matching just one -- still an estimate, not a pixel
+            # measurement (same caveat as every other round of this).
+            archetype_emoji = f"{_seat_position(hand, seat):<7}"
         # No archetype emoji for a folded bot -- per user request ("чтобы
         # не играющие не сбивали при игре"): a folded seat is out of the
         # hand, so its type icon is just visual noise while you're reading
