@@ -142,10 +142,17 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             archetype_emoji = ARCHETYPE_EMOJI.get(archetype, "") + " "
-        rest = (
-            f"{display_name}: {p.stack / big_blind:.1f} "
-            f"(ставка {p.street_contributed / big_blind:.1f}) {cards}{state}"
-        )
+        # Fixed-width padding on the name/stack/bet columns -- per user
+        # request ("поставь правильное количество пробелов для красивого
+        # форматирования"). Telegram's plain message text isn't
+        # monospace (a <pre> block that forced real alignment was tried
+        # and reverted -- "очень плохо выглядит"), so this is an
+        # approximation, not pixel-perfect column alignment, but it keeps
+        # every row's name/stack/bet field the same character count.
+        name_col = f"{display_name:<6}"
+        stack_col = f"{p.stack / big_blind:>6.1f}"
+        bet_col = f"{p.street_contributed / big_blind:>5.1f}"
+        rest = f"{name_col}: {stack_col} (ставка {bet_col}) {cards}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
