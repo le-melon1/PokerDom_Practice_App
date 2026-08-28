@@ -61,6 +61,14 @@ class BotSession:
     # Telegram-specific: the chat message currently showing the table, so
     # later updates can edit it in place instead of spamming new messages.
     table_message_id: int | None = None
+    # 2026-08-28: set when the user picks "⚠️ Оспорить совет" and chooses
+    # WHICH street's decision they disagree with -- a copy of that
+    # street_decisions entry, plus hand_number. The next plain-text message
+    # from this chat is then treated as the dispute's comment (see bot.py's
+    # on_menu_button) instead of being matched against the persistent menu
+    # buttons. Cleared once the dispute is recorded (or explicitly
+    # cancelled).
+    pending_dispute: dict | None = None
 
 
 class SessionStore:

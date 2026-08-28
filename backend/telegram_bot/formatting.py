@@ -163,7 +163,12 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         hole_cards = _visible_hole_cards(session, seat, p)
         cards = _cards(hole_cards) if hole_cards else ""
         archetype_emoji = "    "
-        if seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
+        # No archetype emoji for a folded bot -- per user request ("чтобы
+        # не играющие не сбивали при игре"): a folded seat is out of the
+        # hand, so its type icon is just visual noise while you're reading
+        # who's still live -- same blank placeholder as if archetype
+        # emoji were off entirely.
+        if not p.folded and seat != session.hero_seat and session.settings.get("archetype_emoji_enabled", True) and session.turnover:
             archetype = session.turnover.archetype_for(seat)
             emoji = ARCHETYPE_EMOJI.get(archetype, "")
             if emoji:
@@ -271,6 +276,70 @@ def render_hand_review(session: BotSession) -> str:
             abc_part = _format_action(d["abc_action"], d["abc_amount"], big_blind)
             lines.append(f"   стратегия рекомендовала: {abc_part}")
     return "\n".join(lines)
+
+
+def render_explain_text(session: BotSession) -> str:
+    """"❓ Объяснить советы" -- unlike render_hand_review (which only shows
+    the strategy's side when hero DIDN'T match it), this walks every street
+    and always states both sides plainly, for whoever wants the full
+    picture regardless of whether they agreed. Same honesty limit as
+    render_hand_review: no specific abc_bot.py flag is named, since nothing
+    in this codebase yet traces a single decision back to which of the
+    ~30 interacting rules actually drove it -- points at /drills' own
+    per-rule ℹ️ pages instead, which DO have real confidence/stats."""
+    decisions = session.street_decisions
+    if not decisions:
+        return "Пока нет решений в этой раздаче."
+    big_blind = session.hand.big_blind if session.hand else 1.0
+    lines = ["<b>Объяснение решений стратегии по улицам</b>"]
+    for d in decisions:
+        street_ru = STREET_RU.get(d["street"], d["street"])
+        your_part = _format_action(d["action"], d["amount"], big_blind)
+        abc_part = _format_action(d["abc_action"], d["abc_amount"], big_blind)
+        match = _matches_abc_recommendation(d, big_blind)
+        lines.append(f"\n<b>{street_ru}</b>")
+        lines.append(f"Вы: {your_part}")
+        lines.append(f"Стратегия: {abc_part}" + (" (совпадает)" if match else " (не совпадает)"))
+    lines.append(
+        "\nПодробности по конкретным правилам -- через /drills → ℹ️ у нужного "
+        "правила (там есть уверенность и реальная статистика по нему)."
+    )
+    return "\n".join(lines)
+
+
+def build_hand_finished_keyboard() -> InlineKeyboardMarkup:
+    """Shown once a hand ends, per explicit user request -- new
+    hand / explain the strategy's advice / dispute a specific decision."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🆕 Новая раздача", callback_data="hand:new")],
+            [InlineKeyboardButton("❓ Объяснить советы", callback_data="hand:explain")],
+            [InlineKeyboardButton("⚠️ Оспорить совет", callback_data="hand:dispute")],
+        ]
+    )
+
+
+def build_dispute_pick_keyboard(session: BotSession) -> InlineKeyboardMarkup:
+    """One button per street decision this hand, so the user picks
+    EXACTLY which recommendation they disagree with (per user: "выбирает
+    совет с которым не согласен")."""
+    big_blind = session.hand.big_blind if session.hand else 1.0
+    rows = []
+    for i, d in enumerate(session.street_decisions):
+        street_ru = STREET_RU.get(d["street"], d["street"])
+        abc_part = _format_action(d["abc_action"], d["abc_amount"], big_blind)
+        rows.append([InlineKeyboardButton(f"{street_ru}: {abc_part}", callback_data=f"dispute:pick:{i}")])
+    rows.append([InlineKeyboardButton("« Отмена", callback_data="hand:cancel_dispute")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_dispute_comment_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Без комментария", callback_data="dispute:nocomment")],
+            [InlineKeyboardButton("« Отмена", callback_data="hand:cancel_dispute")],
+        ]
+    )
 
 
 def _visible_hole_cards(session: BotSession, seat: int, player) -> list[str]:

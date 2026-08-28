@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -22,7 +23,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from backend.bots import abc_bot
 from backend.engine.hand import IllegalAction
-from backend.telegram_bot import drills, formatting, game, range_chart, rule_info
+from backend.telegram_bot import disputes, drills, formatting, game, range_chart, rule_info
 from backend.telegram_bot.session import BotSession, SessionStore
 
 load_dotenv()
@@ -39,7 +40,13 @@ async def _run(fn, *args, **kwargs):
 
 async def _render_table(context: ContextTypes.DEFAULT_TYPE, session: BotSession, trainer_feedback: dict | None = None) -> None:
     text = formatting.render_table_text(session, trainer_feedback)
-    keyboard = formatting.build_action_keyboard(session)
+    # Once the hand ends, offer new-hand / explain / dispute instead of no
+    # keyboard at all (build_action_keyboard returns None once finished) --
+    # per explicit user request.
+    if session.hand is not None and session.hand.finished:
+        keyboard = formatting.build_hand_finished_keyboard()
+    else:
+        keyboard = formatting.build_action_keyboard(session)
     if session.table_message_id is not None:
         try:
             await context.bot.edit_message_text(
@@ -162,6 +169,13 @@ async def on_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     session = store.get(chat_id)
     if session is None:
         await context.bot.send_message(chat_id, "Сначала /start и выбери режим")
+        return
+
+    # A dispute comment is awaited (user picked "⚠️ Оспорить совет" and a
+    # specific street) -- this message IS the comment, not a menu tap.
+    if session.pending_dispute is not None:
+        await _save_pending_dispute(session, comment=text)
+        await context.bot.send_message(chat_id, "Спасибо, записал ваш комментарий.")
         return
 
     if text == formatting.MENU_HISTORY:
@@ -338,6 +352,53 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _deal_and_show(context, session)
         return
 
+    # Post-hand buttons -- per explicit user request: new hand / explain
+    # the strategy's advice / dispute a specific decision (pick which one,
+    # optionally comment, gets logged to disputes.py for later review).
+    if data == "hand:new":
+        session.table_message_id = None
+        await _deal_and_show(context, session)
+        return
+
+    if data == "hand:explain":
+        await context.bot.send_message(chat_id, formatting.render_explain_text(session), parse_mode="HTML")
+        return
+
+    if data == "hand:dispute":
+        if not session.street_decisions:
+            await context.bot.send_message(chat_id, "В этой раздаче не было ваших решений.")
+            return
+        await context.bot.send_message(
+            chat_id,
+            "С каким советом вы не согласны?",
+            reply_markup=formatting.build_dispute_pick_keyboard(session),
+        )
+        return
+
+    if data == "hand:cancel_dispute":
+        session.pending_dispute = None
+        store.save(session)
+        await query.edit_message_text("Отменено.")
+        return
+
+    if data.startswith("dispute:pick:"):
+        idx = int(data.split(":", 2)[2])
+        if idx < 0 or idx >= len(session.street_decisions):
+            return
+        session.pending_dispute = dict(session.street_decisions[idx])
+        session.pending_dispute["hand_number"] = session.hand_number
+        store.save(session)
+        await query.edit_message_text(
+            "Можете написать комментарий (или нажмите «Без комментария»).",
+            reply_markup=formatting.build_dispute_comment_keyboard(),
+        )
+        return
+
+    if data == "dispute:nocomment":
+        await _save_pending_dispute(session, comment="")
+        await query.edit_message_text("Спасибо, записал без комментария.")
+        return
+
 
 def _build_open_range_photo(position: str) -> tuple[bytes, str]:
     open_ranges, *_ = abc_bot._ranges()
@@ -351,6 +412,26 @@ def _build_open_range_photo(position: str) -> tuple[bytes, str]:
 async def _send_position_range(context: ContextTypes.DEFAULT_TYPE, chat_id: int, position: str) -> None:
     png, caption = await _run(_build_open_range_photo, position)
     await context.bot.send_photo(chat_id, photo=png, caption=caption)
+
+
+async def _save_pending_dispute(session: BotSession, comment: str) -> None:
+    d = session.pending_dispute
+    if d is None:
+        return
+    dispute = disputes.Dispute(
+        chat_id=session.chat_id,
+        hand_number=d.get("hand_number", session.hand_number),
+        street=d["street"],
+        hero_action=d["action"],
+        hero_amount=d["amount"],
+        abc_action=d["abc_action"],
+        abc_amount=d["abc_amount"],
+        comment=comment,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    await _run(disputes.record_dispute, dispute)
+    session.pending_dispute = None
+    store.save(session)
 
 
 async def _send_rule_info(context: ContextTypes.DEFAULT_TYPE, chat_id: int, flag: str) -> None:
