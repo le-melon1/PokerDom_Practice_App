@@ -84,12 +84,44 @@ async def _run_bot_pacing_loop(context: ContextTypes.DEFAULT_TYPE, session: BotS
             await asyncio.sleep(min(think_time, 2.5))
 
 
+AUTO_NEW_HAND_DELAY_SECONDS = 10.0
+
+
+async def _auto_new_hand_after_delay(context: ContextTypes.DEFAULT_TYPE, session: BotSession, hand_number: int) -> None:
+    await asyncio.sleep(AUTO_NEW_HAND_DELAY_SECONDS)
+    # Skip if the user already started a new hand themselves (manual "🆕
+    # Новая раздача", /newhand, a table reset, etc.) or the hand somehow
+    # isn't finished anymore by the time this wakes up.
+    if session.hand_number != hand_number:
+        return
+    if session.hand is None or not session.hand.finished:
+        return
+    session.table_message_id = None
+    await _deal_and_show(context, session)
+
+
+def _schedule_auto_new_hand(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
+    """Per user request ("пусть новая раздача начинается сама по себе
+    после завершения раздачи"): a finished hand rolls into the next one on
+    its own after a short delay, instead of always requiring "🆕 Новая
+    раздача". Runs as a background task rather than an inline `await` so
+    this handler returns immediately and the post-hand buttons (explain/
+    dispute/history) stay responsive during the wait -- this bot's
+    Application processes updates sequentially by default (no job-queue
+    extra installed here), so sleeping inline would have blocked every
+    other button press in this chat until the delay finished."""
+    if session.hand is None or not session.hand.finished:
+        return
+    asyncio.create_task(_auto_new_hand_after_delay(context, session, session.hand_number))
+
+
 async def _deal_and_show(context: ContextTypes.DEFAULT_TYPE, session: BotSession) -> None:
     await _run(game.new_hand, session)
     store.save(session)
     await _render_table(context, session)
     await _run_bot_pacing_loop(context, session)
     store.save(session)
+    _schedule_auto_new_hand(context, session)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -476,6 +508,7 @@ async def _apply_action_and_continue(
         await asyncio.sleep(1.0)
     await _run_bot_pacing_loop(context, session)
     store.save(session)
+    _schedule_auto_new_hand(context, session)
 
 
 # Registered via set_my_commands (post_init below) so Telegram shows this
