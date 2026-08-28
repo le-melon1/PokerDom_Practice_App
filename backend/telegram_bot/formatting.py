@@ -222,7 +222,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # "ставка" label -- it's the only number left unlabeled, so
         # what it is stays obvious from position) and the stack moves
         # into parens right after the name.
-        rest = f"{name_col}({stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
+        rest = f"{name_col}(стек {stack_col}): <b>{bet_col}</b>{raise_marker}{cards_part}{state}"
         # Strikethrough marks a folded row, but Telegram doesn't draw the
         # <s> line through emoji glyphs (button chip/archetype emoji) --
         # _struck_row wraps only the plain-text spans so the strike runs
