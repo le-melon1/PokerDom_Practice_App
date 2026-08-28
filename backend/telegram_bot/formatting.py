@@ -53,7 +53,9 @@ def _card(card: str) -> str:
     if card == "??":
         return "🂠"
     rank, suit = card[0], card[1]
-    return f"{rank}{SUIT_EMOJI.get(suit, suit)}"
+    # Suit first, then rank -- per user request ("карты пусть сначала
+    # масть, потом карты").
+    return f"{SUIT_EMOJI.get(suit, suit)}{rank}"
 
 
 def _cards(cards: list[str]) -> str:
@@ -230,8 +232,20 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # approximation, not pixel-perfect column alignment, but it keeps
         # every row's name/stack/bet field the same character count.
         name_col = f"{display_name:<6}"
-        stack_col = f"{p.stack / big_blind:>6.1f}"
-        bet_col = f"{p.street_contributed / big_blind:>5.1f}"
+        # LEFT-aligned padding (per user screenshot: "у боба и карла
+        # меньше стек поэтому всё съезжает исправь пробелом") -- a shorter
+        # stack now pads with TRAILING spaces instead of leading ones, so
+        # "(" still sits flush against the first digit (no gap right
+        # after it, the earlier "убери пробел в скобках" request) while
+        # ")"/the rest of the row still lands at the same width regardless
+        # of how many digits the stack has.
+        stack_col = f"{p.stack / big_blind:<6.1f}"
+        # One char narrower than before -- per user request ("после
+        # скобок на пробел меньше, и после ставки... перед картами"),
+        # less leading padding here means less gap both right after the
+        # parens/colon and before the cards that follow, for every seat
+        # (this formatting is shared, not hero-specific).
+        bet_col = f"{p.street_contributed / big_blind:>4.1f}"
         raise_marker = " ⬆️" if seat in raised_seats else ""
         # No trailing "-" placeholder when there's nothing to show (per
         # user: "у ботов после ставки бессмысленно там же нет ничего") --
