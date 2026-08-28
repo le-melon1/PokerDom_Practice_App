@@ -152,8 +152,9 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # removed -- the button chip alone conveys position well enough.
         button = "🔘" if seat == table.button_seat else "    "
         state_bits = []
-        if p.folded:
-            state_bits.append("fold")
+        # No "fold" tag -- per user request ("убери у ботов надпись фолд
+        # и перевёрнутые карты, это и так понятно"): a folded seat just
+        # stops acting and stops showing cards, that's enough.
         if p.all_in:
             state_bits.append("all-in")
         if p.sitting_out:
@@ -266,6 +267,11 @@ def render_hand_review(session: BotSession) -> str:
 
 
 def _visible_hole_cards(session: BotSession, seat: int, player) -> list[str]:
+    # No face-down "🂠 🂠" placeholder for a live bot's hidden hand anymore
+    # -- per user request ("убери у ботов ... перевёрнутые карты, это и
+    # так понятно"): an opponent obviously has two hidden cards, showing a
+    # placeholder icon for that isn't new information. Only hero's own
+    # cards and a real showdown reveal are worth actually displaying.
     hand = session.hand
     if seat == session.hero_seat:
         return player.hole_cards
@@ -274,8 +280,6 @@ def _visible_hole_cards(session: BotSession, seat: int, player) -> list[str]:
     real_showdown = hand.finished and hand.result is not None and len(hand.result.winners_by_pot) > 0
     if real_showdown and player.in_hand:
         return player.hole_cards
-    if not hand.finished and player.in_hand:
-        return ["??", "??"]
     return []
 
 
