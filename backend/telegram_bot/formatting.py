@@ -48,6 +48,59 @@ ARCHETYPE_EMOJI = {
 # opponent's postflop play runs hot).
 FREQ_TIER_EMOJI = {"rare": "❄️", "normal": "☁️", "often": "🔥"}
 
+# Real, MEASURED font metrics -- per user request ("посмотри специфику и
+# сделай так чтобы... узнай какой шрифт и посчитай нормально"), after many
+# rounds of guessing space counts blind. Telegram Android renders message
+# text in the OS's system font (Roboto on stock/Pixel Android); emoji fall
+# back to Android's system emoji font (NotoColorEmoji). Downloaded both
+# real font files (googlefonts/roboto-2, googlefonts/noto-emoji) and
+# measured actual glyph advance widths with fontTools:
+#   - Roboto space (U+0020): 0.2476 em.
+#   - NotoColorEmoji: every emoji glyph measured (🔘👉🎯🔒🐟📞🤪⚡❄☁🔥⬆) has
+#     the SAME advance width, 1.2451 em -- confirmed uniform, not a guess.
+#   - 1.2451 / 0.2476 = 5.03 -> 5 spaces matches one emoji's width to
+#     within 0.6%, not the 4 spaces used through most of this file's
+#     earlier iteration (4 spaces = 0.990 em, undershoots by ~26%).
+#   - Roboto's digits (0-9) are TABULAR (all exactly 0.5615 em) -- so
+#     fixed-CHARACTER-count padding for stack/bet numbers (elsewhere in
+#     this file) is mathematically correct as-is, already confirmed by
+#     this same measurement pass.
+#   - Roboto's LETTERS are NOT tabular (e.g. "Tom" measures ~0.5 em wider
+#     than "Carl" even at the same padded character count) -- a real,
+#     previously-unmeasured cause of the repeated "у боба и карла...
+#     съезжает"-style reports. BOT_NAME_TRAILING_SPACES and
+#     POSITION_TRAILING_SPACES below give each specific name/position
+#     string the exact integer space count (not a blanket ":<N") that
+#     brings its real measured width closest to a shared target -- the
+#     widest name/the width of two combined emoji slots, respectively.
+# Recompute via scripts/measure_telegram_font_metrics.py if the name pool,
+# position labels, or font choice ever change.
+BOT_NAME_TRAILING_SPACES = {
+    "Bob": 3,
+    "Den": 3,
+    "Carl": 2,
+    "Max": 2,
+    "Leo": 3,
+    "Sam": 1,
+    "Tom": 1,
+    "Jack": 1,
+    "Alex": 2,
+    "Ivan": 2,
+    "Вы": 4,
+}
+
+POSITION_TRAILING_SPACES = {
+    "UTG": 3,
+    "MP": 5,
+    "CO": 6,
+    "BTN": 3,
+    "SB": 6,
+    "BB": 6,
+}
+
+# One emoji's width, in spaces (see the measurement block above).
+EMOJI_BLANK = " " * 5
+
 
 def _card(card: str) -> str:
     if card == "??":
@@ -150,20 +203,11 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         p = table.players[seat]
         is_current_actor = hand.current_actor() == seat
         # Left-side "slots" (turn marker, dealer chip, archetype emoji,
-        # postflop_freq_tier emoji), each ALWAYS a fixed-width placeholder
-        # when the real emoji
-        # isn't present, so a row's name/stack/bet never shifts right
-        # depending on which of these happen to be present this hand. Per
-        # user reports (with screenshots) this kept drifting no matter how
-        # many plain spaces were used. A "|" swap (tried previously) likely
-        # moved the wrong direction -- the usual cross-platform convention
-        # (same one terminals use for CJK/emoji) treats a color emoji as
-        # roughly DOUBLE the width of a normal letter, and a plain space is
-        # itself narrower than a letter -- so an emoji is closer to ~4
-        # spaces wide, not 2-3. Widened to 4 plain spaces on that basis.
-        # Still an estimate, not a pixel measurement I can actually verify
-        # without seeing the render -- expect another screenshot round.
-        marker = "👉" if is_current_actor else "    "
+        # postflop_freq_tier emoji), each a fixed-width placeholder when
+        # the real emoji isn't present (EMOJI_BLANK, see the real,
+        # MEASURED font-metrics block above), so a row's name/stack/bet
+        # doesn't shift depending on which are present this hand.
+        marker = "👉" if is_current_actor else EMOJI_BLANK
         # Just "Вы", not the engine's internal "Hero" name -- per user
         # request ("слово hero из игры можно убрать оставить только вы").
         display_name = "Вы" if seat == session.hero_seat else p.name
@@ -173,7 +217,7 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # later request ("убери надписи позиций... и так понятно если есть
         # фишка дилера"), the separate [UTG]/[BTN]/etc. text tag was
         # removed -- the button chip alone conveys position well enough.
-        button = "🔘" if seat == table.button_seat else "    "
+        button = "🔘" if seat == table.button_seat else EMOJI_BLANK
         state_bits = []
         # No "fold" tag -- per user request ("убери у ботов надпись фолд
         # и перевёрнутые карты, это и так понятно"): a folded seat just
@@ -185,24 +229,15 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         state = f" [{', '.join(state_bits)}]" if state_bits else ""
         hole_cards = _visible_hole_cards(session, seat, p)
         cards = _cards(hole_cards) if hole_cards else ""
-        # Wider blank placeholder specifically for a folded seat's now-
-        # empty archetype/freq_tier slots -- per user report ("когда
-        # перечёркиваешь должно быть больше пробелов"): the <s> strike
-        # line runs continuously through plain spaces too, visually
-        # compressing the gap a normal (unstruck) space would show, so
-        # folded rows need more actual space characters to end up looking
-        # like the same gap once struck through.
-        folded_blank = "      " if p.folded else "    "
-        archetype_emoji = folded_blank
+        archetype_emoji = EMOJI_BLANK
         if seat == session.hero_seat:
             # Hero's own table position, in ONE slot (freq_tier stays
-            # dropped below -- splitting it across two separate chunks,
-            # padded text + a fully blank slot, is what looked like "too
-            # many spaces" last round). Padded to approximate bots' TWO
-            # combined emoji slots in this one continuous span instead of
-            # matching just one -- still an estimate, not a pixel
-            # measurement (same caveat as every other round of this).
-            archetype_emoji = f"{_seat_position(hand, seat):<7}"
+            # dropped below). Padded via POSITION_TRAILING_SPACES -- the
+            # exact, measured space count that makes THIS SPECIFIC label's
+            # real width match bots' two combined emoji slots, not a
+            # blanket guess.
+            position = _seat_position(hand, seat)
+            archetype_emoji = position + " " * POSITION_TRAILING_SPACES.get(position, 5)
         # No archetype emoji for a folded bot -- per user request ("чтобы
         # не играющие не сбивали при игре"): a folded seat is out of the
         # hand, so its type icon is just visual noise while you're reading
@@ -218,20 +253,18 @@ def render_table_text(session: BotSession, trainer_feedback: dict | None = None)
         # stacking a second empty gap right after the position text.
         freq_tier_emoji = None
         if seat != session.hero_seat:
-            freq_tier_emoji = folded_blank
+            freq_tier_emoji = EMOJI_BLANK
             if not p.folded and session.settings.get("freq_tier_emoji_enabled", True) and session.turnover:
                 freq_tier = session.turnover.freq_tier_for(seat)
                 emoji = FREQ_TIER_EMOJI.get(freq_tier, "")
                 if emoji:
                     freq_tier_emoji = emoji
-        # Fixed-width padding on the name/stack/bet columns -- per user
-        # request ("поставь правильное количество пробелов для красивого
-        # форматирования"). Telegram's plain message text isn't
-        # monospace (a <pre> block that forced real alignment was tried
-        # and reverted -- "очень плохо выглядит"), so this is an
-        # approximation, not pixel-perfect column alignment, but it keeps
-        # every row's name/stack/bet field the same character count.
-        name_col = f"{display_name:<6}"
+        # Fixed-width padding on the name column, via BOT_NAME_TRAILING_
+        # SPACES -- the exact, measured space count for THIS SPECIFIC name
+        # (Roboto letters aren't tabular the way digits are, so a blanket
+        # ":<6" character count left different names at different real
+        # widths -- see the measurement block above).
+        name_col = display_name + " " * BOT_NAME_TRAILING_SPACES.get(display_name, 2)
         # LEFT-aligned padding (per user screenshot: "у боба и карла
         # меньше стек поэтому всё съезжает исправь пробелом") -- a shorter
         # stack now pads with TRAILING spaces instead of leading ones, so
